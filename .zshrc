@@ -114,20 +114,6 @@ source $ZSH/oh-my-zsh.sh
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
-# >>> conda initialize >>>
-# !! Contents within this block are managed by 'conda init' !!
-__conda_setup="$('/home/anhtran/miniconda3/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
-if [ $? -eq 0 ]; then
-    eval "$__conda_setup"
-else
-    if [ -f "/home/anhtran/miniconda3/etc/profile.d/conda.sh" ]; then
-        . "/home/anhtran/miniconda3/etc/profile.d/conda.sh"
-    else
-        export PATH="/home/anhtran/miniconda3/bin:$PATH"
-    fi
-fi
-unset __conda_setup
-
 # keybindings
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
@@ -167,9 +153,6 @@ eval "$(zoxide init --cmd cd zsh)"
 # echo 'eval "$(atuin init zsh)"' >> ~/.zshrc
 eval "$(atuin init zsh)"
 
-# kitty
-alias icat="kitten icat --clear"
-
 # show
 alias show="bash ~/show.sh"
 
@@ -206,24 +189,3 @@ function yy() {
 	rm -f -- "$tmp"
 }
 
-# sesh
-function sesh-sessions() {
-  {
-    exec </dev/tty
-    exec <&1
-    local session
-    session=$(sesh list -t -c | fzf --height 40% --reverse --border-label ' sesh ' --border --prompt '⚡  ')
-    [[ -z "$session" ]] && return
-    sesh connect $session
-  }
-}
-
-zle     -N             sesh-sessions
-bindkey -M emacs '\es' sesh-sessions
-bindkey -M vicmd '\es' sesh-sessions
-bindkey -M viins '\es' sesh-sessions
-
-
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
