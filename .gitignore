@@ -1,0 +1,20 @@
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Editor and IDE files
+*.swp
+*~
+.vscode/
+.idea/
+
+# Log files and temporary files
+*.log
+tmp/
+.cache/
+
+# Shell history and session files
+.history
+.session
+
+# ...existing custom ignore rules...
