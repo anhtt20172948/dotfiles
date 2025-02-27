@@ -16,5 +16,11 @@ git clone https://github.com/zdharma-continuum/fast-syntax-highlighting.git ${ZS
 git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
 ~/.fzf/install
 
+# Install atuin
+curl --proto '=https' --tlsv1.2 -LsSf https://setup.atuin.sh | sh
+
+# Install zoxide
+curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+
 echo "install stow"
 stow --adopt .
