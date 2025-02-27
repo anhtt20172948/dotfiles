@@ -18,3 +18,5 @@ tmp/
 .session
 
 # ...existing custom ignore rules...
+.zshrc
+.bashrc
