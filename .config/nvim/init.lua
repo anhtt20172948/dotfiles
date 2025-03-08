@@ -5,8 +5,8 @@ vim.g.mapleader = " "
 local lazypath = vim.fn.stdpath "data" .. "/lazy/lazy.nvim"
 
 if not vim.uv.fs_stat(lazypath) then
-  local repo = "https://github.com/folke/lazy.nvim.git"
-  vim.fn.system { "git", "clone", "--filter=blob:none", repo, "--branch=stable", lazypath }
+    local repo = "https://github.com/folke/lazy.nvim.git"
+    vim.fn.system { "git", "clone", "--filter=blob:none", repo, "--branch=stable", lazypath }
 end
 
 vim.opt.rtp:prepend(lazypath)
@@ -15,44 +15,47 @@ local lazy_config = require "configs.lazy"
 
 -- load plugins
 require("lazy").setup({
-  {
-    "NvChad/NvChad",
-    lazy = false,
-    branch = "v2.5",
-    import = "nvchad.plugins",
-  },
+    {
+        "NvChad/NvChad",
+        lazy = false,
+        branch = "v2.5",
+        import = "nvchad.plugins",
+    },
 
-  { import = "plugins" },
+    { import = "plugins" },
 }, lazy_config)
 
 require('lspconfig').ruff.setup({
-  init_options = {
-    settings = {
-      -- Ruff language server settings go here
-      lint = {
-        preview = true
-      },
-      single_file_support = true
+    init_options = {
+        settings = {
+            -- Ruff language server settings go here
+            lint = {
+                preview = true
+            },
+            single_file_support = true
+        }
     }
-  }
 })
 require('lspconfig').pyright.setup {
-  settings = {
-    pyright = {
-      -- Using Ruff's import organizer
-      disableOrganizeImports = true,
+    settings = {
+        pyright = {
+            -- Using Ruff's import organizer
+            disableOrganizeImports = true,
+        },
+        python = {
+            analysis = {
+                -- Ignore all files for analysis to exclusively use Ruff for linting
+                ignore = { '*' },
+            },
+        },
     },
-    python = {
-      analysis = {
-        -- Ignore all files for analysis to exclusively use Ruff for linting
-        ignore = { '*' },
-      },
-    },
-  },
 }
--- nvim tree 
-require("nvim-tree").setup{
-     filters = {
+-- nvim tree
+require("nvim-tree").setup {
+    update_focused_file = {
+        enable = true
+    },
+    filters = {
         enable = true,
         git_ignored = false,
         dotfiles = false,
@@ -60,21 +63,26 @@ require("nvim-tree").setup{
         no_buffer = false,
         no_bookmark = false,
         custom = {},
-        exclude = {},
-      },
+        exclude = {}
+    },
+    view = {
+      width = 50,
+    },
 
 }
 
+
+
 -- load treesitter
-require'nvim-treesitter.configs'.setup {
-  highlight = {
-    enable = true,
-    -- Setting this to true will run `:h syntax` and tree-sitter at the same time.
-    -- Set this to `true` if you depend on 'syntax' being enabled (like for indentation).
-    -- Using this option may slow down your editor, and you may see some duplicate highlights.
-    -- Instead of true it can also be a list of languages
-    additional_vim_regex_highlighting = false,
-  },
+require 'nvim-treesitter.configs'.setup {
+    highlight = {
+        enable = true,
+        -- Setting this to true will run `:h syntax` and tree-sitter at the same time.
+        -- Set this to `true` if you depend on 'syntax' being enabled (like for indentation).
+        -- Using this option may slow down your editor, and you may see some duplicate highlights.
+        -- Instead of true it can also be a list of languages
+        additional_vim_regex_highlighting = false,
+    },
 }
 
 -- load theme
@@ -85,7 +93,7 @@ require "options"
 require "nvchad.autocmds"
 
 vim.schedule(function()
-  require "mappings"
+    require "mappings"
 end)
 
 -- Use system clipboard
@@ -161,27 +169,31 @@ vim.cmd("syntax enable")
 
 -- Quickly replace in all quickfixes
 function RP(search, replace)
-  local command = ":cdo s/" .. search .. "/" .. replace .. "/g | update"
-  vim.cmd(command)
+    local command = ":cdo s/" .. search .. "/" .. replace .. "/g | update"
+    vim.cmd(command)
 end
 
 -- Quickly find in all project files using grep
 function FP(phrase, path, include, exclude)
-  if not path then path = "**" end
-  local command = [[:silent grep! -r "]] .. phrase .. [[" ]] .. path
-  if include then
-      command = command .. " --include " .. include
-  end
-  if exclude then
-      command = command .. " --exclude" .. exclude
-  end
+    if not path then path = "**" end
+    local command = [[:silent grep! -r "]] .. phrase .. [[" ]] .. path
+    if include then
+        command = command .. " --include " .. include
+    end
+    if exclude then
+        command = command .. " --exclude" .. exclude
+    end
 
-  vim.cmd(command)
-  print("Done searching! :copen to see the results!")
+    vim.cmd(command)
+    print("Done searching! :copen to see the results!")
 end
 
 -- Quickly find in all project files using grep and replace all results
 function FRP(phrase, replace_phrase, path, include, exclude)
-  FP(phrase, path, include, exclude)
-  RP(phrase, replace_phrase)
+    FP(phrase, path, include, exclude)
+    RP(phrase, replace_phrase)
 end
+
+vim.cmd([[
+    :NvimTreeFocus
+]])
