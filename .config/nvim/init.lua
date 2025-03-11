@@ -72,7 +72,7 @@ require("nvim-tree").setup {
 }
 
 -- copilot
-vim.keymap.set('i', '<Right>', 'copilot#Accept("\\<CR>")', {
+vim.keymap.set('i', '<S-Right>', 'copilot#Accept("\\<CR>")', {
     expr = true,
     replace_keycodes = false
 })
