@@ -24,7 +24,7 @@ require("lazy").setup({
 
     { import = "plugins" },
 }, lazy_config)
-
+-- load lsp
 require('lspconfig').ruff.setup({
     init_options = {
         settings = {
@@ -49,6 +49,20 @@ require('lspconfig').pyright.setup {
             },
         },
     },
+}
+require("lspconfig").clangd.setup{
+     cmd = {'clangd', '--background-index', '--clang-tidy', '--log=verbose'},
+      settings = {
+        clangd = {
+          InlayHints = {
+            Designators = true,
+            Enabled = true,
+            ParameterNames = true,
+            DeducedTypes = true,
+          },
+          fallbackFlags = { "-std=c++20" },
+        },
+      }
 }
 -- nvim tree
 require("nvim-tree").setup {
