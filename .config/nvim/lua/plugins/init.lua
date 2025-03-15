@@ -1,20 +1,21 @@
-return {{
+return { {
     "stevearc/conform.nvim",
     -- event = 'BufWritePre', -- uncomment for format on save
     opts = require "configs.conform"
 }, -- These are some examples, uncomment them if you want to see them work!
-{
-    "neovim/nvim-lspconfig",
-    config = function()
-        require "configs.lspconfig"
-    end
-}, {
+    {
+        "neovim/nvim-lspconfig",
+        config = function()
+            require "configs.lspconfig"
+        end
+    }, {
     "nvim-treesitter/nvim-treesitter",
     opts = {
-        ensure_installed = {"vim", "lua", "vimdoc", "html", "css"}
+        ensure_installed = { "vim", "lua", "vimdoc", "html", "css" }
     }
 }, {
     "folke/snacks.nvim",
+    commit = "2b52d89",
     priority = 1000,
     lazy = false,
     ---@type snacks.Config
@@ -65,8 +66,8 @@ return {{
         },
         image = {
             enabled = true,
-            formats = {"png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "heic", "avif", "mp4", "mov", "avi", "mkv",
-                       "webm", "pdf"},
+            formats = { "png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "heic", "avif", "mp4", "mov", "avi", "mkv",
+                "webm", "pdf" },
             force = true, -- try displaying the image, even if the terminal does not support it
             doc = {
                 -- enable image viewer for documents
@@ -90,7 +91,7 @@ return {{
                     return type == "math"
                 end
             },
-            img_dirs = {"img", "images", "assets", "static", "public", "media", "attachments"},
+            img_dirs = { "img", "images", "assets", "static", "public", "media", "attachments" },
             -- window options applied to windows displaying image buffers
             -- an image buffer is a buffer with `filetype=image`
             wo = {
@@ -124,14 +125,14 @@ return {{
                 ---@type snacks.image.args
                 mermaid = function()
                     local theme = vim.o.background == "light" and "neutral" or "dark"
-                    return {"-i", "{src}", "-o", "{file}", "-b", "transparent", "-t", theme, "-s", "{scale}"}
+                    return { "-i", "{src}", "-o", "{file}", "-b", "transparent", "-t", theme, "-s", "{scale}" }
                 end,
                 ---@type table<string,snacks.image.args>
                 magick = {
-                    default = {"{src}[0]", "-scale", "1920x1080>"}, -- default for raster images
-                    vector = {"-density", 192, "{src}[0]"}, -- used by vector images like svg
-                    math = {"-density", 192, "{src}[0]", "-trim"},
-                    pdf = {"-density", 192, "{src}[0]", "-background", "white", "-alpha", "remove", "-trim"}
+                    default = { "{src}[0]", "-scale", "1920x1080>" }, -- default for raster images
+                    vector = { "-density", 192, "{src}[0]" },         -- used by vector images like svg
+                    math = { "-density", 192, "{src}[0]", "-trim" },
+                    pdf = { "-density", 192, "{src}[0]", "-background", "white", "-alpha", "remove", "-trim" }
                 }
             },
             math = {
@@ -152,7 +153,7 @@ return {{
                     font_size = "Large", -- see https://www.sascha-frank.com/latex-font-size.html
                     -- for latex documents, the doc packages are included automatically,
                     -- but you can add more packages here. Useful for markdown documents.
-                    packages = {"amsmath", "amssymb", "amsfonts", "amscd", "mathtools"},
+                    packages = { "amsmath", "amssymb", "amsfonts", "amscd", "mathtools" },
                     tpl = [[
                       \documentclass[preview,border=0pt,varwidth,12pt]{standalone}
                       \usepackage{${packages}}
@@ -168,13 +169,13 @@ return {{
         }
     },
     keys = { -- Top Pickers & Explorer
-    {
-        "<leader><space>",
-        function()
-            Snacks.picker.smart()
-        end,
-        desc = "Smart Find Files"
-    }, {
+        {
+            "<leader><space>",
+            function()
+                Snacks.picker.smart()
+            end,
+            desc = "Smart Find Files"
+        }, {
         "<leader>,",
         function()
             Snacks.picker.buffers()
@@ -199,13 +200,13 @@ return {{
         end,
         desc = "Notification History"
     }, -- find
-    {
-        "<leader>fb",
-        function()
-            Snacks.picker.buffers()
-        end,
-        desc = "Buffers"
-    }, {
+        {
+            "<leader>fb",
+            function()
+                Snacks.picker.buffers()
+            end,
+            desc = "Buffers"
+        }, {
         "<leader>fc",
         function()
             Snacks.picker.files({
@@ -238,13 +239,13 @@ return {{
         end,
         desc = "Recent"
     }, -- git
-    {
-        "<leader>gb",
-        function()
-            Snacks.picker.git_branches()
-        end,
-        desc = "Git Branches"
-    }, {
+        {
+            "<leader>gb",
+            function()
+                Snacks.picker.git_branches()
+            end,
+            desc = "Git Branches"
+        }, {
         "<leader>gl",
         function()
             Snacks.picker.git_log()
@@ -281,13 +282,13 @@ return {{
         end,
         desc = "Git Log File"
     }, -- Grep
-    {
-        "<leader>sb",
-        function()
-            Snacks.picker.lines()
-        end,
-        desc = "Buffer Lines"
-    }, {
+        {
+            "<leader>sb",
+            function()
+                Snacks.picker.lines()
+            end,
+            desc = "Buffer Lines"
+        }, {
         "<leader>sB",
         function()
             Snacks.picker.grep_buffers()
@@ -305,15 +306,15 @@ return {{
             Snacks.picker.grep_word()
         end,
         desc = "Visual selection or word",
-        mode = {"n", "x"}
+        mode = { "n", "x" }
     }, -- search
-    {
-        '<leader>s"',
-        function()
-            Snacks.picker.registers()
-        end,
-        desc = "Registers"
-    }, {
+        {
+            '<leader>s"',
+            function()
+                Snacks.picker.registers()
+            end,
+            desc = "Registers"
+        }, {
         '<leader>s/',
         function()
             Snacks.picker.search_history()
@@ -434,13 +435,13 @@ return {{
         end,
         desc = "Colorschemes"
     }, -- LSP
-    {
-        "gd",
-        function()
-            Snacks.picker.lsp_definitions()
-        end,
-        desc = "Goto Definition"
-    }, {
+        {
+            "gd",
+            function()
+                Snacks.picker.lsp_definitions()
+            end,
+            desc = "Goto Definition"
+        }, {
         "gD",
         function()
             Snacks.picker.lsp_declarations()
@@ -478,13 +479,13 @@ return {{
         end,
         desc = "LSP Workspace Symbols"
     }, -- Other
-    {
-        "<leader>z",
-        function()
-            Snacks.zen()
-        end,
-        desc = "Toggle Zen Mode"
-    }, {
+        {
+            "<leader>z",
+            function()
+                Snacks.zen()
+            end,
+            desc = "Toggle Zen Mode"
+        }, {
         "<leader>Z",
         function()
             Snacks.zen.zoom()
@@ -526,7 +527,7 @@ return {{
             Snacks.gitbrowse()
         end,
         desc = "Git Browse",
-        mode = {"n", "v"}
+        mode = { "n", "v" }
     }, {
         "<leader>gg",
         function()
@@ -557,14 +558,14 @@ return {{
             Snacks.words.jump(vim.v.count1)
         end,
         desc = "Next Reference",
-        mode = {"n", "t"}
+        mode = { "n", "t" }
     }, {
         "[[",
         function()
             Snacks.words.jump(-vim.v.count1)
         end,
         desc = "Prev Reference",
-        mode = {"n", "t"}
+        mode = { "n", "t" }
     }, {
         "<leader>N",
         desc = "Neovim News",
@@ -582,7 +583,7 @@ return {{
                 }
             })
         end
-    }},
+    } },
     init = function()
         vim.api.nvim_create_autocmd("User", {
             pattern = "VeryLazy",
@@ -632,12 +633,12 @@ return {{
         lazy = true
     },
     keys = { -- 👇 in this section, choose your own keymappings!
-    {
-        "<leader>-",
-        mode = {"n", "v"},
-        "<cmd>Yazi<cr>",
-        desc = "Open yazi at the current file"
-    }, {
+        {
+            "<leader>-",
+            mode = { "n", "v" },
+            "<cmd>Yazi<cr>",
+            desc = "Open yazi at the current file"
+        }, {
         -- Open in the current working directory
         "<leader>cw",
         "<cmd>Yazi cwd<cr>",
@@ -646,7 +647,7 @@ return {{
         "<c-up>",
         "<cmd>Yazi toggle<cr>",
         desc = "Resume the last yazi session"
-    }},
+    } },
     ---@type YaziConfig | {}
     opts = {
         -- if you want to open yazi instead of netrw, see below for more info
@@ -655,4 +656,4 @@ return {{
             show_help = "<f1>"
         }
     }
-}}
+} }
