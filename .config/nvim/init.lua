@@ -106,6 +106,9 @@ require 'nvim-treesitter.configs'.setup {
 }
 
 -- load theme
+vim.opt.termguicolors = true
+vim.cmd('colorscheme bluloco')
+
 dofile(vim.g.base46_cache .. "defaults")
 dofile(vim.g.base46_cache .. "statusline")
 

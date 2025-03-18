@@ -338,23 +338,24 @@ config.keys = { {
     key = 'h',
     mods = 'CTRL|SHIFT',
     action = act.ActivateTabRelative(-1)
-}, {
-    key = 'k',
-    mods = 'CTRL',
-    action = act.ActivatePaneDirection 'Up'
-}, {
-    key = 'l',
-    mods = 'CTRL',
-    action = act.ActivatePaneDirection 'Right'
-}, {
-    key = 'j',
-    mods = 'CTRL',
-    action = act.ActivatePaneDirection 'Down'
-}, {
-    key = 'h',
-    mods = 'CTRL',
-    action = act.ActivatePaneDirection 'Left'
 },
+-- {
+--     key = 'k',
+--     mods = 'CTRL',
+--     action = act.ActivatePaneDirection 'Up'
+-- }, {
+--     key = 'l',
+--     mods = 'CTRL',
+--     action = act.ActivatePaneDirection 'Right'
+-- }, {
+--     key = 'j',
+--     mods = 'CTRL',
+--     action = act.ActivatePaneDirection 'Down'
+-- }, {
+--     key = 'h',
+--     mods = 'CTRL',
+--     action = act.ActivatePaneDirection 'Left'
+-- },
 }
 
 config.enable_kitty_keyboard = true
