@@ -24,46 +24,7 @@ require("lazy").setup({
 
     { import = "plugins" },
 }, lazy_config)
--- load lsp
-require('lspconfig').ruff.setup({
-    init_options = {
-        settings = {
-            -- Ruff language server settings go here
-            lint = {
-                preview = true
-            },
-            single_file_support = true
-        }
-    }
-})
-require('lspconfig').pyright.setup {
-    settings = {
-        pyright = {
-            -- Using Ruff's import organizer
-            disableOrganizeImports = true,
-        },
-        python = {
-            analysis = {
-                -- Ignore all files for analysis to exclusively use Ruff for linting
-                ignore = { '*' },
-            },
-        },
-    },
-}
-require("lspconfig").clangd.setup{
-     cmd = {'clangd', '--background-index', '--clang-tidy', '--log=verbose'},
-      settings = {
-        clangd = {
-          InlayHints = {
-            Designators = true,
-            Enabled = true,
-            ParameterNames = true,
-            DeducedTypes = true,
-          },
-          fallbackFlags = { "-std=c++20" },
-        },
-      }
-}
+
 -- nvim tree
 require("nvim-tree").setup {
     update_focused_file = {
@@ -80,7 +41,7 @@ require("nvim-tree").setup {
         exclude = {}
     },
     view = {
-      width = 50,
+        width = 50,
     },
 
 }
@@ -118,6 +79,25 @@ require "nvchad.autocmds"
 vim.schedule(function()
     require "mappings"
 end)
+
+-- NVIM Menu
+-- Keyboard users
+vim.keymap.set("n", "<C-t>", function()
+    require("menu").open("default")
+end, {})
+
+-- mouse users + nvimtree users!
+vim.keymap.set({ "n", "v" }, "<RightMouse>", function()
+    require('menu.utils').delete_old_menus()
+
+    vim.cmd.exec '"normal! \\<RightMouse>"'
+
+    -- clicked buf
+    local buf = vim.api.nvim_win_get_buf(vim.fn.getmousepos().winid)
+    local options = vim.bo[buf].ft == "NvimTree" and "nvimtree" or "default"
+
+    require("menu").open(options, { mouse = true })
+end, {})
 
 -- Use system clipboard
 vim.opt.clipboard:append { "unnamed", "unnamedplus" }
