@@ -15,6 +15,9 @@ return {
             explorer = {
                 enabled = false
             },
+            git = {
+                enabled = true
+            },
             indent = {
                 enabled = true
             },
@@ -52,7 +55,8 @@ return {
             },
             image = {
                 enabled = true,
-                formats = { "png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "heic", "avif", "mp4", "mov", "avi", "mkv",
+                formats = { "png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff", "heic", "avif", "mp4", "mov", "avi",
+                    "mkv",
                     "webm", "pdf" },
                 force = true, -- try displaying the image, even if the terminal does not support it
                 doc = {
@@ -151,7 +155,7 @@ return {
                           \end{document}]]
                     }
                 }
-    
+
             }
         },
         keys = { -- Top Pickers & Explorer
@@ -582,7 +586,7 @@ return {
                         Snacks.debug.backtrace()
                     end
                     vim.print = _G.dd -- Override print to use snacks for `:=` command
-    
+
                     -- Create some toggle mappings
                     Snacks.toggle.option("spell", {
                         name = "Spelling"
@@ -613,3 +617,4 @@ return {
         end
     }
 }
+
