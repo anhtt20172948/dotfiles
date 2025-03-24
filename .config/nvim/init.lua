@@ -212,15 +212,8 @@ vim.keymap.set("n", "<leader>ql", function() require("persistence").load({ last 
 -- stop Persistence => session won't be saved on exit
 vim.keymap.set("n", "<leader>qd", function() require("persistence").stop() end,
     { desc = "session won't be save when exit" })
--- auto load session with current directory
-function AUTO_SESSION()
-    require("persistence").load()
-end
-
--- auto save session
-AUTO_SESSION()
 
 -- Run auto forcus nvim tree
-vim.cmd([[
-    :NvimTreeFocus
-]])
+-- vim.cmd([[
+--     :NvimTreeFocus
+-- ]])
