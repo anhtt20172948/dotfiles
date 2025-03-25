@@ -214,6 +214,11 @@ vim.keymap.set("n", "<leader>qd", function() require("persistence").stop() end,
     { desc = "session won't be save when exit" })
 
 -- Run auto forcus nvim tree
--- vim.cmd([[
---     :NvimTreeFocus
--- ]])
+vim.cmd([[
+    :NvimTreeFocus
+]])
+
+
+require('mini.cursorword').setup({
+    delay = 100,
+})
