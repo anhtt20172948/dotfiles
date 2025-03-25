@@ -18,9 +18,12 @@ return {
             -- Add or skip adding a new cursor by matching word/selection
             set({ "n", "x" }, "<leader>/n", function() mc.matchAddCursor(1) end, { desc = "Add cursor at next match" })
             set({ "n", "x" }, "<leader>/s", function() mc.matchSkipCursor(1) end, { desc = "Skip cursor at next match" })
-            set({ "n", "x" }, "<leader>/N", function() mc.matchAddCursor(-1) end, { desc = "Add cursor at previous match" })
-            set({ "n", "x" }, "<leader>/S", function() mc.matchSkipCursor(-1) end, { desc =
-            "Skip cursor at previous match" })
+            set({ "n", "x" }, "<leader>/N", function() mc.matchAddCursor(-1) end,
+                { desc = "Add cursor at previous match" })
+            set({ "n", "x" }, "<leader>/S", function() mc.matchSkipCursor(-1) end, {
+                desc =
+                "Skip cursor at previous match"
+            })
 
             -- Add and remove cursors with control + left click.
             -- set("n", "<c-leftmouse>", mc.handleMouse)
