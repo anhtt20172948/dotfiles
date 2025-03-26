@@ -217,8 +217,3 @@ vim.keymap.set("n", "<leader>qd", function() require("persistence").stop() end,
 vim.cmd([[
     :NvimTreeFocus
 ]])
-
-
-require('mini.cursorword').setup({
-    delay = 100,
-})
