@@ -18,6 +18,7 @@ end
 
 -- enable inlay hints by default
 vim.lsp.inlay_hint.enable()
+vim.keymap.set('n', '<space>ca', vim.lsp.buf.code_action, {})
 
 lspconfig.ruff.setup({
     init_options = {
