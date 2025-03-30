@@ -9,9 +9,6 @@ return {
             bigfile = {
                 enabled = true
             },
-            dashboard = {
-                enabled = true
-            },
             explorer = {
                 enabled = false
             },
@@ -29,7 +26,9 @@ return {
                 timeout = 3000
             },
             picker = {
-                enabled = true
+                enabled = true,
+                -- hidden = false
+
             },
             quickfile = {
                 enabled = true
@@ -199,13 +198,15 @@ return {
                 Snacks.picker.buffers()
             end,
             desc = "Buffers"
-        }, {
-            "<leader>/",
-            function()
-                Snacks.picker.grep()
-            end,
-            desc = "Grep"
-        }, {
+        }
+        -- {
+        --     "<leader>/",
+        --     function()
+        --         Snacks.picker.grep()
+        --     end,
+        --     desc = "Grep"
+        -- },
+        , {
             "<leader>:",
             function()
                 Snacks.picker.command_history()
@@ -235,7 +236,15 @@ return {
         }, {
             "<leader>ff",
             function()
-                Snacks.picker.files()
+                Snacks.picker.files({
+                    finder = "files",
+                    format = "file",
+                    show_empty = true,
+                    hidden = true,
+                    ignored = true,
+                    follow = false,
+                    supports_live = true,
+                })
             end,
             desc = "Find Files"
         }, {
@@ -315,13 +324,19 @@ return {
         }, {
             "<leader>sg",
             function()
-                Snacks.picker.grep()
+                Snacks.picker.grep({
+                    hidden = true,
+                    ignored = true,
+                })
             end,
             desc = "Grep"
         }, {
             "<leader>sw",
             function()
-                Snacks.picker.grep_word()
+                Snacks.picker.grep_word({
+                    hidden = true,
+                    ignored = true,
+                })
             end,
             desc = "Visual selection or word",
             mode = { "n", "x" }
@@ -341,7 +356,7 @@ return {
         }, {
             "<leader>sa",
             function()
-                Snacks.picker.autocmds()
+                -- Snacks.picker.autocmds()
             end,
             desc = "Autocmds"
         }, {
