@@ -25,47 +25,6 @@ require("lazy").setup({
     { import = "plugins" },
 }, lazy_config)
 
--- nvim tree
-require("nvim-tree").setup {
-    update_focused_file = {
-        enable = true
-    },
-    filters = {
-        enable = true,
-        git_ignored = false,
-        dotfiles = false,
-        git_clean = false,
-        no_buffer = false,
-        no_bookmark = false,
-        custom = {},
-        exclude = {}
-    },
-    view = {
-        width = 50,
-    },
-
-}
-
--- copilot
-vim.keymap.set('i', '<S-Right>', 'copilot#Accept("\\<CR>")', {
-    expr = true,
-    replace_keycodes = false
-})
-vim.g.copilot_no_tab_map = true
-
-
--- load treesitter
-require 'nvim-treesitter.configs'.setup {
-    highlight = {
-        enable = true,
-        -- Setting this to true will run `:h syntax` and tree-sitter at the same time.
-        -- Set this to `true` if you depend on 'syntax' being enabled (like for indentation).
-        -- Using this option may slow down your editor, and you may see some duplicate highlights.
-        -- Instead of true it can also be a list of languages
-        additional_vim_regex_highlighting = false,
-    },
-}
-
 -- load theme
 vim.opt.termguicolors = true
 vim.cmd('colorscheme bluloco')
@@ -79,25 +38,6 @@ require "nvchad.autocmds"
 vim.schedule(function()
     require "mappings"
 end)
-
--- NVIM Menu
--- Keyboard users
-vim.keymap.set("n", "<C-t>", function()
-    require("menu").open("default")
-end, {})
-
--- mouse users + nvimtree users!
-vim.keymap.set({ "n", "v" }, "<RightMouse>", function()
-    require('menu.utils').delete_old_menus()
-
-    vim.cmd.exec '"normal! \\<RightMouse>"'
-
-    -- clicked buf
-    local buf = vim.api.nvim_win_get_buf(vim.fn.getmousepos().winid)
-    local options = vim.bo[buf].ft == "NvimTree" and "nvimtree" or "default"
-
-    require("menu").open(options, { mouse = true })
-end, {})
 
 -- Use system clipboard
 vim.opt.clipboard:append { "unnamed", "unnamedplus" }
