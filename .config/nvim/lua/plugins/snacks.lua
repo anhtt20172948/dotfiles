@@ -10,7 +10,7 @@ return {
                 enabled = true
             },
             explorer = {
-                enabled = false
+                enabled = true
             },
             git = {
                 enabled = true
@@ -27,7 +27,20 @@ return {
             },
             picker = {
                 enabled = true,
-                -- hidden = false
+                sources = {
+                    explorer = {
+                        enabled = true,
+                        hidden = true,
+                        auto_close = false,
+                        win = {
+                            list = {
+                                keys = {
+                                    ["O"] = { { "pick_win", "jump" }, mode = { "n", "i" } },
+                                },
+                            },
+                        },
+                    },
+                },
 
             },
             quickfile = {
@@ -198,15 +211,29 @@ return {
                 Snacks.picker.buffers()
             end,
             desc = "Buffers"
-        }
-        -- {
-        --     "<leader>/",
-        --     function()
-        --         Snacks.picker.grep()
-        --     end,
-        --     desc = "Grep"
-        -- },
-        , {
+        },
+            -- {
+            --     "<leader>/",
+            --     function()
+            --         Snacks.picker.grep()
+            --     end,
+            --     desc = "Grep"
+            -- },
+            {
+                "<leader>e",
+                function()
+                    Snacks.explorer({
+                        -- cwd = vim.fn.stdpath("config"),
+                        show_empty = true,
+                        hidden = true,
+                        ignored = true,
+                        follow = false,
+                        supports_live = true
+                    })
+                end,
+                desc = "File Explorer"
+            }
+            , {
             "<leader>:",
             function()
                 Snacks.picker.command_history()
