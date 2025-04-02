@@ -1,7 +1,8 @@
 return {
     {
         "folke/snacks.nvim",
-        commit = "2b52d89",
+        -- commit = "2b52d89",
+        tag = "v2.22.0",
         priority = 1000,
         lazy = false,
         ---@type snacks.Config
@@ -31,6 +32,8 @@ return {
                     explorer = {
                         enabled = true,
                         hidden = true,
+                        exclude = { ".svn", ".hg", ".DS_Store", ".idea", ".vscode", ".cache", ".sass-cache",
+                            ".history", ".gitignore", ".gitmodules", ".DS_Store", "node_modules", "vendor" },
                         auto_close = false,
                         win = {
                             list = {
