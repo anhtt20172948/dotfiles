@@ -38,7 +38,7 @@ return {
                         win = {
                             list = {
                                 keys = {
-                                    ["O"] = { { "pick_win", "jump" }, mode = { "n", "i" } },
+                                    ["<CR>"] = { { "pick_win", "jump" }, mode = { "n", "i" } },
                                 },
                             },
                         },
