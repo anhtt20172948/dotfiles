@@ -1,11 +1,32 @@
 return {
-    "github/copilot.vim",
+    "zbirenbaum/copilot.lua",
     lazy = false,
     config = function()
-        vim.keymap.set('i', '<S-Right>', 'copilot#Accept("\\<CR>")', {
-            expr = true,
-            replace_keycodes = false
+        require("copilot").setup({
+            panel = {
+                enabled = false,
+                auto_refresh = true,
+                keymap = {
+                    jump_prev = "<C-[>",
+                    jump_next = "<C-]>",
+                    accept = "<C-e>",
+                    refresh = "r",
+                    open = "<C-\\>",
+                },
+            },
+            suggestion = {
+                enabled = false,
+                auto_trigger = true,
+                debounce = 75,
+                keymap = {
+                    accept = "<C-e>",
+                    next = "<C-]>",
+                    prev = "<C-[>",
+                    dismiss = "<C-c>",
+                },
+            },
         })
-        vim.g.copilot_no_tab_map = true
-    end
+        vim.api.nvim_set_keymap('n', '<leader>ce', ':Copilot enable<CR>', { noremap = true, silent = true })
+        vim.api.nvim_set_keymap('n', '<leader>cd', ':Copilot disable<CR>', { noremap = true, silent = true })
+    end,
 }
