@@ -15,18 +15,18 @@ return {
 
                 -- Shared config starts here (can be passed to functions at runtime and configured via setup function)
 
-                system_prompt = 'COPILOT_INSTRUCTIONS', -- System prompt to use (can be specified manually in prompt via /).
+                system_prompt = 'You are an expert AI engineering assistant, specializing in Python and C++. You help with building, debugging, optimizing, and explaining AI and ML systems. Your responses are concise, accurate, and structured. Use clear formatting and code examples where appropriate.You are not just answering questions — you are a coding copilot.', -- System prompt to use (can be specified manually in prompt via /).
 
-                model = 'claude-3.7-sonnet-thought',    -- Default model to use, see ':CopilotChatModels' for available models (can be specified manually in prompt via $).
-                agent = 'copilot',                      -- Default agent to use, see ':CopilotChatAgents' for available agents (can be specified manually in prompt via @).
-                context = nil,                          -- Default context or array of contexts to use (can be specified manually in prompt via #).
-                sticky = nil,                           -- Default sticky prompt or array of sticky prompts to use at start of every new chat.
+                model = 'claude-3.7-sonnet-thought', -- Default model to use, see ':CopilotChatModels' for available models (can be specified manually in prompt via $).
+                agent = 'copilot', -- Default agent to use, see ':CopilotChatAgents' for available agents (can be specified manually in prompt via @).
+                context = nil, -- Default context or array of contexts to use (can be specified manually in prompt via #).
+                sticky = nil, -- Default sticky prompt or array of sticky prompts to use at start of every new chat.
 
-                temperature = 0.1,                      -- GPT result temperature
-                headless = false,                       -- Do not write to chat buffer and use history (useful for using custom processing)
-                stream = nil,                           -- Function called when receiving stream updates (returned string is appended to the chat buffer)
-                callback = nil,                         -- Function called when full response is received (retuned string is stored to history)
-                remember_as_sticky = true,              -- Remember model/agent/context as sticky prompts when asking questions
+                temperature = 0.1, -- GPT result temperature
+                headless = false, -- Do not write to chat buffer and use history (useful for using custom processing)
+                stream = nil, -- Function called when receiving stream updates (returned string is appended to the chat buffer)
+                callback = nil, -- Function called when full response is received (retuned string is stored to history)
+                remember_as_sticky = true, -- Remember model/agent/context as sticky prompts when asking questions
 
                 -- default selection
                 -- see select.lua for implementation
@@ -104,66 +104,12 @@ return {
                     },
                 },
 
-                -- default mappings
-                -- see config/mappings.lua for implementation
-                mappings = {
-                    complete = {
-                        insert = '<Tab>',
-                    },
-                    close = {
-                        normal = 'q',
-                        insert = '<C-c>',
-                    },
-                    reset = {
-                        normal = '<C-l>',
-                        insert = '<C-l>',
-                    },
-                    submit_prompt = {
-                        normal = '<CR>',
-                        insert = '<C-s>',
-                    },
-                    toggle_sticky = {
-                        normal = 'grr',
-                    },
-                    clear_stickies = {
-                        normal = 'grx',
-                    },
-                    accept_diff = {
-                        normal = '<C-y>',
-                        insert = '<C-y>',
-                    },
-                    jump_to_diff = {
-                        normal = 'gj',
-                    },
-                    quickfix_answers = {
-                        normal = 'gqa',
-                    },
-                    quickfix_diffs = {
-                        normal = 'gqd',
-                    },
-                    yank_diff = {
-                        normal = 'gy',
-                        register = '"', -- Default register to use for yanking
-                    },
-                    show_diff = {
-                        normal = 'gd',
-                        full_diff = false, -- Show full diff instead of unified diff when showing diff window
-                    },
-                    show_info = {
-                        normal = 'gi',
-                    },
-                    show_context = {
-                        normal = 'gc',
-                    },
-                    show_help = {
-                        normal = 'gh',
-                    },
-                },
             }
 
 
             vim.api.nvim_set_keymap('n', '<leader>cc', ':CopilotChatToggle <CR>', { noremap = true, silent = true })
             vim.api.nvim_set_keymap('n', '<leader>l', ':CopilotChatReset <CR>', { noremap = true, silent = true })
+            vim.api.nvim_set_keymap('i', '<S-Tab>', 'copilot#Accept("<Tab>")', { silent = true, expr = true })
         end,
         -- See Commands section for default commands if you want to lazy load on them
     },
