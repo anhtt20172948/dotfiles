@@ -20,6 +20,7 @@ end
 vim.lsp.inlay_hint.enable()
 vim.keymap.set('n', '<space>ca', vim.lsp.buf.code_action, {})
 
+local capabilities = require('blink.cmp').get_lsp_capabilities()
 lspconfig.ruff.setup({
     init_options = {
         settings = {
@@ -29,7 +30,8 @@ lspconfig.ruff.setup({
             },
             single_file_support = true
         }
-    }
+    },
+    capabilities = capabilities
 })
 lspconfig.pyright.setup {
     settings = {
@@ -44,6 +46,7 @@ lspconfig.pyright.setup {
             },
         },
     },
+    capabilities = capabilities
 }
 lspconfig.clangd.setup {
     cmd = { 'clangd', '--background-index', '--clang-tidy', '--log=verbose' },
@@ -57,7 +60,8 @@ lspconfig.clangd.setup {
             },
             fallbackFlags = { "-std=c++20" },
         },
-    }
+    },
+    capabilities = capabilities
 }
 
 lspconfig.lua_ls.setup {
