@@ -1,7 +1,7 @@
 return {
     { "nvzone/menu",                               enabled = true },
     { "github/copilot.vim",                        enabled = true },
-    { "tadaa/vimade",                              enabled = true },
+    { "tadaa/vimade",                              enabled = false },
     { "nvim-tree/nvim-tree.lua",                   enabled = false },
     { "MeanderingProgrammer/render-markdown.nvim", enabled = false },
     { "nvim-treesitter/nvim-treesitter",           enabled = true },
