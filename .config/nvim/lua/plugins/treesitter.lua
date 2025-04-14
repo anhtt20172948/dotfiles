@@ -1,8 +1,9 @@
 return { {
     "nvim-treesitter/nvim-treesitter",
+    dependencies = { "nvim-treesitter/nvim-treesitter-textobjects" },
     lazy = false,
     opts = {
-        ensure_installed = { "vim", "lua", "vimdoc", "python", "cpp" }
+        ensure_installed = { "vim", "lua", "vimdoc", "python", "cpp", "json", "yaml" }
     },
     config = function()
         require 'nvim-treesitter.configs'.setup {
