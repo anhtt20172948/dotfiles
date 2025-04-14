@@ -24,6 +24,7 @@ return {
             javascript = { "prettierd", "prettier", stop_after_first = true },
             cpp = { "clangd" },
             c = { "clangd" },
+            json = { "jq" },
         },
         -- Set default options
         default_format_opts = {
@@ -35,6 +36,9 @@ return {
         formatters = {
             shfmt = {
                 prepend_args = { "-i", "2" },
+            },
+            jq = {
+                args = { "--indent", "4" },
             },
         },
     },
