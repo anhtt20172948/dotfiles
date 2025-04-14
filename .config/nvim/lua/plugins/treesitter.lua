@@ -1,6 +1,7 @@
 return { {
     "nvim-treesitter/nvim-treesitter",
-    dependencies = { "nvim-treesitter/nvim-treesitter-textobjects" },
+    event = { "BufReadPre", "BufNewFile" },
+    build = ":TSUpdate",
     lazy = false,
     opts = {
         ensure_installed = { "vim", "lua", "vimdoc", "python", "cpp", "json", "yaml" }
