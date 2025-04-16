@@ -49,7 +49,7 @@ lspconfig.pyright.setup {
     capabilities = capabilities
 }
 lspconfig.clangd.setup {
-    cmd = { 'clangd', '--background-index', '--clang-tidy', '--log=verbose' },
+    cmd = { 'clangd', '--background-index', '--clang-tidy', '--log=verbose', "--offset-encoding=utf-16" },
     settings = {
         clangd = {
             InlayHints = {
