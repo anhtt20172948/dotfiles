@@ -1,3 +1,4 @@
+local icons = require('lib.icons')
 return {
     {
         "folke/snacks.nvim",
@@ -17,14 +18,71 @@ return {
                 enabled = true
             },
             indent = {
-                enabled = true
+                enabled = true,
+                priority = 1,
+                char = icons.ui.SeparatorLight,
+                only_scope = true,
+                only_current = true,
+                hl = {
+                    "SnacksIndent1",
+                    "SnacksIndent2",
+                    "SnacksIndent3",
+                    "SnacksIndent4",
+                    "SnacksIndent5",
+                    "SnacksIndent6",
+                    "SnacksIndent7",
+                    "SnacksIndent8",
+                },
+                scope = {
+                    enabled = true, -- enable highlighting the current scope
+                    priority = 200,
+                    char = "│",
+                    underline = false,    -- underline the start of the scope
+                    only_current = false, -- only show scope in the current window
+                    hl = "SnacksIndent5", ---@type string|string[] hl group for scopes
+                },
+                chunk = {
+                    -- when enabled, scopes will be rendered as chunks, except for the
+                    -- top-level scope which will be rendered as a scope.
+                    enabled = true,
+                    -- only show chunk scopes in the current window
+                    only_current = true,
+                    priority = 200,
+                    hl = "SnacksIndent5", ---@type string|string[] hl group for chunk scopes
+                    char = {
+                        corner_top = "┌ ",
+                        corner_bottom = "└",
+                        horizontal = "",
+                        vertical = "│",
+                        arrow = icons.ui.ArrowRight,
+                    },
+                },
+                animate = { enabled = true }, -- do not animate -- feels slow for me
             },
             input = {
                 enabled = true
             },
             notifier = {
                 enabled = true,
-                timeout = 3000
+                timeout = 2000,
+                width = { min = 40, max = 0.4 },
+                height = { min = 1, max = 0.6 },
+                margin = { top = 0, right = 1, bottom = 0 },
+                padding = true,
+                sort = { 'level', 'added' },
+                level = vim.log.levels.TRACE,
+                icons = {
+                    debug = icons.ui.Bug,
+                    error = icons.diagnostics.Error,
+                    info = icons.diagnostics.Information,
+                    trace = icons.ui.Bookmark,
+                    warn = icons.diagnostics.Warning,
+                },
+                style = 'compact',
+                top_down = true,
+                date_format = '%R',
+                more_format = ' ↓ %d lines ',
+                refresh = 50,
             },
             picker = {
                 enabled = true,
@@ -33,7 +91,7 @@ return {
                         enabled = true,
                         hidden = true,
                         exclude = { ".svn", ".hg", ".DS_Store", ".idea", ".vscode", ".cache", ".sass-cache",
-                            ".history", ".gitignore", ".gitmodules", ".DS_Store", "node_modules", "vendor" },
+                            ".history", ".gitignore", ".gitmodules", ".DS_Store", "node_modules", "vendor", ".clangd" },
                         auto_close = false,
                         win = {
                             list = {
@@ -42,6 +100,9 @@ return {
                                 },
                             },
                         },
+                    },
+                    icons = {
+                        icon_sources = { 'nerd_fonts', 'emoji' },
                     },
                 },
 
