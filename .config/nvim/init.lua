@@ -144,7 +144,7 @@ end
 --     :NvimTreeFocus
 -- ]])
 
---- CMP configuration 
+--- CMP configuration
 local cmp = require 'cmp'
 cmp.setup({
     sources = {
@@ -155,24 +155,24 @@ cmp.setup({
         { name = "path",     group_index = 2 },
         { name = "luasnip",  group_index = 2 },
     },
-     sorting = {
-    priority_weight = 2,
-    comparators = {
-      require("copilot_cmp.comparators").prioritize,
+    sorting = {
+        priority_weight = 2,
+        comparators = {
+            require("copilot_cmp.comparators").prioritize,
 
-      -- Below is the default comparitor list and order for nvim-cmp
-      cmp.config.compare.offset,
-      -- cmp.config.compare.scopes, --this is commented in nvim-cmp too
-      cmp.config.compare.exact,
-      cmp.config.compare.score,
-      cmp.config.compare.recently_used,
-      cmp.config.compare.locality,
-      cmp.config.compare.kind,
-      cmp.config.compare.sort_text,
-      cmp.config.compare.length,
-      cmp.config.compare.order,
-    },
-  }
+            -- Below is the default comparitor list and order for nvim-cmp
+            cmp.config.compare.offset,
+            -- cmp.config.compare.scopes, --this is commented in nvim-cmp too
+            cmp.config.compare.exact,
+            cmp.config.compare.score,
+            cmp.config.compare.recently_used,
+            cmp.config.compare.locality,
+            cmp.config.compare.kind,
+            cmp.config.compare.sort_text,
+            cmp.config.compare.length,
+            cmp.config.compare.order,
+        },
+    }
 })
 cmp.event:on("menu_opened", function()
     vim.b.copilot_suggestion_hidden = true
@@ -181,3 +181,31 @@ end)
 cmp.event:on("menu_closed", function()
     vim.b.copilot_suggestion_hidden = false
 end)
+
+-- transparent background
+vim.api.nvim_set_hl(0, 'Normal', { bg = 'none' })
+vim.api.nvim_set_hl(0, 'NormalFloat', { bg = 'none' })
+vim.api.nvim_set_hl(0, 'FloatBorder', { bg = 'none' })
+vim.api.nvim_set_hl(0, 'Pmenu', { bg = 'none' })
+vim.api.nvim_set_hl(0, 'Terminal', { bg = 'none' })
+vim.api.nvim_set_hl(0, 'EndOfBuffer', { bg = 'none' })
+vim.api.nvim_set_hl(0, 'FoldColumn', { bg = 'none' })
+vim.api.nvim_set_hl(0, 'Folded', { bg = 'none' })
+vim.api.nvim_set_hl(0, 'SignColumn', { bg = 'none' })
+
+-- transparent background for nvim-tree
+-- vim.api.nvim_set_hl(0, 'NvimTreeNormal', { bg = 'none' })
+-- vim.api.nvim_set_hl(0, 'NvimTreeVertSplit', { bg = 'none' })
+-- vim.api.nvim_set_hl(0, 'NvimTreeEndOfBuffer', { bg = 'none' })
+
+-- set hlsearch color
+vim.api.nvim_set_hl(0, 'Search', { bg = '#8BCD5B', fg = '#202020' })
+vim.api.nvim_set_hl(0, 'CurSearch', { bg = '#EFBD5D', fg = '#000000' })
+vim.api.nvim_set_hl(0, 'IncSearch', { bg = '#F15664', fg = '#000000' })
+
+-- set cursorline color
+vim.api.nvim_set_hl(0, 'CursorLine', { bg = '#1A1A1F' })
+vim.api.nvim_set_hl(0, 'CursorColumn', { bg = '#1A1A1F' })
+
+-- set visual highlight
+vim.api.nvim_set_hl(0, 'Visual', { bg = '#103070' })

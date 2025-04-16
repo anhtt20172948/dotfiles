@@ -8,5 +8,5 @@ return {
     { "echasnovski/mini.nvim",                     enabled = false },
     { "echasnovski/mini.icons",                    enabled = false },
     { "folke/persistence.nvim",                    enabled = true },
-    { "luukas-reineke/indent-blankline.nvim",      enabled = true },
+    { "luukas-reineke/indent-blankline.nvim",      enabled = false },
 }
