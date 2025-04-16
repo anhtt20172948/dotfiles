@@ -39,7 +39,7 @@ return {
                     char = "│",
                     underline = false,    -- underline the start of the scope
                     only_current = false, -- only show scope in the current window
-                    hl = "SnacksIndent5", ---@type string|string[] hl group for scopes
+                    hl = "SnacksPickerDelim", ---@type string|string[] hl group for scopes
                 },
                 chunk = {
                     -- when enabled, scopes will be rendered as chunks, except for the
@@ -48,7 +48,7 @@ return {
                     -- only show chunk scopes in the current window
                     only_current = true,
                     priority = 200,
-                    hl = "SnacksIndent5", ---@type string|string[] hl group for chunk scopes
+                    hl = "SnacksPickerDelim", ---@type string|string[] hl group for chunk scopes
                     char = {
                         corner_top = "┌ ",
                         corner_bottom = "└",
