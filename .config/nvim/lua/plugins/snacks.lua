@@ -57,7 +57,7 @@ return {
                         arrow = icons.ui.ArrowRight,
                     },
                 },
-                animate = { enabled = true }, -- do not animate -- feels slow for me
+                animate = { enabled = false }, -- do not animate -- feels slow for me
             },
             input = {
                 enabled = true
