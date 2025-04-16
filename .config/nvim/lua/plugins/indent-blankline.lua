@@ -27,7 +27,7 @@ return {
         end)
 
         return {
-            enabled = false,
+            enabled = true,
             indent = {
                 highlight = highlight,
                 char = "▏", -- Nice looking indent character
