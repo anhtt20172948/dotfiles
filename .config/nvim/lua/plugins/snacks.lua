@@ -114,7 +114,12 @@ return {
                 enabled = true
             },
             scroll = {
-                enabled = true
+                enabled = true,
+                animate = {
+                    duration = { step = 15, total = 500 },
+                    easing = "linear",
+                    fps = 75,
+                },
             },
             statuscolumn = {
                 enabled = true
