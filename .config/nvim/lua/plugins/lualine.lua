@@ -88,7 +88,7 @@ return {
             options = {
                 theme = my_lualine_theme,
                 component_separators = { left = "", right = "" },
-                section_separators = { left = " MAI   ANH ", right = "" },
+                section_separators = { left = "", right = "" },
 
             },
             sections = {
