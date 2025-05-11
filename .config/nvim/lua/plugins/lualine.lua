@@ -120,7 +120,6 @@ return {
                             return str:upper()
                         end,
                     },
-                    { "progress" },
                     {
                         "fileformat",
                         icons_enabled = true,
