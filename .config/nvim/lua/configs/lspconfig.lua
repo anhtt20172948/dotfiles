@@ -1,24 +1,17 @@
--- load defaults i.e lua_lsp
-require("nvchad.configs.lspconfig").defaults()
-
 local lspconfig = require "lspconfig"
-
--- EXAMPLE
-local servers = { "html", "cssls", "clangd", "lua_ls" }
-local nvlsp = require "nvchad.configs.lspconfig"
-
--- lsps with default config
-for _, lsp in ipairs(servers) do
-    lspconfig[lsp].setup {
-        on_attach = nvlsp.on_attach,
-        on_init = nvlsp.on_init,
-        capabilities = nvlsp.capabilities
-    }
-end
 
 -- enable inlay hints by default
 vim.lsp.inlay_hint.enable()
 vim.keymap.set('n', '<space>ca', vim.lsp.buf.code_action, {})
+
+local x = vim.diagnostic.severity
+
+vim.diagnostic.config {
+    virtual_text = { prefix = "" },
+    signs = { text = { [x.ERROR] = "󰅙", [x.WARN] = "", [x.INFO] = "󰋼", [x.HINT] = "󰌵" } },
+    underline = true,
+    float = { border = "single" },
+}
 
 local capabilities = require('blink.cmp').get_lsp_capabilities()
 lspconfig.ruff.setup({
@@ -37,14 +30,14 @@ lspconfig.pyright.setup {
     settings = {
         pyright = {
             -- Using Ruff's import organizer
-            disableOrganizeImports = true,
+            disableOrganizeImports = true
         },
         python = {
             analysis = {
                 -- Ignore all files for analysis to exclusively use Ruff for linting
-                ignore = { '*' },
-            },
-        },
+                ignore = { '*' }
+            }
+        }
     },
     capabilities = capabilities
 }
@@ -56,10 +49,10 @@ lspconfig.clangd.setup {
                 Designators = true,
                 Enabled = true,
                 ParameterNames = true,
-                DeducedTypes = true,
+                DeducedTypes = true
             },
-            fallbackFlags = { "-std=c++20" },
-        },
+            fallbackFlags = { "-std=c++20" }
+        }
     },
     capabilities = capabilities
 }
@@ -68,7 +61,8 @@ lspconfig.lua_ls.setup {
     on_init = function(client)
         if client.workspace_folders then
             local path = client.workspace_folders[1].name
-            if path ~= vim.fn.stdpath('config') and (vim.loop.fs_stat(path .. '/.luarc.json') or vim.loop.fs_stat(path .. '/.luarc.jsonc')) then
+            if path ~= vim.fn.stdpath('config') and
+                (vim.loop.fs_stat(path .. '/.luarc.json') or vim.loop.fs_stat(path .. '/.luarc.jsonc')) then
                 return
             end
         end
@@ -82,9 +76,7 @@ lspconfig.lua_ls.setup {
             -- Make the server aware of Neovim runtime files
             workspace = {
                 checkThirdParty = false,
-                library = {
-                    vim.env.VIMRUNTIME
-                    -- Depending on the usage, you might want to add additional paths here.
+                library = { vim.env.VIMRUNTIME -- Depending on the usage, you might want to add additional paths here.
                     -- "${3rd}/luv/library"
                     -- "${3rd}/busted/library",
                 }

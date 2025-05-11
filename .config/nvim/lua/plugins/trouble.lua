@@ -1,6 +1,7 @@
 return {
     {
         "folke/trouble.nvim",
+        dependencies = { "nvim-tree/nvim-web-devicons", "folke/todo-comments.nvim" },
         lazy = false,
         opts = {}, -- for default options, refer to the configuration section for custom setup.
         cmd = "Trouble",
@@ -23,7 +24,7 @@ return {
             {
                 "<leader>cl",
                 "<cmd>Trouble lsp toggle focus=true win.position=right<cr>",
-                desc = "LSP Definitions / references / ... (Trouble)",
+                desc = "Lsp Definitions / references / ... (Trouble)",
             },
             {
                 "<leader>xL",
@@ -35,6 +36,7 @@ return {
                 "<cmd>Trouble qflist toggle<cr>",
                 desc = "Quickfix List (Trouble)",
             },
+            { "<leader>xt", "<cmd>Trouble todo toggle<CR>", desc = "Open todos in trouble" },
         },
     }
 }
