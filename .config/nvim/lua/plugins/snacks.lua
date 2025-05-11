@@ -12,7 +12,12 @@ return {
                 enabled = true
             },
             explorer = {
-                enabled = true
+                enabled = false,
+                ---@class snacks.explorer.Config
+                {
+                    replace_netrw = true, -- Replace netrw with the snacks explorer
+                }
+
             },
             git = {
                 enabled = true
@@ -44,7 +49,7 @@ return {
                 chunk = {
                     -- when enabled, scopes will be rendered as chunks, except for the
                     -- top-level scope which will be rendered as a scope.
-                    enabled = true,
+                    enabled = false,
                     -- only show chunk scopes in the current window
                     only_current = true,
                     priority = 200,
@@ -114,10 +119,17 @@ return {
                 enabled = true
             },
             scroll = {
-                enabled = true
+                enabled = true,
+
+                animate = {
+                    duration = { step = 15, total = 200 },
+                    easing = "linear",
+                    -- fps = 60,
+                },
+
             },
             statuscolumn = {
-                enabled = true
+                enabled = false
             },
             words = {
                 enabled = true
@@ -283,27 +295,27 @@ return {
             --     end,
             --     desc = "Grep"
             -- },
+            -- {
+            --     "<leader>e",
+            --     function()
+            --         Snacks.explorer({
+            --             -- cwd = vim.fn.stdpath("config"),
+            --             show_empty = true,
+            --             hidden = true,
+            --             ignored = true,
+            --             follow = false,
+            --             supports_live = true
+            --         })
+            --     end,
+            --     desc = "File Explorer"
+            -- },
             {
-                "<leader>e",
+                "<leader>:",
                 function()
-                    Snacks.explorer({
-                        -- cwd = vim.fn.stdpath("config"),
-                        show_empty = true,
-                        hidden = true,
-                        ignored = true,
-                        follow = false,
-                        supports_live = true
-                    })
+                    Snacks.picker.command_history()
                 end,
-                desc = "File Explorer"
-            }
-            , {
-            "<leader>:",
-            function()
-                Snacks.picker.command_history()
-            end,
-            desc = "Command History"
-        }, {
+                desc = "Command History"
+            }, {
             "<leader>n",
             function()
                 Snacks.picker.notifications()
