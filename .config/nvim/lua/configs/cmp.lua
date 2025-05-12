@@ -69,7 +69,6 @@ local options = {
         { name = "luasnip" },
         { name = "buffer" },
         { name = "nvim_lua" },
-        { name = "path" },
     },
 }
 -- `/` cmdline setup.
