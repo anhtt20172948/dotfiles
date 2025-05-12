@@ -5,6 +5,6 @@ return {
     { "folke/persistence.nvim",          enabled = true },
     { "folke/noice.nvim",                enabled = true },
     { "nvim-lualine/lualine.nvim",       enabled = true },
-    { "akinsho/bufferline.nvim",         enabled = false },
+    { "akinsho/bufferline.nvim",         enabled = true },
     { "nvim-tree/nvim-tree.lua",         enabled = true }
 }
