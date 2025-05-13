@@ -20,7 +20,7 @@ include ./kitty-themes/custom_theme.conf
 #: <https://sw.kovidgoyal.net/kitty/kittens/choose-fonts/#font-spec-
 #: syntax>.
 
-font_size 9
+font_size 8
 
 #: Font size (in pts).
 
@@ -2665,14 +2665,8 @@ map kitty_mod+h previous_tab
 
 
 # BEGIN_KITTY_FONTS
-# font_family      family='JetBrainsMono Nerd Font' postscript_name=JetBrainsMonoNF-Bold
-# bold_font        family='JetBrainsMono Nerd Font' style=Bold
-# italic_font      family='JetBrainsMono Nerd Font' style=Bold
-# bold_italic_font family='JetBrainsMono Nerd Font' style=Bold
-
-font_family      family='SFMono Nerd Font' postscript_name=SFMonoNerdFontComplete-SemiBold
-bold_font        family='SFMono Nerd Font' style=Bold
-italic_font      family='SFMono Nerd Font' style=Bold
-bold_italic_font family='SFMono Nerd Font' style=Bold
-
+font_family      family="JetBrainsMono Nerd Font"
+bold_font        auto
+italic_font      auto
+bold_italic_font auto
 # END_KITTY_FONTS

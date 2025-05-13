@@ -2,7 +2,10 @@ local lspconfig = require "lspconfig"
 
 -- enable inlay hints by default
 vim.lsp.inlay_hint.enable()
-vim.keymap.set('n', '<space>ca', vim.lsp.buf.code_action, {})
+-- vim.keymap.set('n', '<space>ca', vim.lsp.buf.code_action, {})
+vim.keymap.set("n", "<leader>ca", function()
+	require("tiny-code-action").code_action()
+end, { noremap = true, silent = true })
 
 local x = vim.diagnostic.severity
 

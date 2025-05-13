@@ -115,3 +115,4 @@ if ! shopt -oq posix; then
 fi
 
 [ -f ~/.fzf.bash ] && source ~/.fzf.bash
+export LD_LIBRARY_PATH=${lib_dir}:$LD_LIBRARY_PATH
