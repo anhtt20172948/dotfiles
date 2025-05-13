@@ -38,14 +38,14 @@ config.colors = {
     scrollbar_thumb = '#222222'
 }
 config.font = wezterm.font_with_fallback({ {
-    family = "SF Mono",
+    family = "SFMono Nerd Font",
     scale = 1.0,
     -- weight = "Bold"
     weight = "ExtraBold"
 } })
 
 wezterm.on('gui-startup', function(cmd)
-    local hosts = { "rack", "strong", "jupyter", "jetson50", "jetson51", "jetson52", "jetson53" }
+    local hosts = { "rack", "strong", "jupyter", "jetson50", "jetson51", "jetson52", }
     local tab, pane, window = wezterm.mux.spawn_window(cmd or {})
 
     -- Create tabs for each host
@@ -339,23 +339,23 @@ config.keys = { {
     mods = 'CTRL|SHIFT',
     action = act.ActivateTabRelative(-1)
 },
--- {
---     key = 'k',
---     mods = 'CTRL',
---     action = act.ActivatePaneDirection 'Up'
--- }, {
---     key = 'l',
---     mods = 'CTRL',
---     action = act.ActivatePaneDirection 'Right'
--- }, {
---     key = 'j',
---     mods = 'CTRL',
---     action = act.ActivatePaneDirection 'Down'
--- }, {
---     key = 'h',
---     mods = 'CTRL',
---     action = act.ActivatePaneDirection 'Left'
--- },
+    -- {
+    --     key = 'k',
+    --     mods = 'CTRL',
+    --     action = act.ActivatePaneDirection 'Up'
+    -- }, {
+    --     key = 'l',
+    --     mods = 'CTRL',
+    --     action = act.ActivatePaneDirection 'Right'
+    -- }, {
+    --     key = 'j',
+    --     mods = 'CTRL',
+    --     action = act.ActivatePaneDirection 'Down'
+    -- }, {
+    --     key = 'h',
+    --     mods = 'CTRL',
+    --     action = act.ActivatePaneDirection 'Left'
+    -- },
 }
 
 config.enable_kitty_keyboard = true
