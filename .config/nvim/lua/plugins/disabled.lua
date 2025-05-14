@@ -6,5 +6,7 @@ return {
     { "folke/noice.nvim",                enabled = true },
     { "nvim-lualine/lualine.nvim",       enabled = true },
     { "akinsho/bufferline.nvim",         enabled = true },
-    { "nvim-tree/nvim-tree.lua",         enabled = true }
+    { "nvim-tree/nvim-tree.lua",         enabled = true },
+    { "ya2s/nvim-cursorline",             enabled = true },
+    { "rasulomaroff/reactive.nvim",       enabled = false}
 }
