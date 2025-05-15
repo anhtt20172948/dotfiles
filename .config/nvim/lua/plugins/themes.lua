@@ -147,6 +147,11 @@ return {
                     lsp_trouble = true,
                     which_key = true,
                     lsp_saga = true,
+                    diffview = true,
+                    grug_far = true,
+                    markdown = true,
+                    treesitter_context = true,
+                    rainbow_delimiters = true,
                     snacks = {
                         enabled = false,
                         indent_scope_color = "", -- catppuccin color (eg. `lavender`) Default: text
