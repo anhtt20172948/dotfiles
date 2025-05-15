@@ -37,6 +37,8 @@ return {
             },
             ui = {
                 kind = require("catppuccin.groups.integrations.lsp_saga").custom_kind(),
+                code_action = "💡",
+                lines = { '┗', '┣', '┃', '━', '┏' }
             },
 
             hover = {
@@ -67,7 +69,7 @@ return {
         map("n", "<leader>lf", ":Lspsaga finder<cr>", { desc = "LSP Finder", noremap = true, silent = true })
         map(
             "n",
-            "<leader>ld",
+            "gd",
             ":Lspsaga goto_definition<cr>",
             { desc = "Go To Definition", noremap = true, silent = true }
         )

@@ -571,26 +571,28 @@ return {
             end,
             desc = "Colorschemes"
         }, -- LSP
+            -- {
+            --     "gd",
+            --     function()
+            --         Snacks.picker.lsp_definitions()
+            --     end,
+            --     desc = "Goto Definition"
+            -- },
             {
-                "gd",
+                "gD",
                 function()
-                    Snacks.picker.lsp_definitions()
+                    Snacks.picker.lsp_declarations()
                 end,
-                desc = "Goto Definition"
+                desc = "Goto Declaration"
+            },
+            {
+                "gr",
+                function()
+                    Snacks.picker.lsp_references()
+                end,
+                nowait = true,
+                desc = "References"
             }, {
-            "gD",
-            function()
-                Snacks.picker.lsp_declarations()
-            end,
-            desc = "Goto Declaration"
-        }, {
-            "gr",
-            function()
-                Snacks.picker.lsp_references()
-            end,
-            nowait = true,
-            desc = "References"
-        }, {
             "gI",
             function()
                 Snacks.picker.lsp_implementations()
