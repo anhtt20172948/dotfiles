@@ -146,10 +146,14 @@ return {
                     notify = true,
                     lsp_trouble = true,
                     which_key = true,
-                    lsp_saga = false,
+                    lsp_saga = true,
                     snacks = {
-                        enabled = true,
+                        enabled = false,
                         indent_scope_color = "", -- catppuccin color (eg. `lavender`) Default: text
+                    },
+                    colorful_winsep = {
+                        enabled = false,
+                        color = "red",
                     },
                     native_lsp = {
                         enabled = true,

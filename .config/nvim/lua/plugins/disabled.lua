@@ -9,5 +9,6 @@ return {
     { "nvim-tree/nvim-tree.lua",         enabled = true },
     { "ya2s/nvim-cursorline",            enabled = true },
     { "rasulomaroff/reactive.nvim",      enabled = false },
-    { "jinh0/eyeliner.nvim",             enabled = true }
+    { "jinh0/eyeliner.nvim",             enabled = true },
+    { "mbbill/undotree",                 enabled = false }
 }
