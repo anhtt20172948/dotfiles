@@ -4,7 +4,7 @@ return {
     cond = has_git,
     cmd = { 'DiffviewOpen', 'DiffviewFileHistory' },
     keys = {
-        { '<leader>u',  '<cmd>DiffviewFileHistory %<CR>', desc = 'Diff File' },
+        { '<leader>gD', '<cmd>DiffviewFileHistory %<CR>', desc = 'Diff File' },
         { '<leader>gv', '<cmd>DiffviewOpen<CR>',          desc = 'Diff View' },
     },
     opts = function()
