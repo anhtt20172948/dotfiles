@@ -136,12 +136,12 @@ return {
                 lualine_z = {
                     { "location", separator = "" },
                     {
-                      function()
-                        return ""
-                      end,
-                      padding = { left = 0, right = 1 },
+                        function()
+                            return ""
+                        end,
+                        padding = { left = 0, right = 1 },
                     },
-                  }
+                }
             },
         })
     end,

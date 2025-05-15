@@ -8,6 +8,6 @@ return {
     { "akinsho/bufferline.nvim",         enabled = true },
     { "nvim-tree/nvim-tree.lua",         enabled = true },
     { "ya2s/nvim-cursorline",            enabled = true },
-    { "rasulomaroff/reactive.nvim",      enabled = false},
-    {"jinh0/eyeliner.nvim",              enabled = true}
+    { "rasulomaroff/reactive.nvim",      enabled = false },
+    { "jinh0/eyeliner.nvim",             enabled = true }
 }
