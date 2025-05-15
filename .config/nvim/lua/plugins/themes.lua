@@ -138,7 +138,17 @@ return {
           gitsigns = true,
           nvimtree = true,
           treesitter = true,
+          blink_cmp = true,
+          noice = true,
+          harpoon = true,
+          copilot_vim = true,
           notify = true,
+          lsp_trouble = true,
+          which_key = true,
+          snacks = {
+            enabled = true,
+            indent_scope_color = "", -- catppuccin color (eg. `lavender`) Default: text
+          },
           native_lsp = {
                 enabled = true,
                 virtual_text = {
