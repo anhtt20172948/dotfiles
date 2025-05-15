@@ -49,9 +49,17 @@ local M = {
 
         documentation = {
             border = "single",
-            winhighlight = "Normal:CmpDoc,FloatBorder:CmpDocBorder",
+            -- winhighlight = "Normal:CmpDoc,FloatBorder:CmpDocBorder",
+            winhighlight = "Normal:CmpDoc,FloatBorder:CmpDocBorder,CursorLine:Visual,Search:None",
         },
     },
+    view = {
+			entries = { name = "custom", selection_order = "near_cursor" },
+	},
+
+	experimental = {
+			ghost_text = true,
+	},
 }
 
 return M
