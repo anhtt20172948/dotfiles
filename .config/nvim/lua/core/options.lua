@@ -77,4 +77,4 @@ vim.opt.laststatus = 2
 vim.cmd("syntax enable")
 
 -- set cusorline
-vim.opt.cursorline = false
+vim.opt.cursorline = true
