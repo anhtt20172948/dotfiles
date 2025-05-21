@@ -4,7 +4,7 @@ require("configs.lazy")
 require("current-theme")
 
 -- to fix notice.nvim
-vim.o.lazyredraw = true
+vim.o.lazyredraw = false
 
 
 -- transparent background
