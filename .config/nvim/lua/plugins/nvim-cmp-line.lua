@@ -4,9 +4,7 @@ return {{
     config = function()
         local cmp = require("cmp")
         local config = cmp.get_config()
-        table.insert(config.sources, {
-            name = "path"
-        })
+
         table.insert(config.sources, {
             name = "cmdline",
             option = {
