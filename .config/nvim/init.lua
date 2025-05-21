@@ -4,7 +4,7 @@ require("configs.lazy")
 require("current-theme")
 
 -- to fix notice.nvim
-vim.o.lazyredraw = false
+vim.o.lazyredraw = true
 
 
 -- transparent background
@@ -23,7 +23,7 @@ vim.api.nvim_set_hl(0, 'CurSearch', { bg = '#EFBD5D', fg = '#000000' })
 vim.api.nvim_set_hl(0, 'IncSearch', { bg = '#F15664', fg = '#000000' })
 
 -- set cursorline color
-vim.api.nvim_set_hl(0, 'CursorLine', { bg = '#5c5c5c' })
+vim.api.nvim_set_hl(0, 'CursorLine', { bg = '#1b2f3b' })
 vim.api.nvim_set_hl(0, 'CursorColumn', { bg = '#1A1A1F' })
 
 -- set visual highlight
