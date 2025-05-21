@@ -71,13 +71,6 @@ local options = {
         { name = "nvim_lua" },
     },
 }
--- `/` cmdline setup.
-cmp.setup.cmdline('/', {
-    mapping = cmp.mapping.preset.cmdline(),
-    sources = {
-        { name = 'buffer' }
-    }
-})
 
 -- return options
 return vim.tbl_deep_extend("force", options, require "customize.cmp")
