@@ -2,7 +2,7 @@ local lspsaga = require "lspsaga"
 return {
     {
         'uloco/bluloco.nvim',
-        lazy = false,
+        lazy = true,
         priority = 1000,
         dependencies = { 'rktjmp/lush.nvim' },
         config = function()
@@ -153,11 +153,11 @@ return {
                     treesitter_context = true,
                     rainbow_delimiters = true,
                     snacks = {
-                        enabled = false,
+                        enabled = true,
                         indent_scope_color = "", -- catppuccin color (eg. `lavender`) Default: text
                     },
                     colorful_winsep = {
-                        enabled = false,
+                        enabled = true,
                         color = "red",
                     },
                     native_lsp = {
