@@ -1,6 +1,6 @@
 return { {
     "hrsh7th/cmp-cmdline",
-    event = "InsertEnter",
+    -- event = "InsertEnter",
     config = function()
         local cmp = require("cmp")
         local config = cmp.get_config()
@@ -31,7 +31,7 @@ return { {
     end
 }, {
     "dmitmel/cmp-cmdline-history",
-    event = "InsertEnter",
+    -- event = "InsertEnter",
     config = function()
         local cmp = require("cmp")
         local config = cmp.get_config()
