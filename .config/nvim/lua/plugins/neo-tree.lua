@@ -1,32 +1,56 @@
 return { -- If you want neo-tree's file operations to work with LSP (updating imports, etc.), you can use a plugin like
--- https://github.com/antosha417/nvim-lsp-file-operations:
-{
-    "antosha417/nvim-lsp-file-operations",
-    dependencies = {"nvim-lua/plenary.nvim", "nvim-neo-tree/neo-tree.nvim"},
-    config = function()
-        require("lsp-file-operations").setup()
-    end
-}, {
+    -- https://github.com/antosha417/nvim-lsp-file-operations:
+    {
+        "antosha417/nvim-lsp-file-operations",
+        dependencies = { "nvim-lua/plenary.nvim", "nvim-neo-tree/neo-tree.nvim" },
+        config = function()
+            require("lsp-file-operations").setup()
+        end
+    }, {
     "nvim-neo-tree/neo-tree.nvim",
     branch = "v3.x",
-    dependencies = {"nvim-lua/plenary.nvim", "nvim-tree/nvim-web-devicons", -- not strictly required, but recommended
-    "MunifTanjim/nui.nvim",
-    -- {"3rd/image.nvim", opts = {}}, -- Optional image support in preview window: See `# Preview Mode` for more information
-                    {
-        "s1n7ax/nvim-window-picker", -- for open_with_window_picker keymaps
-        version = "2.*",
-        config = function()
-            require("window-picker").setup({
-                hint = 'floating-big-letter'
-            })
-        end
-    }},
-    -- lazy = false,
+    dependencies = { "nvim-lua/plenary.nvim", "nvim-tree/nvim-web-devicons", -- not strictly required, but recommended
+        "MunifTanjim/nui.nvim",
+        -- {"3rd/image.nvim", opts = {}}, -- Optional image support in preview window: See `# Preview Mode` for more information
+        {
+            "s1n7ax/nvim-window-picker", -- for open_with_window_picker keymaps
+            version = "2.*",
+            config = function()
+                require("window-picker").setup({
+                    hint = 'floating-big-letter'
+                })
+            end
+        } },
+    lazy = false,
+    keys = {
+        {
+            "<leader>fE",
+            function()
+                require("neo-tree.command").execute({ toggle = true, dir = vim.uv.cwd() })
+            end,
+            desc = "Explorer NeoTree (cwd)",
+        },
+        { "<leader>e", "<Cmd>Neotree reveal<CR>", desc = "NeoTree reveal", remap = true },
+        {
+            "<leader>ge",
+            function()
+                require("neo-tree.command").execute({ source = "git_status", toggle = true })
+            end,
+            desc = "Git Explorer",
+        },
+        {
+            "<leader>be",
+            function()
+                require("neo-tree.command").execute({ source = "buffers", toggle = true })
+            end,
+            desc = "Buffer Explorer",
+        },
+    },
     -----Instead of using `config`, you can use `opts` instead, if you'd like:
     -----@module "neo-tree"
     -----@type neotree.Config
     -- opts = {},
-    config = function()
+    config = function(_, opts)
         -- If you want icons for diagnostic errors, you'll need to define them somewhere.
         -- In Neovim v0.10+, you can configure them in vim.diagnostic.config(), like:
         --
@@ -46,16 +70,35 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
         -- vim.fn.sign_define("DiagnosticSignWarn", { text = " ", texthl = "DiagnosticSignWarn" })
         -- vim.fn.sign_define("DiagnosticSignInfo", { text = " ", texthl = "DiagnosticSignInfo" })
         -- vim.fn.sign_define("DiagnosticSignHint", { text = "󰌵", texthl = "DiagnosticSignHint" })
+        local function on_move(data)
+            Snacks.rename.on_rename_file(data.source, data.destination)
+        end
+        local events = require("neo-tree.events")
+        opts.event_handlers = opts.event_handlers or {}
+        vim.list_extend(opts.event_handlers, {
+            { event = events.FILE_MOVED,   handler = on_move },
+            { event = events.FILE_RENAMED, handler = on_move },
+        })
+        require("neo-tree").setup(opts)
+        vim.api.nvim_create_autocmd("TermClose", {
+            pattern = "*lazygit",
+            callback = function()
+                if package.loaded["neo-tree.sources.git_status"] then
+                    require("neo-tree.sources.git_status").refresh()
+                end
+            end,
+        })
 
         require("neo-tree").setup({
             close_if_last_window = false, -- Close Neo-tree if it is the last window left in the tab
-            popup_border_style = "NC", -- or "" to use 'winborder' on Neovim v0.11+
+            popup_border_style = "NC",    -- or "" to use 'winborder' on Neovim v0.11+
             enable_git_status = true,
             enable_diagnostics = true,
-            open_files_do_not_replace_types = {"terminal", "trouble", "qf"}, -- when opening files, do not use windows containing these filetypes or buftypes
+            open_files_do_not_replace_types = { "terminal", "trouble", "qf" }, -- when opening files, do not use windows containing these filetypes or buftypes
             open_files_using_relative_paths = false,
-            sort_case_insensitive = false, -- used when sorting files and directories in the tree
-            sort_function = nil, -- use a custom function for sorting files and directories in the tree
+            sort_case_insensitive = true,                                      -- used when sorting files and directories in the tree
+            sort_function = nil,                                               -- use a custom function for sorting files and directories in the tree
+
             -- sort_function = function (a,b)
             --       if a.type == b.type then
             --           return a.path > b.path
@@ -63,6 +106,17 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
             --           return a.type > b.type
             --       end
             --   end , -- this sorts files and directories descendantly
+            source_selector = {
+                winbar = true, -- toggle to show,
+                show_scrolled_off_parent_node = true,
+                padding = { left = 1, right = 0 },
+                sources = {
+                    { source = 'filesystem', display_name = '  Files' }, --      
+                    { source = 'buffers', display_name = '  Buffers' }, --      
+                    { source = 'git_status', display_name = ' 󰊢 Git' }, -- 󰊢      
+                },
+            },
+
             default_component_configs = {
                 container = {
                     enable_character_fade = true
@@ -76,15 +130,20 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
                     last_indent_marker = "└",
                     highlight = "NeoTreeIndentMarker",
                     -- expander config, needed for nesting files
-                    with_expanders = nil, -- if nil and file nesting is enabled, will enable expanders
+                    with_expanders = true, -- if nil and file nesting is enabled, will enable expanders
                     expander_collapsed = "",
                     expander_expanded = "",
                     expander_highlight = "NeoTreeExpander"
                 },
+                modified = {
+                    symbol = '•',
+                    highlight = "NeoTreeModified"
+                },
                 icon = {
                     folder_closed = "",
                     folder_open = "",
-                    folder_empty = "󰜌",
+                    folder_empty = " ",
+                    -- Custom folder icons based on name
                     provider = function(icon, node, state) -- default icon provider utilizes nvim-web-devicons if available
                         if node.type == "file" or node.type == "terminal" then
                             local success, web_devicons = pcall(require, "nvim-web-devicons")
@@ -101,20 +160,16 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
                     default = "*",
                     highlight = "NeoTreeFileIcon"
                 },
-                modified = {
-                    symbol = "[+]",
-                    highlight = "NeoTreeModified"
-                },
                 name = {
                     trailing_slash = false,
                     use_git_status_colors = true,
-                    highlight = "NeoTreeFileName"
+                    highlight = "NeoTreeFileName",
                 },
                 git_status = {
                     symbols = {
                         -- Change type
-                        added = "", -- or "✚", but this is redundant info if you use git_status_colors on the name
-                        modified = "", -- or "", but this is redundant info if you use git_status_colors on the name
+                        added = "A", -- or "✚", but this is redundant info if you use git_status_colors on the name
+                        modified = "M", -- or "", but this is redundant info if you use git_status_colors on the name
                         deleted = "✖", -- this can only be used in the git_status source
                         renamed = "󰁕", -- this can only be used in the git_status source
                         -- Status type
@@ -128,22 +183,22 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
                 -- If you don't want to use these columns, you can set `enabled = false` for each of them individually
                 file_size = {
                     enabled = true,
-                    width = 12, -- width of the column
+                    width = 12,         -- width of the column
                     required_width = 64 -- min width of window required to show this column
                 },
                 type = {
                     enabled = true,
-                    width = 10, -- width of the column
+                    width = 10,          -- width of the column
                     required_width = 122 -- min width of window required to show this column
                 },
                 last_modified = {
                     enabled = true,
-                    width = 20, -- width of the column
+                    width = 20,         -- width of the column
                     required_width = 88 -- min width of window required to show this column
                 },
                 created = {
                     enabled = true,
-                    width = 20, -- width of the column
+                    width = 20,          -- width of the column
                     required_width = 110 -- min width of window required to show this column
                 },
                 symlink_target = {
@@ -185,7 +240,7 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
                     ["t"] = "open_tabnew",
                     -- ["<cr>"] = "open_drop",
                     -- ["t"] = "open_tab_drop",
-                    ["<cr>"] = "open_with_window_picker",
+                    ["o"] = "open_with_window_picker",
                     ["P"] = "toggle_preview", -- enter preview mode, which shows the current node without focusing
                     ["C"] = "close_node",
                     -- ['C'] = 'close_all_subnodes',
@@ -239,17 +294,17 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
             nesting_rules = {},
             filesystem = {
                 filtered_items = {
-                    visible = false, -- when true, they will just be displayed differently than normal items
+                    visible = true, -- when true, they will just be displayed differently than normal items
                     hide_dotfiles = false,
-                    hide_gitignored = true,
+                    hide_gitignored = false,
                     hide_hidden = true, -- only works on Windows for hidden files/directories
-                    hide_by_name = {"node_modules", ".git", ".hg", ".cache"},
+                    hide_by_name = { "node_modules", ".hg", ".cache", "__pycache__", ".DS_Store", "thumbs.db", ".vscode" },
                     hide_by_pattern = { -- uses glob style patterns
                         -- "*.meta",
                         -- "*/src/*/tsconfig.json",
                     },
                     always_show = { -- remains visible even if other settings would normally hide it
-                        -- ".gitignored",
+                        ".gitignored",
                     },
                     always_show_by_pattern = { -- uses glob style patterns
                         -- ".env*",
@@ -263,17 +318,17 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
                     }
                 },
                 follow_current_file = {
-                    enabled = true, -- This will find and focus the file in the active buffer every time
+                    enabled = true,                 -- This will find and focus the file in the active buffer every time
                     --               -- the current file is changed while the tree is open.
-                    leave_dirs_open = false -- `false` closes auto expanded dirs, such as with `:Neotree reveal`
+                    leave_dirs_open = false         -- `false` closes auto expanded dirs, such as with `:Neotree reveal`
                 },
-                group_empty_dirs = false, -- when true, empty folders will be grouped together
+                group_empty_dirs = true,            -- when true, empty folders will be grouped together
                 hijack_netrw_behavior = "disabled", -- netrw disabled, opening a directory opens neo-tree
                 -- in whatever position is specified in window.position
                 -- "open_current",  -- netrw disabled, opening a directory opens within the
                 -- window like netrw would, regardless of window.position
                 -- "disabled",    -- netrw left alone, neo-tree does not handle opening dirs
-                use_libuv_file_watcher = false, -- This will use the OS level file watchers to detect changes
+                use_libuv_file_watcher = true, -- This will use the OS level file watchers to detect changes
                 -- instead of relying on nvim autocmd events.
                 window = {
                     mappings = {
@@ -373,13 +428,43 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
                     end
                 } -- Add a custom command or override a global one using the same function name
             },
+
+            renderers = {
+                file = {
+                    { "indent" },
+                    { "icon" },
+                    {
+                        "container",
+                        content = {
+                            {
+                                "name",
+                                zindex = 10
+                            },
+                            {
+                                "symlink_target",
+                                zindex = 10,
+                                highlight = "NeoTreeSymbolicLinkTarget",
+                            },
+                            { "clipboard",     zindex = 10 },
+                            { "bufnr",         zindex = 10 },
+                            { "modified",      zindex = 20, align = "right" },
+                            { "diagnostics",   zindex = 20, align = "left" },
+                            { "git_status",    zindex = 10, align = "right" },
+                            { "file_size",     zindex = 10, align = "right" },
+                            { "type",          zindex = 10, align = "right" },
+                            { "last_modified", zindex = 10, align = "right" },
+                            { "created",       zindex = 10, align = "right" },
+                        },
+                    },
+                }
+            },
             buffers = {
                 follow_current_file = {
-                    enabled = true, -- This will find and focus the file in the active buffer every time
+                    enabled = true,         -- This will find and focus the file in the active buffer every time
                     --              -- the current file is changed while the tree is open.
                     leave_dirs_open = false -- `false` closes auto expanded dirs, such as with `:Neotree reveal`
                 },
-                group_empty_dirs = true, -- when true, empty folders will be grouped together
+                group_empty_dirs = true,    -- when true, empty folders will be grouped together
                 show_unloaded = true,
                 window = {
                     mappings = {
@@ -387,14 +472,14 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
                         ["bd"] = "buffer_delete",
                         ["<bs>"] = "navigate_up",
                         ["."] = "set_root",
-                        ["o"] = {
-                            "show_help",
-                            nowait = false,
-                            config = {
-                                title = "Order by",
-                                prefix_key = "o"
-                            }
-                        },
+                        -- ["o"] = {
+                        --     "show_help",
+                        --     nowait = false,
+                        --     config = {
+                        --         title = "Order by",
+                        --         prefix_key = "o"
+                        --     }
+                        -- },
                         ["oc"] = {
                             "order_by_created",
                             nowait = false
@@ -470,6 +555,6 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
             }
         })
 
-        vim.keymap.set("n", "<leader>e", "<Cmd>Neotree reveal<CR>")
+        -- vim.keymap.set("n", "<leader>e", "<Cmd>Neotree reveal<CR>")
     end
-}}
+} }

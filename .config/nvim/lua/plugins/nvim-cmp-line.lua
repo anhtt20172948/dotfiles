@@ -1,6 +1,6 @@
-return {{
+return { {
     "hrsh7th/cmp-cmdline",
-    -- event = "InsertEnter",
+    event = "InsertEnter",
     config = function()
         local cmp = require("cmp")
         local config = cmp.get_config()
@@ -8,7 +8,7 @@ return {{
         table.insert(config.sources, {
             name = "cmdline",
             option = {
-                ignore_cmds = {"Man", "!"}
+                ignore_cmds = { "Man", "!" }
             }
         })
         config.mapping = cmp.mapping.preset.cmdline()
@@ -23,15 +23,15 @@ return {{
             completion = {
                 completeopt = 'menu,menuone,noselect'
             },
-            sources = {{
+            sources = { {
                 name = "buffer"
-            }}
+            } }
         })
         cmp.setup(config)
     end
 }, {
     "dmitmel/cmp-cmdline-history",
-    -- event = "InsertEnter",
+    event = "InsertEnter",
     config = function()
         local cmp = require("cmp")
         local config = cmp.get_config()
@@ -45,4 +45,4 @@ return {{
         cmp.setup.cmdline(":", config)
         cmp.setup(config)
     end
-}}
+} }
