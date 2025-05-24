@@ -138,6 +138,7 @@ return {
                     cmp = true,
                     gitsigns = true,
                     nvimtree = true,
+                    neotree = true,
                     treesitter = true,
                     blink_cmp = true,
                     noice = true,
