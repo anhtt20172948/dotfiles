@@ -153,6 +153,8 @@ return {
                     markdown = true,
                     treesitter_context = true,
                     rainbow_delimiters = true,
+                    window_picker = true,
+                    mason = true,
                     snacks = {
                         enabled = true,
                         indent_scope_color = "", -- catppuccin color (eg. `lavender`) Default: text
