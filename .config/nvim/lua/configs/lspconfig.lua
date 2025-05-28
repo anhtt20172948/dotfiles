@@ -1,4 +1,4 @@
-local lspconfig = require "lspconfig"
+local lspconfig = require("lspconfig")
 
 -- enable inlay hints by default
 vim.lsp.inlay_hint.enable()
@@ -9,86 +9,89 @@ end, { noremap = true, silent = true })
 
 local x = vim.diagnostic.severity
 
-vim.diagnostic.config {
-    virtual_text = { prefix = "" },
-    signs = { text = { [x.ERROR] = "󰅙", [x.WARN] = "", [x.INFO] = "󰋼", [x.HINT] = "󰌵" } },
-    underline = true,
-    float = { border = "single" },
-}
-
-local capabilities = require('blink.cmp').get_lsp_capabilities()
-lspconfig.ruff.setup({
-    init_options = {
-        settings = {
-            -- Ruff language server settings go here
-            lint = {
-                preview = true
-            },
-            single_file_support = true
-        }
-    },
-    capabilities = capabilities
+vim.diagnostic.config({
+	virtual_text = { prefix = "" },
+	signs = { text = { [x.ERROR] = "󰅙", [x.WARN] = "", [x.INFO] = "󰋼", [x.HINT] = "󰌵" } },
+	underline = true,
+	float = { border = "single" },
 })
-lspconfig.pyright.setup {
-    settings = {
-        pyright = {
-            -- Using Ruff's import organizer
-            disableOrganizeImports = true
-        },
-        python = {
-            analysis = {
-                -- Ignore all files for analysis to exclusively use Ruff for linting
-                ignore = { '*' }
-            }
-        }
-    },
-    capabilities = capabilities
-}
-lspconfig.clangd.setup {
-    cmd = { 'clangd', '--background-index', '--clang-tidy', '--log=verbose', "--offset-encoding=utf-16" },
-    settings = {
-        clangd = {
-            InlayHints = {
-                Designators = true,
-                Enabled = true,
-                ParameterNames = true,
-                DeducedTypes = true
-            },
-            fallbackFlags = { "-std=c++20" }
-        }
-    },
-    capabilities = capabilities
-}
 
-lspconfig.lua_ls.setup {
-    on_init = function(client)
-        if client.workspace_folders then
-            local path = client.workspace_folders[1].name
-            if path ~= vim.fn.stdpath('config') and
-                (vim.loop.fs_stat(path .. '/.luarc.json') or vim.loop.fs_stat(path .. '/.luarc.jsonc')) then
-                return
-            end
-        end
+local capabilities = require("blink.cmp").get_lsp_capabilities()
+lspconfig.ruff.setup({
+	init_options = {
+		settings = {
+			-- Ruff language server settings go here
+			lint = {
+				preview = true,
+			},
+			single_file_support = true,
+		},
+	},
+	capabilities = capabilities,
+})
+lspconfig.pyright.setup({
+	settings = {
+		pyright = {
+			-- Using Ruff's import organizer
+			disableOrganizeImports = true,
+		},
+		python = {
+			analysis = {
+				-- Ignore all files for analysis to exclusively use Ruff for linting
+				ignore = { "*" },
+			},
+		},
+	},
+	capabilities = capabilities,
+})
+lspconfig.clangd.setup({
+	cmd = { "clangd", "--background-index", "--clang-tidy", "--log=verbose", "--offset-encoding=utf-16" },
+	settings = {
+		clangd = {
+			InlayHints = {
+				Designators = true,
+				Enabled = true,
+				ParameterNames = true,
+				DeducedTypes = true,
+			},
+			fallbackFlags = { "-std=c++20" },
+		},
+	},
+	capabilities = capabilities,
+})
 
-        client.config.settings.Lua = vim.tbl_deep_extend('force', client.config.settings.Lua, {
-            runtime = {
-                -- Tell the language server which version of Lua you're using
-                -- (most likely LuaJIT in the case of Neovim)
-                version = 'LuaJIT'
-            },
-            -- Make the server aware of Neovim runtime files
-            workspace = {
-                checkThirdParty = false,
-                library = { vim.env.VIMRUNTIME -- Depending on the usage, you might want to add additional paths here.
-                    -- "${3rd}/luv/library"
-                    -- "${3rd}/busted/library",
-                }
-                -- or pull in all of 'runtimepath'. NOTE: this is a lot slower and will cause issues when working on your own configuration (see https://github.com/neovim/nvim-lspconfig/issues/3189)
-                -- library = vim.api.nvim_get_runtime_file("", true)
-            }
-        })
-    end,
-    settings = {
-        Lua = {}
-    }
-}
+lspconfig.lua_ls.setup({
+	on_init = function(client)
+		if client.workspace_folders then
+			local path = client.workspace_folders[1].name
+			if
+				path ~= vim.fn.stdpath("config")
+				and (vim.loop.fs_stat(path .. "/.luarc.json") or vim.loop.fs_stat(path .. "/.luarc.jsonc"))
+			then
+				return
+			end
+		end
+
+		client.config.settings.Lua = vim.tbl_deep_extend("force", client.config.settings.Lua, {
+			runtime = {
+				-- Tell the language server which version of Lua you're using
+				-- (most likely LuaJIT in the case of Neovim)
+				version = "LuaJIT",
+			},
+			-- Make the server aware of Neovim runtime files
+			workspace = {
+				checkThirdParty = false,
+				library = {
+					vim.env.VIMRUNTIME, -- Depending on the usage, you might want to add additional paths here.
+					-- "${3rd}/luv/library"
+					-- "${3rd}/busted/library",
+				},
+				-- or pull in all of 'runtimepath'. NOTE: this is a lot slower and will cause issues when working on your own configuration (see https://github.com/neovim/nvim-lspconfig/issues/3189)
+				-- library = vim.api.nvim_get_runtime_file("", true)
+			},
+		})
+	end,
+	settings = {
+		Lua = {},
+	},
+})
