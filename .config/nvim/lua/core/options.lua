@@ -1,11 +1,10 @@
 vim.opt.fillchars = { eob = " " }
 
-
 -- undo history
 vim.opt.undofile = true
 
 -- Use system clipboard
-vim.opt.clipboard:append { "unnamed", "unnamedplus" }
+vim.opt.clipboard:append({ "unnamed", "unnamedplus" })
 vim.opt.undofile = true
 
 -- Tab and indent
@@ -13,8 +12,8 @@ vim.opt.expandtab = true
 vim.opt.smarttab = true
 vim.opt.shiftwidth = 4
 vim.opt.tabstop = 4
-vim.opt.ai = true   -- Auto indent
-vim.opt.si = true   -- Smart indent
+vim.opt.ai = true -- Auto indent
+vim.opt.si = true -- Smart indent
 vim.opt.wrap = true -- Wrap lines
 
 -- Set relative number
@@ -44,7 +43,6 @@ vim.g.os = vim.loop.os_uname().sysname
 -- Get ~ directory path
 HOME = os.getenv("HOME")
 --}}}
-
 
 ------------------------------------------------------------------------------
 -- {{{ => UI
