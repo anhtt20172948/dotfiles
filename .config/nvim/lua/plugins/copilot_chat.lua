@@ -7,21 +7,13 @@ return {
 			{ "nvim-lua/plenary.nvim", branch = "master" }, -- for curl, log and async functions
 		},
 		build = "make tiktoken", -- Only on MacOS or Linux
-		opts = function()
+		config = function()
 			local user = vim.env.USER or "User"
 			user = user:sub(1, 1):upper() .. user:sub(2)
-			return {
-				auto_insert_mode = true,
-				question_header = "  " .. user .. " ",
-				answer_header = "  Copilot ",
-				window = {
-					width = 0.4,
-				},
-			}
-		end,
-		config = function()
 			require("CopilotChat").setup({
 
+				question_header = "  " .. user .. " ",
+				answer_header = "  Copilot ",
 				-- Shared config starts here (can be passed to functions at runtime and configured via setup function)
 
 				system_prompt = "You are an expert AI engineering assistant, specializing in Python and C++. You help with building, debugging, optimizing, and explaining AI and ML systems. Your responses are concise, accurate, and structured. Use clear formatting and code examples where appropriate.You are not just answering questions — you are a coding copilot.", -- System prompt to use (can be specified manually in prompt via /).
@@ -79,8 +71,6 @@ return {
 				log_path = vim.fn.stdpath("state") .. "/CopilotChat.log", -- Default path to log file
 				history_path = vim.fn.stdpath("data") .. "/copilotchat_history", -- Default path to stored history
 
-				question_header = "# User ", -- Header to use for user questions
-				answer_header = "# Copilot ", -- Header to use for AI answers
 				error_header = "# Error ", -- Header to use for errors
 				separator = "───", -- Separator to use in chat
 
