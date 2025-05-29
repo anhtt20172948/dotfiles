@@ -332,7 +332,7 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 					follow_current_file = {
 						enabled = true, -- This will find and focus the file in the active buffer every time
 						--               -- the current file is changed while the tree is open.
-						leave_dirs_open = false, -- `false` closes auto expanded dirs, such as with `:Neotree reveal`
+						leave_dirs_open = true, -- `false` closes auto expanded dirs, such as with `:Neotree reveal`
 					},
 					group_empty_dirs = true, -- when true, empty folders will be grouped together
 					hijack_netrw_behavior = "disabled", -- netrw disabled, opening a directory opens neo-tree
@@ -567,7 +567,7 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 				},
 			})
 
-			-- vim.keymap.set("n", "<leader>e", "<Cmd>Neotree reveal<CR>")
+			vim.keymap.set("n", "<leader>e", "<Cmd>Neotree reveal<CR>")
 		end,
 	},
 }
