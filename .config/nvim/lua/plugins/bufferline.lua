@@ -48,23 +48,23 @@ return {
 		},
 	},
 	config = function(_, opts)
-		-- local mocha = require("catppuccin.palettes").get_palette("mocha")
-		-- require("bufferline").setup({
-		-- 	highlights = require("catppuccin.groups.integrations.bufferline").get({
-		-- 		styles = { "italic", "bold" },
-		-- 		custom = {
-		-- 			all = {
-		-- 				fill = { bg = "#000000" },
-		-- 			},
-		-- 			mocha = {
-		-- 				background = { fg = mocha.text },
-		-- 			},
-		-- 			latte = {
-		-- 				background = { fg = "#000000" },
-		-- 			},
-		-- 		},
-		-- 	}),
-		-- })
+		local mocha = require("catppuccin.palettes").get_palette("mocha")
+		require("bufferline").setup({
+			highlights = require("catppuccin.groups.integrations.bufferline").get({
+				styles = { "italic", "bold" },
+				custom = {
+					all = {
+						fill = { bg = "#000000" },
+					},
+					mocha = {
+						background = { fg = mocha.text },
+					},
+					latte = {
+						background = { fg = "#000000" },
+					},
+				},
+			}),
+		})
 		require("bufferline").setup(opts)
 		-- Fix bufferline when restoring a session
 		vim.api.nvim_create_autocmd({ "BufAdd", "BufDelete" }, {
