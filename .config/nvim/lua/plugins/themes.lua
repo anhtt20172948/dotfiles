@@ -21,7 +21,7 @@ return {
 	{
 		"catppuccin/nvim",
 		name = "catppuccin",
-		lazy = false,
+		lazy = true,
 		priority = 1000,
 		config = function()
 			require("catppuccin").setup({
@@ -156,12 +156,20 @@ return {
 					window_picker = true,
 					mason = true,
 					snacks = {
-						enabled = true,
+						enabled = false,
 						indent_scope_color = "", -- catppuccin color (eg. `lavender`) Default: text
+					},
+					telescope = {
+						enabled = true,
+					},
+					indent_blankline = {
+						enabled = true,
+						scope_color = "lavender", -- catppuccin color (eg. `lavender`) Default: text
+						colored_indent_levels = false,
 					},
 					colorful_winsep = {
 						enabled = true,
-						color = "red",
+						color = "lavender",
 					},
 					native_lsp = {
 						enabled = true,
@@ -184,6 +192,77 @@ return {
 						},
 					},
 				},
+			})
+		end,
+	},
+	{
+		"folke/tokyonight.nvim",
+		lazy = true,
+		priority = 1000,
+		opts = function()
+			require("tokyonight").setup({
+				style = "night",
+				transparent = true, -- Enable this to disable setting the background color
+				styles = {
+					-- Style to be applied to different syntax groups
+					-- Value is any valid attr-list value `:help attr-list`
+					comments = "NONE",
+					keywords = "italic",
+					functions = "NONE",
+					variables = "NONE",
+					-- Background styles. Can be "dark", "transparent" or "normal"
+					sidebars = vim.g.neovide and "dark" or "dark", -- style for sidebars, see below
+					floats = vim.g.neovide and "dark" or "dark", -- style for floating windows
+				},
+				sidebars = { "qf", "help", "snacks_layout_box", "snacks_picker_list" }, -- Set a darker background on sidebar-like windows. For example: `["qf", "vista_kind", "terminal", "packer"]`
+				day_brightness = 0.3, -- Adjusts the brightness of the colors of the **Day** style. Number between 0 and 1, from dull to vibrant colors
+				hide_inactive_statusline = false, -- Enabling this option, will hide inactive statuslines and replace them with a thin border instead. Should work with the standard **StatusLine** and **LuaLine**.
+				dim_inactive = false, -- dims inactive windows
+				lualine_bold = false, -- When `true`, section headers in the lualine theme will be bold
+
+				cache = true, -- When set to true, the theme will be cached for better performance
+				---@type table<string, boolean|{enabled:boolean}>
+				plugins = {
+					-- enable all plugins when not using lazy.nvim
+					-- set to false to manually enable/disable plugins
+					all = package.loaded.lazy == nil,
+					-- uses your plugin manager to automatically enable needed plugins
+					-- currently only lazy.nvim is supported
+					auto = true,
+					-- add any plugins here that you want to enable
+					-- for all possible plugins, see:
+					--   * https://github.com/folke/tokyonight.nvim/tree/main/lua/tokyonight/groups
+				},
+				on_highlights = function(hl, c)
+					local prompt = "#2d3149"
+					hl.TelescopeNormal = {
+						bg = c.bg_dark,
+						fg = c.fg_dark,
+					}
+					hl.TelescopeBorder = {
+						bg = c.bg_dark,
+						fg = c.bg_dark,
+					}
+					hl.TelescopePromptNormal = {
+						bg = prompt,
+					}
+					hl.TelescopePromptBorder = {
+						bg = prompt,
+						fg = prompt,
+					}
+					hl.TelescopePromptTitle = {
+						bg = prompt,
+						fg = prompt,
+					}
+					hl.TelescopePreviewTitle = {
+						bg = c.bg_dark,
+						fg = c.bg_dark,
+					}
+					hl.TelescopeResultsTitle = {
+						bg = c.bg_dark,
+						fg = c.bg_dark,
+					}
+				end,
 			})
 		end,
 	},

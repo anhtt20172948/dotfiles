@@ -140,6 +140,18 @@ return {
 					},
 				},
 			},
+			extensions = {
+				"lazy",
+				"man",
+				"mason",
+				"nvim-dap-ui",
+				"overseer",
+				"quickfix",
+				"toggleterm",
+				"trouble",
+				"neo-tree",
+				"symbols-outline",
+			},
 		})
 	end,
 }
