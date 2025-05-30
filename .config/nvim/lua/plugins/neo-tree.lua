@@ -215,7 +215,7 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 				commands = {},
 				window = {
 					position = "left",
-					width = 40,
+					width = 45,
 					mapping_options = {
 						noremap = true,
 						nowait = true,
