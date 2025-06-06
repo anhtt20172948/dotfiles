@@ -310,6 +310,7 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 							".DS_Store",
 							"thumbs.db",
 							".vscode",
+							".cache",
 						},
 						hide_by_pattern = { -- uses glob style patterns
 							-- "*.meta",

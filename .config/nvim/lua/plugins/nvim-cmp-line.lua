@@ -6,12 +6,12 @@ return {
 			local cmp = require("cmp")
 			local config = cmp.get_config()
 
-			table.insert(config.sources, {
-				name = "cmdline",
-				option = {
-					ignore_cmds = { "Man", "!" },
-				},
-			})
+			-- table.insert(config.sources, {
+			-- 	name = "cmdline",
+			-- 	option = {
+			-- 		ignore_cmds = { "Man", "!" },
+			-- 	},
+			-- })
 			config.mapping = cmp.mapping.preset.cmdline()
 			config.completion = {
 				completeopt = "menu,menuone,noselect",
