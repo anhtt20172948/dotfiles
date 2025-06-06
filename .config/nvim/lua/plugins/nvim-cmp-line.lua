@@ -12,12 +12,27 @@ return {
 			-- 		ignore_cmds = { "Man", "!" },
 			-- 	},
 			-- })
-			config.mapping = cmp.mapping.preset.cmdline()
-			config.completion = {
-				completeopt = "menu,menuone,noselect",
-			}
+			-- config.mapping = cmp.mapping.preset.cmdline()
+			-- config.completion = {
+			-- 	completeopt = "menu,menuone,noselect",
+			-- }
 			-- `:` cmdline setup.
-			cmp.setup.cmdline(":", config)
+			-- cmp.setup.cmdline(":", config)
+			cmp.setup.cmdline(":", {
+				mapping = cmp.mapping.preset.cmdline(),
+				completion = {
+					completeopt = "menu,menuone,noselect",
+				},
+				sources = cmp.config.sources({
+					{ name = "path" },
+					{
+						name = "cmdline",
+						option = {
+							ignore_cmds = { "Man", "!" },
+						},
+					},
+				}),
+			})
 			-- `/` cmdline setup.
 			cmp.setup.cmdline("/", {
 				mapping = cmp.mapping.preset.cmdline(),
