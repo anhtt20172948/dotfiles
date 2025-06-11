@@ -67,7 +67,12 @@ return {
 		-- keymaps
 		map("n", "<leader>lk", ":Lspsaga hover_doc<cr>", { desc = "Hover Docs", noremap = true, silent = true })
 		map("n", "<leader>lf", ":Lspsaga finder<cr>", { desc = "LSP Finder", noremap = true, silent = true })
-		map("n", "gd", ":Lspsaga goto_definition<cr>", { desc = "Go To Definition", noremap = true, silent = true })
+		map(
+			"n",
+			"<leader>ld",
+			":Lspsaga goto_definition<cr>",
+			{ desc = "Go To Definition", noremap = true, silent = true }
+		)
 		map(
 			"n",
 			"<leader>lp",
