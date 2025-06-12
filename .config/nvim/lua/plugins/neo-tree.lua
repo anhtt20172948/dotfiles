@@ -325,6 +325,7 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 						never_show = { -- remains hidden even if visible is toggled to true, this overrides always_show
 							-- ".DS_Store",
 							-- "thumbs.db"
+							".cache",
 						},
 						never_show_by_pattern = { -- uses glob style patterns
 							-- ".null-ls_*",
