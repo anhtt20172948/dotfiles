@@ -83,9 +83,9 @@ return {
 				buffer = {
 					name = "Buffer",
 					enabled = true,
-					max_items = 3,
+					max_items = 10,
 					module = "blink.cmp.sources.buffer",
-					min_keyword_length = 2,
+					min_keyword_length = 1,
 					score_offset = 15, -- the higher the number, the higher the priority
 				},
 				snippets = {
