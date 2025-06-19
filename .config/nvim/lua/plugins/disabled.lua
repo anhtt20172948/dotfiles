@@ -18,4 +18,18 @@ return {
 	{ "rasulomaroff/reactive.nvim", enabled = false },
 	{ "jinh0/eyeliner.nvim", enabled = true },
 	{ "mbbill/undotree", enabled = true },
+	--- cmp
+	{ "hrsh7th/nvim-cmp", enabled = false },
+	{ "hrsh7th/cmp-nvim-lsp", enabled = false },
+	{ "hrsh7th/cmp-buffer", enabled = false },
+	{ "hrsh7th/cmp-path", enabled = false },
+	{ "hrsh7th/cmp-cmdline", enabled = false },
+	{ "hrsh7th/cmp-nvim-lua", enabled = false },
+	{
+		"dmitmel/cmp-cmdline-history",
+		enabled = false,
+	},
+	{ "zbirenbaum/copilot-cmp", enabled = false },
+	-- blink cmp
+	{ "saghen/blink.cmp", enabled = true },
 }

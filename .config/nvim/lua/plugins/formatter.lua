@@ -22,6 +22,7 @@ return {
 			lua = { "stylua" },
 			python = { "black" },
 			javascript = { "prettierd", "prettier", stop_after_first = true },
+			typescript = { "prettierd", "prettier", stop_after_first = true },
 			cpp = { "clangd" },
 			c = { "clangd" },
 			json = { "jq" },
