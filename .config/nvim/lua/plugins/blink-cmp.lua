@@ -83,7 +83,7 @@ return {
 				buffer = {
 					name = "Buffer",
 					enabled = true,
-					max_items = 10,
+					max_items = 20,
 					module = "blink.cmp.sources.buffer",
 					min_keyword_length = 1,
 					score_offset = 15, -- the higher the number, the higher the priority
@@ -210,6 +210,9 @@ return {
 					},
 				},
 			},
+			trigger = {
+				show_on_insert_on_trigger_character = false,
+			},
 			keyword = {
 				-- 'prefix' will fuzzy match on the text before the cursor
 				-- 'full' will fuzzy match on the text before *and* after the cursor
@@ -220,6 +223,8 @@ return {
 				border = "rounded", -- or "single", "double", "rounded", "solid", "shadow"
 				-- The menu is the completion popup, so this is the border of the popup
 				-- and not the documentation popup
+				min_width = 50, -- Minimum width of the completion menu
+				max_height = 30, -- Maximum height of the completion menu
 				cmdline_position = function()
 					if vim.g.ui_cmdline_pos ~= nil then
 						local pos = vim.g.ui_cmdline_pos -- (1, 0)-indexed
