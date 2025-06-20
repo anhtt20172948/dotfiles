@@ -225,6 +225,7 @@ return {
 				-- and not the documentation popup
 				min_width = 50, -- Minimum width of the completion menu
 				max_height = 30, -- Maximum height of the completion menu
+				scrollbar = false,
 				cmdline_position = function()
 					if vim.g.ui_cmdline_pos ~= nil then
 						local pos = vim.g.ui_cmdline_pos -- (1, 0)-indexed
