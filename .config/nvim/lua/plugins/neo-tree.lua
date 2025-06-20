@@ -326,6 +326,10 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 							-- ".DS_Store",
 							-- "thumbs.db"
 							".cache",
+							".vscode",
+							"__pycache__",
+							"node_modules",
+							".venv",
 						},
 						never_show_by_pattern = { -- uses glob style patterns
 							-- ".null-ls_*",
