@@ -34,7 +34,7 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 				end,
 				desc = "Explorer NeoTree (cwd)",
 			},
-			{ "<leader>e", "<Cmd>Neotree reveal<CR>", desc = "NeoTree reveal", remap = true },
+			-- { "<leader>e", "<Cmd>Neotree reveal<CR>", desc = "NeoTree reveal", remap = true },
 			{
 				"<leader>ge",
 				function()
