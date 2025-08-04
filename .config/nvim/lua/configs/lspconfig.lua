@@ -60,6 +60,15 @@ lspconfig.clangd.setup({
 	capabilities = capabilities,
 })
 
+lspconfig.ts_ls.setup({
+	capabilities = capabilities,
+	-- Disable ts_ls's built-in formatting
+	on_attach = function(client)
+		client.server_capabilities.documentFormattingProvider = false
+		client.server_capabilities.documentRangeFormattingProvider = false
+	end,
+})
+
 lspconfig.lua_ls.setup({
 	on_init = function(client)
 		if client.workspace_folders then
