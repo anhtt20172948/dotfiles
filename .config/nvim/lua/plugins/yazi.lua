@@ -33,6 +33,8 @@ return ---@type LazySpec
 		keymaps = {
 			show_help = "<f1>",
 		},
+		floating_window_scaling_factor = 1,
+		-- yazi_floating_window_border = "none",
 	},
 	-- 👇 if you use `open_for_directories=true`, this is recommended
 	init = function()
