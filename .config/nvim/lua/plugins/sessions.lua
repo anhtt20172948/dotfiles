@@ -17,7 +17,7 @@ return {
 		---@module "auto-session"
 		---@type AutoSession.Config
 		dependencies = { "nvim-telescope/telescope.nvim" },
-
+		tag = "v2.5.1",
 		lazy = false,
 		opts = {
 			-- ⚠️ This will only work if Telescope.nvim is installed
