@@ -32,4 +32,6 @@ return {
 	{ "zbirenbaum/copilot-cmp", enabled = false },
 	-- blink cmp
 	{ "saghen/blink.cmp", enabled = true },
+
+	{ "nvim-zh/colorful-winsep.nvim", enabled = false },
 }
