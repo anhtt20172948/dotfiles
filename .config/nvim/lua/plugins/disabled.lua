@@ -35,4 +35,5 @@ return {
 
 	{ "nvim-zh/colorful-winsep.nvim", enabled = false },
 	{ "m4xshen/hardtime.nvim", enabled = true },
+	{ "linux-cultist/venv-selector.nvim", enabled = true },
 }
