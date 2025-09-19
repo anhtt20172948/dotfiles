@@ -66,6 +66,7 @@ vim.lsp.config("clangd", {
 	capabilities = capabilities,
 })
 
+vim.lsp.enable("ts_ls")
 vim.lsp.config("ts_ls", {
 	capabilities = capabilities,
 	-- Disable ts_ls's built-in formatting
