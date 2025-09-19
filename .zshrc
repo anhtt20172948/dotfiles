@@ -1,6 +1,4 @@
-# Fig pre block. Keep at the top of this file.
-[[ -f "$HOME/.fig/shell/zshrc.pre.zsh" ]] && builtin source "$HOME/.fig/shell/zshrc.pre.zsh"
-
+# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
 # Initialization code that may require console input (password prompts, [y/n]
 # confirmations, etc.) must go above this block; everything else may go below.
 if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
@@ -8,12 +6,13 @@ if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]
 fi
 
 # If you come from bash you might have to change your $PATH.
-# export PATH=$HOME/bin:/usr/local/bin:$PATH
+# export PATH=$HOME/bin:$HOME/.local/bin:/usr/local/bin:$PATH
 
-# Path to your oh-my-zsh installation.
+# Path to your Oh My Zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
+
 # Set name of the theme to load --- if set to "random", it will
-# load a random theme each time oh-my-zsh is loaded, in which case,
+# load a random theme each time Oh My Zsh is loaded, in which case,
 # to know which specific one was loaded, run: echo $RANDOM_THEME
 # See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
 # ZSH_THEME="robbyrussell"
@@ -79,9 +78,9 @@ ZSH_THEME="powerlevel10k/powerlevel10k"
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
+# plugins=(git)
+plugins=(git zsh-autosuggestions zsh-syntax-highlighting copypath copyfile copybuffer dirhistory )
 
-plugins=(git zsh-autosuggestions zsh-bat extract fast-syntax-highlighting)
-# plugins=(git zsh-autosuggestions zsh-syntax-highlighting auto-notify copypath copyfile copybuffer dirhistory zsh-bat)
 
 source $ZSH/oh-my-zsh.sh
 
@@ -96,25 +95,52 @@ source $ZSH/oh-my-zsh.sh
 # if [[ -n $SSH_CONNECTION ]]; then
 #   export EDITOR='vim'
 # else
-#   export EDITOR='mvim'
+#   export EDITOR='nvim'
 # fi
 
 # Compilation flags
-# export ARCHFLAGS="-arch x86_64"
+# export ARCHFLAGS="-arch $(uname -m)"
 
-# Set personal aliases, overriding those provided by oh-my-zsh libs,
-# plugins, and themes. Aliases can be placed here, though oh-my-zsh
-# users are encouraged to define aliases within the ZSH_CUSTOM folder.
+# Set personal aliases, overriding those provided by Oh My Zsh libs,
+# plugins, and themes. Aliases can be placed here, though Oh My Zsh
+# users are encouraged to define aliases within a top-level file in
+# the $ZSH_CUSTOM folder, with .zsh extension. Examples:
+# - $ZSH_CUSTOM/aliases.zsh
+# - $ZSH_CUSTOM/macos.zsh
 # For a full list of active aliases, run `alias`.
 #
 # Example aliases
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
+# # eza
+alias ls="eza --grid --color=always --long --git --icons --all --no-permissions --no-user --no-time --no-filesize"
+alias lla="eza --color=always --long --git --icons --all --octal-permissions"
+
+# atuin
+eval "$(atuin init zsh)"
+
+eval "$(zoxide init --cmd cd zsh)"
+alias vi="nvim"
+
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+
+function y() {
+	local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
+	yazi "$@" --cwd-file="$tmp"
+	IFS= read -r -d '' cwd < "$tmp"
+	[ -n "$cwd" ] && [ "$cwd" != "$PWD" ] && builtin cd -- "$cwd"
+	rm -f -- "$tmp"
+}
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+eval "$(atuin init zsh)"
 
-# >>> conda initialize >>>
+export NVM_DIR="$HOME/.config/nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+
+
 # !! Contents within this block are managed by 'conda init' !!
 __conda_setup="$('/home/anhtran/miniconda3/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
 if [ $? -eq 0 ]; then
@@ -127,83 +153,7 @@ else
     fi
 fi
 unset __conda_setup
-
+# <<< conda initialize <<<
 conda activate dev
-# source ~/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
-# source ~/.oh-my-zsh/custom/plugins/zsh-history-substring-search/zsh-history-substring-search.zsh
-# keybindings
-bindkey '^[[A' history-substring-search-up
-bindkey '^[[B' history-substring-search-down
-# eval $(thefuck --alias)
-# You can use whatever you want as an alias, like for Mondays:
-# eval $(thefuck --alias FUCK)
 
-[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
-# export FZF_CTRL_T_OPTS="--preview='less {}' --height=100% --bind shift-up:preview-page-up,shift-down:preview-page-down"
-
-export FZF_CTRL_T_OPTS="--preview 'batcat -n --color=always  --line-range :1000 {}' --height=100% --bind shift-up:preview-page-up,shift-down:preview-page-down"
-
-_fzf_comprun() {
-  local command=$1
-  shift
-  case "$command" in
-    cd)           fzf --preview 'tree -C {} | head -200'   "$@" ;;
-    ls)           fzf --preview 'tree -C {} | head -200'   "$@" ;;
-    export|unset) fzf --preview "eval 'echo \$'{}"         "$@" ;;
-    ssh)          fzf --preview 'dig {}'                   "$@" ;;
-    timg)         fzf --preview 'timg -g${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES} {}';;
-    icat)         fzf --preview 'kitty +kitten icat --clear --transfer-mode=memory --stdin=no --place=${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES}@0x0 {}';;
-    # icat)         fzf --preview 'kitty icat --clear --transfer-mode=memory --stdin=no --place=${FZF_PREVIEW_COLUMNS}x${FZF_PREVIEW_LINES}@0x0 {} > /dev/tty';;
-    *)            fzf --preview 'batcat -n --color=always {}' "$@" ;;
-  esac
-}
-
-
-# eza
-alias ls="eza --grid --color=always --long --icons --no-permissions --no-user --no-time --no-filesize"
-alias lla="eza --color=always --long --icons --all --octal-permissions"
-
-# zoxide
-eval "$(zoxide init --cmd cd zsh)"
-
-# atuin
-# echo 'eval "$(atuin init zsh)"' >> ~/.zshrc
-eval "$(atuin init zsh)"
-
-# duf better than df
-alias df="duf"
-
-# aria2 betert than wget
-# Install : sudo apt install aria2
-alias wget="aria2c"
-
-# lazy docker
-
-alias lzd="lazydocker"
-
-# tldr
-# alias help="tldr"
-
-# navi
-alias help="navi --cheatsh"
-
-# neovim
-export PATH="$HOME/neovim/bin:$PATH"
-alias vi="nvim"
-
-# alias s="~/show_img.sh"
-
-# yazi
-function yy() {
-	local tmp="$(mktemp -t "yazi-cwd.XXXXXX")"
-	yazi "$@" --cwd-file="$tmp"
-	if cwd="$(cat -- "$tmp")" && [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
-		builtin cd -- "$cwd"
-	fi
-	rm -f -- "$tmp"
-}
-
-
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+eval "$(uv generate-shell-completion zsh)"
