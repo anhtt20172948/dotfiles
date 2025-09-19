@@ -1,4 +1,4 @@
-local lspconfig = require("lspconfig")
+-- local lspconfig = require("lspconfig")
 
 -- enable inlay hints by default
 vim.lsp.inlay_hint.enable()
@@ -17,7 +17,9 @@ vim.diagnostic.config({
 })
 
 local capabilities = require("blink.cmp").get_lsp_capabilities()
-lspconfig.ruff.setup({
+
+vim.lsp.enable("ruff")
+vim.lsp.config("ruff", {
 	init_options = {
 		settings = {
 			-- Ruff language server settings go here
@@ -29,7 +31,9 @@ lspconfig.ruff.setup({
 	},
 	capabilities = capabilities,
 })
-lspconfig.pyright.setup({
+
+vim.lsp.enable("pyright")
+vim.lsp.config("pyright", {
 	settings = {
 		pyright = {
 			-- Using Ruff's import organizer
@@ -44,7 +48,9 @@ lspconfig.pyright.setup({
 	},
 	capabilities = capabilities,
 })
-lspconfig.clangd.setup({
+
+vim.lsp.enable("clangd")
+vim.lsp.config("clangd", {
 	cmd = { "clangd", "--background-index", "--clang-tidy", "--log=verbose", "--offset-encoding=utf-16" },
 	settings = {
 		clangd = {
@@ -60,7 +66,7 @@ lspconfig.clangd.setup({
 	capabilities = capabilities,
 })
 
-lspconfig.ts_ls.setup({
+vim.lsp.ts_ls.setup({
 	capabilities = capabilities,
 	-- Disable ts_ls's built-in formatting
 	on_attach = function(client)
@@ -69,7 +75,8 @@ lspconfig.ts_ls.setup({
 	end,
 })
 
-lspconfig.lua_ls.setup({
+vim.lsp.enable("lua_ls")
+vim.lsp.config("lua_ls", {
 	on_init = function(client)
 		if client.workspace_folders then
 			local path = client.workspace_folders[1].name
