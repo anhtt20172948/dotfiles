@@ -66,7 +66,7 @@ vim.lsp.config("clangd", {
 	capabilities = capabilities,
 })
 
-vim.lsp.ts_ls.setup({
+vim.lsp.config("ts_ls", {
 	capabilities = capabilities,
 	-- Disable ts_ls's built-in formatting
 	on_attach = function(client)
