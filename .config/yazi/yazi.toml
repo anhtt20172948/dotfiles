@@ -2,12 +2,15 @@
 edit = [
 	{ run = 'nvim "$@"', block = true },
 ]
+play = [
+    { run = 'vlc "$@"', block = false },
+]
 
 [preview]
 max_width=3000
 wrap="yes"
 
-[manager]
+[mgr]
 ratio=[2,4,4]
 show_hidden=true
 linemode = "size_and_mtime"

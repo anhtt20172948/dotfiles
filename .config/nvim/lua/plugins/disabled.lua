@@ -34,6 +34,6 @@ return {
 	{ "saghen/blink.cmp", enabled = true },
 
 	{ "nvim-zh/colorful-winsep.nvim", enabled = false },
-	{ "m4xshen/hardtime.nvim", enabled = true },
+	{ "m4xshen/hardtime.nvim", enabled = false },
 	{ "linux-cultist/venv-selector.nvim", enabled = true },
 }
