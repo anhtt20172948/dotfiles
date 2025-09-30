@@ -7,10 +7,15 @@
 #        |___/|_|
 #
 
+# Remove legacy shaders folder
+if [ -d $HOME/.config/hypr/shaders ]; then
+    rm -rf $HOME/.config/hypr/shaders
+fi
+
 if [[ "$1" == "rofi" ]]; then
 
     # Open rofi to select the Hyprshade filter for toggle
-    options="$(hyprshade ls)\noff"
+    options="$(hyprshade ls | sed 's/^[ *]*//')\noff"
 
     # Open rofi
     choice=$(echo -e "$options" | rofi -dmenu -replace -config ~/.config/rofi/config-hyprshade.rasi -i -no-show-icons -l 4 -width 30 -p "Hyprshade")
@@ -21,7 +26,7 @@ if [[ "$1" == "rofi" ]]; then
             notify-send "Hyprshade deactivated"
             echo ":: hyprshade turned off"
         else
-            notify-send "Changing Hyprshade to $choice" "Toggle shader with SUPER+SHIFT+S"
+            notify-send "Changing Hyprshade to $choice" "Toggle shader with SUPER+SHIFT+H"
         fi
     fi
 
