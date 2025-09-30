@@ -15,3 +15,5 @@ ratio=[2,4,4]
 show_hidden=true
 linemode = "size_and_mtime"
 
+[flavor]
+use = "dracula"
