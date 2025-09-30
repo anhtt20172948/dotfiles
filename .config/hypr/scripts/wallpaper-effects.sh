@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # __        ______    _____  __  __           _
 # \ \      / /  _ \  | ____|/ _|/ _| ___  ___| |_ ___
 #  \ \ /\ / /| |_) | |  _| | |_| |_ / _ \/ __| __/ __|
@@ -6,8 +6,10 @@
 #    \_/\_/  |_|     |_____|_| |_|  \___|\___|\__|___/
 #
 
+ml4w_cache_folder="$HOME/.cache/ml4w/hyprland-dotfiles"
+
 # Get current wallpaper
-cache_file="$HOME/.config/ml4w/cache/current_wallpaper"
+cache_file="$ml4w_cache_folder/current_wallpaper"
 
 if [ $1 == "reload" ]; then
     # Releod wallpaper with current effect
