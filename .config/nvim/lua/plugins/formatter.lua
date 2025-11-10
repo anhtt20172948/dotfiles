@@ -30,6 +30,8 @@ return {
 			end,
 			javascript = { "prettierd", "prettier", stop_after_first = true },
 			typescript = { "prettierd", "prettier", stop_after_first = true },
+            javascriptreact = { "prettierd", "prettier", stop_after_first = true },
+            yaml = { "yq" },
 			cpp = { "clangd" },
 			c = { "clangd" },
 			json = { "jq" },
@@ -39,7 +41,7 @@ return {
 			lsp_format = "fallback",
 		},
 		-- Set up format-on-save
-		format_on_save = { timeout_ms = 500 },
+		format_on_save = { timeout_ms = 2000 },
 		-- Customize formatters
 		formatters = {
 			shfmt = {
@@ -53,6 +55,11 @@ return {
 				args = { "--stdout", "-" },
 				stdin = true,
 			},
+            yq = {
+                command = "yq",
+                args = { "-" },
+                stdin = true,
+            },
 		},
 	},
 	init = function()
