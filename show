@@ -32,12 +32,31 @@ fi
 
 # --- Find all servers that have the file ---
 FOUND_SERVERS=()
-for SERVER in "${SERVERS[@]}"; do
+TEMP_DIR=$(mktemp -d)
+PIDS=()
+
+# Start all checks in parallel
+for i in "${!SERVERS[@]}"; do
+  SERVER="${SERVERS[$i]}"
   echo "Checking $SERVER..."
-  if ssh -o ConnectTimeout=3 -o LogLevel=ERROR "$SERVER" "[ -e \"$REMOTE_PATH\" ]" 2>/dev/null; then
-    FOUND_SERVERS+=("$SERVER")
+  (
+    if ssh -o ConnectTimeout=3 -o LogLevel=ERROR "$SERVER" "[ -e \"$REMOTE_PATH\" ]" 2>/dev/null; then
+      echo "$SERVER" > "$TEMP_DIR/$i"
+    fi
+  ) &
+  PIDS+=($!)
+done
+
+# Wait for all checks to complete
+wait
+
+# Collect results in order
+for i in "${!SERVERS[@]}"; do
+  if [[ -f "$TEMP_DIR/$i" ]]; then
+    FOUND_SERVERS+=("$(cat "$TEMP_DIR/$i")")
   fi
 done
+rm -rf "$TEMP_DIR"
 
 if [[ ${#FOUND_SERVERS[@]} -eq 0 ]]; then
   echo "❌ File or directory not found on any configured servers."
@@ -101,7 +120,8 @@ open_item() {
     doc|docx|xls|xlsx|csv)
       libreoffice "$LOCAL_PATH" >/dev/null 2>&1 & ;;
     py|sh|js|html|css|c|cpp|json|yaml|yml)
-      code "$LOCAL_PATH" >/dev/null 2>&1 & ;;  # VS Code
+      # code "$LOCAL_PATH" >/dev/null 2>&1 & ;;  # VS Code
+      kitty --title "nvim - $LOCAL_PATH" nvim "$LOCAL_PATH" >/dev/null 2>&1 & ;;
     *)
       echo "Unknown file type ($EXT), opening with default app..."
       xdg-open "$LOCAL_PATH" >/dev/null 2>&1 & ;;
