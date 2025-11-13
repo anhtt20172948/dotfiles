@@ -1,0 +1,117 @@
+#!/bin/bash
+# ============================================================
+#  show — open a remote file (or folder) automatically
+#  Usage: show <abs_path>
+#  Example: show /home/user/project/file.txt
+# ============================================================
+
+set -e
+
+REMOTE_PATH="$1"
+if [[ -z "$REMOTE_PATH" ]]; then
+  echo "Usage: show <abs_path>"
+  exit 1
+fi
+
+# 🔧 Define your servers here
+SERVERS=(
+  "jupyter"
+  "rack"
+  "strong"
+  "jetson51"
+  "jetson52"
+)
+
+MOUNT_BASE="/tmp/mnt_show"
+
+# Ensure sshfs exists
+if ! command -v sshfs >/dev/null 2>&1; then
+  echo "Error: sshfs is not installed."
+  exit 1
+fi
+
+# --- Find all servers that have the file ---
+FOUND_SERVERS=()
+for SERVER in "${SERVERS[@]}"; do
+  echo "Checking $SERVER..."
+  if ssh -o ConnectTimeout=3 -o LogLevel=ERROR "$SERVER" "[ -e \"$REMOTE_PATH\" ]" 2>/dev/null; then
+    FOUND_SERVERS+=("$SERVER")
+  fi
+done
+
+if [[ ${#FOUND_SERVERS[@]} -eq 0 ]]; then
+  echo "❌ File or directory not found on any configured servers."
+  exit 1
+fi
+
+# --- If multiple servers found, let user choose ---
+if [[ ${#FOUND_SERVERS[@]} -gt 1 ]]; then
+  echo "File found on multiple servers:"
+  select FOUND_SERVER in "${FOUND_SERVERS[@]}"; do
+    if [[ -n "$FOUND_SERVER" ]]; then
+      break
+    else
+      echo "Invalid choice. Try again."
+    fi
+  done
+else
+  FOUND_SERVER="${FOUND_SERVERS[0]}"
+fi
+
+echo "✅ Using server: $FOUND_SERVER"
+
+# --- Prepare mount point ---
+SAFE_NAME="${FOUND_SERVER//[@.]/_}"
+MOUNT_POINT="${MOUNT_BASE}_${SAFE_NAME}"
+mkdir -p "$MOUNT_POINT"
+
+# --- Mount if needed ---
+if ! mountpoint -q "$MOUNT_POINT"; then
+  echo "Mounting $FOUND_SERVER..."
+  sshfs "$FOUND_SERVER":/ "$MOUNT_POINT" -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3 || {
+    echo "Error: Failed to mount $FOUND_SERVER"
+    exit 1
+  }
+fi
+
+# --- Compute local path ---
+LOCAL_PATH="${MOUNT_POINT}${REMOTE_PATH}"
+
+if [[ ! -e "$LOCAL_PATH" ]]; then
+  echo "Error: File or directory not found locally after mount."
+  exit 1
+fi
+
+# --- Open function ---
+open_item() {
+  if [[ -d "$LOCAL_PATH" ]]; then
+    echo "Opening directory..."
+    xdg-open "$LOCAL_PATH" >/dev/null 2>&1 &
+    return
+  fi
+
+  EXT="${LOCAL_PATH##*.}"
+  case "$EXT" in
+    txt|log|md)
+      xdg-open "$LOCAL_PATH" >/dev/null 2>&1 & ;;
+    pdf)
+      xdg-open "$LOCAL_PATH" >/dev/null 2>&1 & ;;
+    jpg|jpeg|png|gif)
+      xdg-open "$LOCAL_PATH" >/dev/null 2>&1 & ;;
+    doc|docx|xls|xlsx|csv)
+      libreoffice "$LOCAL_PATH" >/dev/null 2>&1 & ;;
+    py|sh|js|html|css|c|cpp|json|yaml|yml)
+      code "$LOCAL_PATH" >/dev/null 2>&1 & ;;  # VS Code
+    *)
+      echo "Unknown file type ($EXT), opening with default app..."
+      xdg-open "$LOCAL_PATH" >/dev/null 2>&1 & ;;
+  esac
+}
+
+open_item
+
+# --- Auto-unmount after 10 min ---
+(sleep 600 && fusermount -u "$MOUNT_POINT" 2>/dev/null) &
+
+echo "✅ Opened $REMOTE_PATH from $FOUND_SERVER"
+
