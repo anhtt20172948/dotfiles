@@ -1,0 +1,228 @@
+#!/bin/bash
+# ============================================================
+#  download — download a remote file/folder automatically
+#  Usage: download <remote_path> [local_path]
+#  Example: download /home/user/project/file.txt
+#           download /home/user/project/file.txt ./myfile.txt
+# ============================================================
+
+set -e
+
+# Colors and formatting
+BOLD='\033[1m'
+DIM='\033[2m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+RESET='\033[0m'
+
+# Icons
+ICON_CHECK="✓"
+ICON_CROSS="✗"
+ICON_SEARCH="🔍"
+ICON_SERVER="🖥️ "
+ICON_FILE="📄"
+ICON_FOLDER="📁"
+ICON_DOWNLOAD="⬇️ "
+ICON_ROCKET="🚀"
+ICON_PROGRESS="⏳"
+
+# Print helpers
+print_header() {
+  echo -e "${BOLD}${CYAN}════════════════════════════════════════${RESET}"
+  echo -e "${BOLD}${CYAN}  DOWNLOAD - Remote File Downloader${RESET}"
+  echo -e "${BOLD}${CYAN}════════════════════════════════════════${RESET}"
+}
+
+print_step() {
+  echo -e "${BOLD}${BLUE}▸${RESET} $1"
+}
+
+print_success() {
+  echo -e "${GREEN}${ICON_CHECK}${RESET} $1"
+}
+
+print_error() {
+  echo -e "${RED}${ICON_CROSS}${RESET} $1"
+}
+
+print_info() {
+  echo -e "${DIM}  ℹ${RESET} $1"
+}
+
+print_separator() {
+  echo -e "${DIM}────────────────────────────────────────${RESET}"
+}
+
+print_header
+
+REMOTE_PATH="$1"
+LOCAL_PATH="$2"
+
+# 🔧 Define your servers here
+SERVERS=(
+  "jupyter"
+  "rack"
+  "strong"
+  "jetson51"
+  "jetson52"
+)
+
+# Show supported servers
+print_step "Supported servers (${#SERVERS[@]} total):"
+for SERVER in "${SERVERS[@]}"; do
+  echo -e "  ${DIM}•${RESET} ${CYAN}${SERVER}${RESET}"
+done
+print_separator
+
+if [[ -z "$REMOTE_PATH" ]]; then
+  print_error "No remote path provided"
+  echo -e "${DIM}Usage: download <remote_path> [local_path]${RESET}"
+  echo -e "${DIM}Example: download /home/user/project/file.txt${RESET}"
+  echo -e "${DIM}         download /home/user/project/file.txt ./myfile.txt${RESET}"
+  exit 1
+fi
+
+# Set local path to current directory if not provided
+if [[ -z "$LOCAL_PATH" ]]; then
+  BASENAME=$(basename "$REMOTE_PATH")
+  LOCAL_PATH="./$BASENAME"
+  print_info "No local path specified, using: ${CYAN}$BASENAME${RESET} (current directory)"
+fi
+
+# Convert to absolute path
+if [[ ! "$LOCAL_PATH" = /* ]]; then
+  LOCAL_PATH="$(cd "$(dirname "$LOCAL_PATH")" 2>/dev/null && pwd)/$(basename "$LOCAL_PATH")"
+fi
+
+print_step "Remote path: ${MAGENTA}$REMOTE_PATH${RESET}"
+print_step "Local path: ${CYAN}$LOCAL_PATH${RESET}"
+print_separator
+
+# --- Find all servers that have the file ---
+print_step "Searching across ${#SERVERS[@]} servers..."
+
+FOUND_SERVERS=()
+TEMP_DIR=$(mktemp -d)
+PIDS=()
+
+# Start all checks in parallel
+for i in "${!SERVERS[@]}"; do
+  SERVER="${SERVERS[$i]}"
+  echo -ne "${DIM}  ${ICON_SEARCH} Checking ${SERVER}...${RESET}\r"
+  (
+    if ssh -o ConnectTimeout=3 -o LogLevel=ERROR "$SERVER" "[ -e \"$REMOTE_PATH\" ]" 2>/dev/null; then
+      echo "$SERVER" > "$TEMP_DIR/$i"
+    fi
+  ) &
+  PIDS+=($!)
+done
+
+# Wait for all checks to complete
+wait
+
+echo -ne "\033[K" # Clear line
+
+# Collect results in order
+for i in "${!SERVERS[@]}"; do
+  if [[ -f "$TEMP_DIR/$i" ]]; then
+    FOUND_SERVERS+=("$(cat "$TEMP_DIR/$i")")
+    print_success "Found on ${GREEN}${BOLD}$(cat "$TEMP_DIR/$i")${RESET}"
+  fi
+done
+rm -rf "$TEMP_DIR"
+
+if [[ ${#FOUND_SERVERS[@]} -eq 0 ]]; then
+  print_separator
+  print_error "File or directory not found on any configured servers"
+  exit 1
+fi
+
+print_separator
+
+# --- If multiple servers found, let user choose ---
+if [[ ${#FOUND_SERVERS[@]} -gt 1 ]]; then
+  echo -e "${YELLOW}${BOLD}Multiple servers found. Please select:${RESET}"
+  select FOUND_SERVER in "${FOUND_SERVERS[@]}"; do
+    if [[ -n "$FOUND_SERVER" ]]; then
+      break
+    else
+      print_error "Invalid choice. Try again."
+    fi
+  done
+else
+  FOUND_SERVER="${FOUND_SERVERS[0]}"
+fi
+
+print_step "Selected server: ${GREEN}${BOLD}${ICON_SERVER}${FOUND_SERVER}${RESET}"
+print_separator
+
+# --- Get remote file/folder info ---
+print_step "Getting remote file information..."
+REMOTE_SIZE=$(ssh "$FOUND_SERVER" "du -sh \"$REMOTE_PATH\" 2>/dev/null | cut -f1" 2>/dev/null || echo "unknown")
+IS_DIR=$(ssh "$FOUND_SERVER" "[ -d \"$REMOTE_PATH\" ] && echo 1 || echo 0")
+
+if [[ "$IS_DIR" == "1" ]]; then
+  print_info "Type: ${ICON_FOLDER} Directory"
+  print_info "Size: ${YELLOW}$REMOTE_SIZE${RESET}"
+else
+  EXT="${REMOTE_PATH##*.}"
+  print_info "Type: ${ICON_FILE} File ${MAGENTA}(.$EXT)${RESET}"
+  print_info "Size: ${YELLOW}$REMOTE_SIZE${RESET}"
+fi
+
+print_separator
+
+# --- Create local directory if needed ---
+LOCAL_DIR=$(dirname "$LOCAL_PATH")
+if [[ ! -d "$LOCAL_DIR" ]]; then
+  print_step "Creating local directory: ${CYAN}$LOCAL_DIR${RESET}"
+  mkdir -p "$LOCAL_DIR"
+fi
+
+# --- Download ---
+print_step "${ICON_DOWNLOAD} Downloading from ${GREEN}${FOUND_SERVER}${RESET}..."
+print_info "This may take a while for large files..."
+
+# Determine best progress option for rsync (use overall progress if available)
+if rsync --help 2>&1 | grep -q -- '--info=progress2'; then
+  RSYNC_PROGRESS_OPTS=("--info=progress2")
+else
+  RSYNC_PROGRESS_OPTS=("--progress")
+fi
+
+# Helper to run rsync with chosen progress option and minimal noise
+run_rsync() {
+  local src="$1" dest="$2"
+  # Use -e to silence ssh output and let rsync print progress
+  rsync -avzh "${RSYNC_PROGRESS_OPTS[@]}" -e "ssh -o LogLevel=ERROR" "$src" "$dest"
+}
+
+if [[ "$IS_DIR" == "1" ]]; then
+  # Download directory recursively with progress
+  run_rsync "$FOUND_SERVER:$REMOTE_PATH/" "$LOCAL_PATH/"
+else
+  # Download single file with progress using rsync
+  run_rsync "$FOUND_SERVER:$REMOTE_PATH" "$LOCAL_PATH"
+fi
+
+if [[ $? -eq 0 ]]; then
+  print_separator
+  print_success "${ICON_ROCKET} Download completed successfully!"
+  
+  # Show local file info
+  if [[ -e "$LOCAL_PATH" ]]; then
+    LOCAL_SIZE=$(du -sh "$LOCAL_PATH" 2>/dev/null | cut -f1 || echo "unknown")
+    print_info "Downloaded to: ${CYAN}$LOCAL_PATH${RESET}"
+    print_info "Local size: ${YELLOW}$LOCAL_SIZE${RESET}"
+  fi
+  echo ""
+else
+  print_separator
+  print_error "Download failed"
+  exit 1
+fi
+
