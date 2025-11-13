@@ -7,11 +7,72 @@
 
 set -e
 
+# Colors and formatting
+BOLD='\033[1m'
+DIM='\033[2m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+RESET='\033[0m'
+
+# Icons
+ICON_CHECK="✓"
+ICON_CROSS="✗"
+ICON_SEARCH="🔍"
+ICON_SERVER="🖥️ "
+ICON_FILE="📄"
+ICON_FOLDER="📁"
+ICON_MOUNT="🔗"
+ICON_ROCKET="🚀"
+
+# Print helpers
+print_header() {
+  echo -e "${BOLD}${CYAN}════════════════════════════════════════${RESET}"
+  echo -e "${BOLD}${CYAN}  SHOW - Remote File Viewer${RESET}"
+  echo -e "${BOLD}${CYAN}════════════════════════════════════════${RESET}"
+}
+
+print_step() {
+  echo -e "${BOLD}${BLUE}▸${RESET} $1"
+}
+
+print_success() {
+  echo -e "${GREEN}${ICON_CHECK}${RESET} $1"
+}
+
+print_error() {
+  echo -e "${RED}${ICON_CROSS}${RESET} $1"
+}
+
+print_info() {
+  echo -e "${DIM}  ℹ${RESET} $1"
+}
+
+print_separator() {
+  echo -e "${DIM}────────────────────────────────────────${RESET}"
+}
+
+# Spinner for background tasks
+spinner() {
+  local pid=$1
+  local delay=0.1
+  local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  while ps -p $pid > /dev/null 2>&1; do
+    local temp=${spinstr#?}
+    printf " [%c]  " "$spinstr"
+    local spinstr=$temp${spinstr%"$temp"}
+    sleep $delay
+    printf "\b\b\b\b\b\b"
+  done
+  printf "    \b\b\b\b"
+}
+
+print_header
+
 REMOTE_PATH="$1"
-if [[ -z "$REMOTE_PATH" ]]; then
-  echo "Usage: show <abs_path>"
-  exit 1
-fi
 
 # 🔧 Define your servers here
 SERVERS=(
@@ -24,13 +85,30 @@ SERVERS=(
 
 MOUNT_BASE="/tmp/mnt_show"
 
-# Ensure sshfs exists
-if ! command -v sshfs >/dev/null 2>&1; then
-  echo "Error: sshfs is not installed."
+# Show supported servers
+print_step "Supported servers (${#SERVERS[@]} total):"
+for SERVER in "${SERVERS[@]}"; do
+  echo -e "  ${DIM}•${RESET} ${CYAN}${SERVER}${RESET}"
+done
+print_separator
+
+if [[ -z "$REMOTE_PATH" ]]; then
+  print_error "No path provided"
+  echo -e "${DIM}Usage: show <abs_path>${RESET}"
+  echo -e "${DIM}Example: show /home/user/project/file.txt${RESET}"
   exit 1
 fi
 
+print_step "Target path: ${MAGENTA}$REMOTE_PATH${RESET}"
+print_separator
+
+# Ensure sshfs exists
+if ! command -v sshfs >/dev/null 2>&1; then
+  print_error "sshfs is not installed"
+  exit 1
+fi
 # --- Find all servers that have the file ---
+print_step "Searching across ${#SERVERS[@]} servers..."
 FOUND_SERVERS=()
 TEMP_DIR=$(mktemp -d)
 PIDS=()
@@ -38,7 +116,7 @@ PIDS=()
 # Start all checks in parallel
 for i in "${!SERVERS[@]}"; do
   SERVER="${SERVERS[$i]}"
-  echo "Checking $SERVER..."
+  echo -ne "${DIM}  ${ICON_SEARCH} Checking ${SERVER}...${RESET}\r"
   (
     if ssh -o ConnectTimeout=3 -o LogLevel=ERROR "$SERVER" "[ -e \"$REMOTE_PATH\" ]" 2>/dev/null; then
       echo "$SERVER" > "$TEMP_DIR/$i"
@@ -50,34 +128,41 @@ done
 # Wait for all checks to complete
 wait
 
+echo -ne "\033[K" # Clear line
+
 # Collect results in order
 for i in "${!SERVERS[@]}"; do
   if [[ -f "$TEMP_DIR/$i" ]]; then
     FOUND_SERVERS+=("$(cat "$TEMP_DIR/$i")")
+    print_success "Found on ${GREEN}${BOLD}$(cat "$TEMP_DIR/$i")${RESET}"
   fi
 done
 rm -rf "$TEMP_DIR"
 
 if [[ ${#FOUND_SERVERS[@]} -eq 0 ]]; then
-  echo "❌ File or directory not found on any configured servers."
+  print_separator
+  print_error "File or directory not found on any configured servers"
   exit 1
 fi
 
+print_separator
+
 # --- If multiple servers found, let user choose ---
 if [[ ${#FOUND_SERVERS[@]} -gt 1 ]]; then
-  echo "File found on multiple servers:"
+  echo -e "${YELLOW}${BOLD}Multiple servers found. Please select:${RESET}"
   select FOUND_SERVER in "${FOUND_SERVERS[@]}"; do
     if [[ -n "$FOUND_SERVER" ]]; then
       break
     else
-      echo "Invalid choice. Try again."
+      print_error "Invalid choice. Try again."
     fi
   done
 else
   FOUND_SERVER="${FOUND_SERVERS[0]}"
 fi
 
-echo "✅ Using server: $FOUND_SERVER"
+print_step "Selected server: ${GREEN}${BOLD}${ICON_SERVER}${FOUND_SERVER}${RESET}"
+print_separator
 
 # --- Prepare mount point ---
 SAFE_NAME="${FOUND_SERVER//[@.]/_}"
@@ -86,30 +171,42 @@ mkdir -p "$MOUNT_POINT"
 
 # --- Mount if needed ---
 if ! mountpoint -q "$MOUNT_POINT"; then
-  echo "Mounting $FOUND_SERVER..."
+  print_step "Mounting ${FOUND_SERVER}..."
   sshfs "$FOUND_SERVER":/ "$MOUNT_POINT" -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3 || {
-    echo "Error: Failed to mount $FOUND_SERVER"
+    print_error "Failed to mount $FOUND_SERVER"
     exit 1
   }
+  print_success "Mounted at ${CYAN}$MOUNT_POINT${RESET}"
+else
+  print_info "Already mounted at ${CYAN}$MOUNT_POINT${RESET}"
 fi
 
 # --- Compute local path ---
 LOCAL_PATH="${MOUNT_POINT}${REMOTE_PATH}"
 
 if [[ ! -e "$LOCAL_PATH" ]]; then
-  echo "Error: File or directory not found locally after mount."
+  print_error "File or directory not found locally after mount"
   exit 1
 fi
+
+print_separator
 
 # --- Open function ---
 open_item() {
   if [[ -d "$LOCAL_PATH" ]]; then
-    echo "Opening directory..."
+    print_step "Opening directory ${ICON_FOLDER}"
+    print_info "Path: ${CYAN}$LOCAL_PATH${RESET}"
     xdg-open "$LOCAL_PATH" >/dev/null 2>&1 &
     return
   fi
 
   EXT="${LOCAL_PATH##*.}"
+  SIZE=$(du -h "$LOCAL_PATH" | cut -f1)
+  print_step "Opening file ${ICON_FILE}"
+  print_info "Type: ${MAGENTA}.$EXT${RESET}"
+  print_info "Size: ${YELLOW}$SIZE${RESET}"
+  print_info "Path: ${CYAN}$LOCAL_PATH${RESET}"
+  
   case "$EXT" in
     txt|log|md)
       xdg-open "$LOCAL_PATH" >/dev/null 2>&1 & ;;
@@ -120,10 +217,9 @@ open_item() {
     doc|docx|xls|xlsx|csv)
       libreoffice "$LOCAL_PATH" >/dev/null 2>&1 & ;;
     py|sh|js|html|css|c|cpp|json|yaml|yml)
-      # code "$LOCAL_PATH" >/dev/null 2>&1 & ;;  # VS Code
       kitty --title "nvim - $LOCAL_PATH" nvim "$LOCAL_PATH" >/dev/null 2>&1 & ;;
     *)
-      echo "Unknown file type ($EXT), opening with default app..."
+      print_info "Opening with default app..."
       xdg-open "$LOCAL_PATH" >/dev/null 2>&1 & ;;
   esac
 }
@@ -133,5 +229,7 @@ open_item
 # --- Auto-unmount after 10 min ---
 (sleep 600 && fusermount -u "$MOUNT_POINT" 2>/dev/null) &
 
-echo "✅ Opened $REMOTE_PATH from $FOUND_SERVER"
-
+print_separator
+print_success "${ICON_ROCKET} Successfully opened!"
+print_info "Auto-unmount in ${YELLOW}10 minutes${RESET}"
+echo ""
