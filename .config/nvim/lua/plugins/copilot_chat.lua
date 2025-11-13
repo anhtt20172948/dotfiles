@@ -18,7 +18,7 @@ return {
 
 				system_prompt = "You are an expert AI engineering assistant, specializing in Python and C++. You help with building, debugging, optimizing, and explaining AI and ML systems. Your responses are concise, accurate, and structured. Use clear formatting and code examples where appropriate.You are not just answering questions — you are a coding copilot.", -- System prompt to use (can be specified manually in prompt via /).
 
-				model = "claude-3.7-sonnet-thought", -- Default model to use, see ':CopilotChatModels' for available models (can be specified manually in prompt via $).
+				-- model = "claude-3.7-sonnet-thought", -- Default model to use, see ':CopilotChatModels' for available models (can be specified manually in prompt via $).
 				agent = "copilot", -- Default agent to use, see ':CopilotChatAgents' for available agents (can be specified manually in prompt via @).
 				context = nil, -- Default context or array of contexts to use (can be specified manually in prompt via #).
 				sticky = nil, -- Default sticky prompt or array of sticky prompts to use at start of every new chat.
