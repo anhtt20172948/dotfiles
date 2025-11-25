@@ -3,7 +3,7 @@ return {
 	{
 		"folke/snacks.nvim",
 		-- commit = "2b52d89",
-		tag = "v2.22.0",
+		tag = "v2.30.0",
 		priority = 1000,
 		lazy = false,
 		---@type snacks.Config
@@ -134,7 +134,7 @@ return {
 				enabled = true,
 
 				animate = {
-					duration = { step = 15, total = 200 },
+					duration = { step = 10, total = 100 },
 					easing = "linear",
 					-- fps = 60,
 				},
