@@ -69,34 +69,77 @@ return {
 						}
 					end,
 				},
+				-- color_overrides = {
+				-- 	mocha = {
+				-- 		rosewater = "#F5B8AB",
+				-- 		flamingo = "#F29D9D",
+				-- 		pink = "#AD6FF7",
+				-- 		mauve = "#FF8F40",
+				-- 		red = "#E66767",
+				-- 		maroon = "#EB788B",
+				-- 		peach = "#FAB770",
+				-- 		yellow = "#FACA64",
+				-- 		green = "#70CF67",
+				-- 		teal = "#4CD4BD",
+				-- 		sky = "#61BDFF",
+				-- 		sapphire = "#4BA8FA",
+				-- 		blue = "#00BFFF",
+				-- 		lavender = "#00BBCC",
+				-- 		text = "#C1C9E6",
+				-- 		subtext1 = "#A3AAC2",
+				-- 		subtext0 = "#8E94AB",
+				-- 		overlay2 = "#7D8296",
+				-- 		overlay1 = "#676B80",
+				-- 		overlay0 = "#464957",
+				-- 		surface2 = "#3A3D4A",
+				-- 		surface1 = "#2F313D",
+				-- 		surface0 = "#1D1E29",
+				-- 		base = "#0b0b12",
+				-- 		mantle = "#11111a",
+				-- 		crust = "#191926",
+				-- 	},
+				-- },
 				color_overrides = {
 					mocha = {
-						rosewater = "#F5B8AB",
-						flamingo = "#F29D9D",
-						pink = "#AD6FF7",
-						mauve = "#FF8F40",
-						red = "#E66767",
-						maroon = "#EB788B",
-						peach = "#FAB770",
-						yellow = "#FACA64",
-						green = "#70CF67",
-						teal = "#4CD4BD",
-						sky = "#61BDFF",
-						sapphire = "#4BA8FA",
-						blue = "#00BFFF",
-						lavender = "#00BBCC",
-						text = "#C1C9E6",
-						subtext1 = "#A3AAC2",
-						subtext0 = "#8E94AB",
-						overlay2 = "#7D8296",
-						overlay1 = "#676B80",
-						overlay0 = "#464957",
-						surface2 = "#3A3D4A",
-						surface1 = "#2F313D",
-						surface0 = "#1D1E29",
-						base = "#0b0b12",
-						mantle = "#11111a",
-						crust = "#191926",
+						-- Core pink family
+						rosewater = "#F5C2E7",
+						flamingo = "#F2A2D4",
+						pink = "#FF79C6",
+						mauve = "#C77DFF",
+
+						-- Reds → rose tones
+						red = "#F38BA8",
+						maroon = "#E06C9F",
+
+						-- Warm accents (peach → blush)
+						peach = "#FFB4A2",
+						yellow = "#F9C784",
+
+						-- Greens & blues shifted toward pink/purple
+						green = "#B4F9C8", -- mint-pink balance
+						teal = "#8BD5CA",
+						sky = "#A6C8FF",
+						sapphire = "#8AA9FF",
+						blue = "#7AA2F7",
+						lavender = "#DDB6F2",
+
+						-- Text
+						text = "#E6E9FF",
+						subtext1 = "#C8CCE6",
+						subtext0 = "#B0B4CC",
+
+						-- UI layers (slightly purple-tinted)
+						overlay2 = "#8C8FA8",
+						overlay1 = "#70738C",
+						overlay0 = "#55576B",
+						surface2 = "#3E4058",
+						surface1 = "#2E3045",
+						surface0 = "#1F2033",
+
+						-- Backgrounds (deep mauve-black)
+						base = "#0E0B14",
+						mantle = "#141020",
+						crust = "#1B162A",
 					},
 				},
 				-- color_overrides = {
