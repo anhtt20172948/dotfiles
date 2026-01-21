@@ -5,15 +5,24 @@ return {
 		local lualine = require("lualine")
 		local lazy_status = require("lazy.status") -- to configure lazy pending updates count
 
+		-- local colors = {
+		-- 	color0 = "#092236",
+		-- 	color1 = "#ff5874",
+		-- 	color2 = "#c3ccdc",
+		-- 	-- color3 = "#1c1e26",
+		-- 	color3 = "none",
+		-- 	color6 = "#a1aab8",
+		-- 	color7 = "#828697",
+		-- 	color8 = "#ae81ff",
+		-- }
 		local colors = {
-			color0 = "#092236",
-			color1 = "#ff5874",
-			color2 = "#c3ccdc",
-			-- color3 = "#1c1e26",
-			color3 = "none",
-			color6 = "#a1aab8",
-			color7 = "#828697",
-			color8 = "#ae81ff",
+			color0 = "#14121E", -- deep purple-black (background)
+			color1 = "#FF2E88", -- ULTRA PINK (primary accent)
+			color2 = "#F8F8F2", -- bright foreground text
+			color3 = "none", -- transparent
+			color6 = "#C77DFF", -- neon lavender / purple
+			color7 = "#BFBFD5", -- soft light gray
+			color8 = "#AE81FF", -- Dracula purple (kept)
 		}
 		local my_lualine_theme = {
 			replace = {
@@ -82,8 +91,8 @@ return {
 		lualine.setup({
 			icons_enabled = true,
 			options = {
-				-- theme = my_lualine_theme,
-				theme = "catppuccin",
+				theme = my_lualine_theme,
+				-- theme = "catppuccin",
 				-- component_separators = { left = "", right = "" },
 				-- section_separators = { left = "", right = "" },
 				section_separators = { left = "", right = "" },

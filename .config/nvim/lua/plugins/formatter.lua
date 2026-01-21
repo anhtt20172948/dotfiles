@@ -30,8 +30,8 @@ return {
 			end,
 			javascript = { "prettierd", "prettier", stop_after_first = true },
 			typescript = { "prettierd", "prettier", stop_after_first = true },
-            javascriptreact = { "prettierd", "prettier", stop_after_first = true },
-            yaml = { "yq" },
+			javascriptreact = { "prettierd", "prettier", stop_after_first = true },
+			yaml = { "yq" },
 			cpp = { "clangd" },
 			c = { "clangd" },
 			json = { "jq" },
@@ -55,11 +55,16 @@ return {
 				args = { "--stdout", "-" },
 				stdin = true,
 			},
-            yq = {
-                command = "yq",
-                args = { "-" },
-                stdin = true,
-            },
+			yq = {
+				command = "yq",
+				args = { "-" },
+				stdin = true,
+			},
+			ruff_format = {
+				command = "ruff",
+				args = { "format", "--stdin-filename", "$FILENAME", "-" },
+				stdin = true,
+			},
 		},
 	},
 	init = function()
