@@ -237,9 +237,10 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 						},
 						-- Read `# Preview Mode` for more information
 						["l"] = "focus_preview",
-						["S"] = "open_split",
-						["<C-v>"] = "open_vsplit",
-						-- ["S"] = "split_with_window_picker",
+						-- ["S"] = "open_split",
+						-- ["<C-v>"] = "open_vsplit",
+						["<C-v>"] = "vsplit_with_window_picker",
+						["S"] = "split_with_window_picker",
 						-- ["s"] = "vsplit_with_window_picker",
 						["t"] = "open_tabnew",
 						-- ["<cr>"] = "open_drop",
