@@ -81,6 +81,7 @@ SERVERS=(
   "strong"
   "jetson51"
   "jetson52"
+  "jetson53"
 )
 
 MOUNT_BASE="/tmp/mnt_show"
