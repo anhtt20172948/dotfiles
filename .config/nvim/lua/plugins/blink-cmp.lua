@@ -164,7 +164,7 @@ return {
 					-- https://github.com/Kaiser-Yang/blink-cmp-dictionary/issues/2
 					enabled = true,
 					max_items = 8,
-					min_keyword_length = 3,
+					min_keyword_length = 1,
 					opts = {
 						-- -- The dictionary by default now uses fzf, make sure to have it
 						-- -- installed
@@ -172,11 +172,10 @@ return {
 						--
 						-- Do not specify a file, just the path, and in the path you need to
 						-- have your .txt files
-						dictionary_directories = { vim.fn.expand("~/github/dotfiles-latest/dictionaries") },
+						-- dictionary_directories = { vim.fn.expand("~/github/dotfiles-latest/dictionaries") },
 						-- Notice I'm also adding the words I add to the spell dictionary
 						dictionary_files = {
-							vim.fn.expand("~/github/dotfiles-latest/neovim/neobean/spell/en.utf-8.add"),
-							vim.fn.expand("~/github/dotfiles-latest/neovim/neobean/spell/es.utf-8.add"),
+							vim.fn.expand("~/.config/nvim/dictionary/words.txt"),
 						},
 						-- --  NOTE: To disable the definitions uncomment this section below
 						--
