@@ -8,7 +8,7 @@ return {
 	{ "nvim-telescope/telescope.nvim", enabled = true },
 	{ "folke/noice.nvim", enabled = true },
 	{ "nvim-lualine/lualine.nvim", enabled = true },
-	{ "akinsho/bufferline.nvim", enabled = true },
+	{ "akinsho/bufferline.nvim", enabled = false },
 	-- file management
 	{ "nvim-tree/nvim-tree.lua", enabled = false },
 	{ "nvim-neo-tree/neo-tree.nvim", enabled = true },
@@ -17,7 +17,7 @@ return {
 	{ "ya2s/nvim-cursorline", enabled = true },
 	{ "rasulomaroff/reactive.nvim", enabled = false },
 	{ "jinh0/eyeliner.nvim", enabled = true },
-	{ "mbbill/undotree", enabled = true },
+	{ "mbbill/undotree", enabled = false },
 	--- cmp
 	{ "hrsh7th/nvim-cmp", enabled = false },
 	{ "hrsh7th/cmp-nvim-lsp", enabled = false },
@@ -35,5 +35,9 @@ return {
 
 	{ "nvim-zh/colorful-winsep.nvim", enabled = false },
 	{ "m4xshen/hardtime.nvim", enabled = false },
-	{ "linux-cultist/venv-selector.nvim", enabled = true },
+	{ "linux-cultist/venv-selector.nvim", enabled = false },
+	{ "thePrimeagen/harpoon", enabled = false, branch = "harpoon2" },
+	{ "piersolenski/import.nvim", enabled = false },
+	{ "hedyhli/outline.nvim", enabled = false },
+	{ "mikavilpas/yazi.nvim", enabled = false },
 }
