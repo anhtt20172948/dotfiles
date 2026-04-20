@@ -39,5 +39,5 @@ return {
 	{ "thePrimeagen/harpoon", enabled = false, branch = "harpoon2" },
 	{ "piersolenski/import.nvim", enabled = false },
 	{ "hedyhli/outline.nvim", enabled = false },
-	{ "mikavilpas/yazi.nvim", enabled = false },
+	{ "mikavilpas/yazi.nvim", enabled = true },
 }
