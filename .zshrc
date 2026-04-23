@@ -119,10 +119,60 @@ alias lla="eza --color=always --long --git --icons --all --octal-permissions"
 # atuin
 eval "$(atuin init zsh)"
 
+# custom show
+alias s="~/show"
+alias d="~/download"
+
 eval "$(zoxide init --cmd cd zsh)"
 alias vi="nvim"
 
+alias reload-zsh="source ~/.zshrc"
+alias edit-zsh="nvim ~/.zshrc"
+
+# fzf
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+eval "$(fzf --zsh)"
+# --- setup fzf theme ---
+# -- Use fd instead of fzf --
+export FZF_DEFAULT_COMMAND="fd --hidden --strip-cwd-prefix --exclude .git"
+export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+export FZF_ALT_C_COMMAND="fd --type=d --hidden --strip-cwd-prefix --exclude .git"
+
+# Use fd (https://github.com/sharkdp/fd) for listing path candidates.
+# - The first argument to the function ($1) is the base path to start traversal
+# - See the source code (completion.{bash,zsh}) for the details.
+_fzf_compgen_path() {
+  fd --hidden --exclude .git . "$1"
+}
+
+# Use fd to generate the list for directory completion
+_fzf_compgen_dir() {
+  fd --type=d --hidden --exclude .git . "$1"
+}
+
+source ~/fzf-git.sh/fzf-git.sh
+
+show_file_or_dir_preview="if [ -d {} ]; then eza --tree --color=always {} | head -200; else bat -n --color=always --line-range :500 {}; fi"
+
+export FZF_CTRL_T_OPTS="--preview '$show_file_or_dir_preview'"
+export FZF_ALT_C_OPTS="--preview 'eza --tree --color=always {} | head -200'"
+
+# Advanced customization of fzf options via _fzf_comprun function
+# - The first argument to the function is the name of the command.
+# - You should make sure to pass the rest of the arguments to fzf.
+_fzf_comprun() {
+  local command=$1
+  shift
+
+  case "$command" in
+    cd)           fzf --preview 'eza --tree --color=always {} | head -200' "$@" ;;
+    export|unset) fzf --preview "eval 'echo \${}'"         "$@" ;;
+    ssh)          fzf --preview 'dig {}'                   "$@" ;;
+    *)            fzf --preview "$show_file_or_dir_preview" "$@" ;;
+  esac
+}
+
+
 
 function y() {
 	local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
@@ -141,3 +191,43 @@ export NVM_DIR="$HOME/.config/nvm"
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
 eval "$(uv generate-shell-completion zsh)"
+
+# >>> conda initialize >>>
+# !! Contents within this block are managed by 'conda init' !!
+__conda_setup="$('/home/anhtran/miniconda3/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
+if [ $? -eq 0 ]; then
+    eval "$__conda_setup"
+else
+    if [ -f "/home/anhtran/miniconda3/etc/profile.d/conda.sh" ]; then
+        . "/home/anhtran/miniconda3/etc/profile.d/conda.sh"
+    else
+        export PATH="/home/anhtran/miniconda3/bin:$PATH"
+    fi
+fi
+unset __conda_setup
+# <<< conda initialize <<<
+
+
+source /home/anhtran/.config/broot/launcher/bash/br
+
+
+# 1. Edit Command Buffer
+# -------------------------------------------
+# Open the current command in your $EDITOR (e.g., neovim)
+# Press Ctrl+X followed by Ctrl+E to trigger
+export EDITOR=nvim
+autoload -Uz edit-command-line
+zle -N edit-command-line
+bindkey '^X^E' edit-command-line
+bindkey '^Xe' edit-command-line
+
+# Expands history expressions like !! or !$ when you press space
+bindkey ' ' magic-space
+
+# Example: List directory contents on cd
+chpwd() {
+  ls
+}
+
+# opencode
+export PATH=/home/anhtran/.opencode/bin:$PATH

@@ -70,6 +70,7 @@ SERVERS=(
   "jetson51"
   "jetson52"
   "jetson53"
+  "jetson54"
 )
 
 # Show supported servers
