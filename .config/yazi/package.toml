@@ -4,24 +4,39 @@ deps = []
 [[flavor.deps]]
 use = "yazi-rs/flavors:catppuccin-macchiato"
 rev = "2d73b79"
-hash = "86f1eb7e792533c80b34cdff4e191f41"
+hash = "511cd19cdec4d505ecf9c1e0d45e5973"
 
 [[flavor.deps]]
 use = "Mintass/rose-pine"
 rev = "8343340"
-hash = "e2336631865c0f90276dcbc553d532fc"
+hash = "d92db727dc16db9357f0dcda2758170c"
 
 [[flavor.deps]]
 use = "Mintass/rose-pine-moon"
 rev = "aa2d937"
-hash = "97cd4819252cb1a9d0f55daa14e481e"
+hash = "f864fd523f0b3c65079d434eb537cdef"
 
 [[flavor.deps]]
 use = "Mintass/rose-pine-dawn"
 rev = "5c6d353"
-hash = "d9d9463d5d43ced18e18986d05439ace"
+hash = "1f9b1fa79a11ae9f9255b47380b98775"
 
 [[flavor.deps]]
 use = "BennyOe/tokyo-night"
 rev = "5f56364"
-hash = "c0bf69ad2c44005892d586e9693993c6"
+hash = "ea25e1f0f25b0521ef78fd4e9698ff52"
+
+[[flavor.deps]]
+use = "yazi-rs/flavors:dracula"
+rev = "0f9204b"
+hash = "20624fcdfcf7e4e912de05e348065e5e"
+
+[[flavor.deps]]
+use = "yazi-rs/flavors:catppuccin-mocha"
+rev = "0f9204b"
+hash = "7dfe41c9c3d9be76da8a844263d0bbed"
+
+[[flavor.deps]]
+use = "yazi-rs/flavors:catppuccin-latte"
+rev = "0f9204b"
+hash = "b8f46853c27707115f25f3423a47bd38"
