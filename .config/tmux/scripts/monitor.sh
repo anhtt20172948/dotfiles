@@ -97,11 +97,42 @@ menu() {
 PREVIEW='
 tool=$(awk -F"\t" "{print \$2}" <<< "{}")
 
+C_RESET="\033[0m"
+C_BOLD="\033[1m"
+C_DIM="\033[2m"
+C_CYAN="\033[36m"
+C_BLUE="\033[34m"
+C_GREEN="\033[32m"
+C_YELLOW="\033[33m"
+C_MAGENTA="\033[35m"
+C_RED="\033[31m"
+
+tool_command() {
+  case "$1" in
+   htop) echo "htop" ;;
+   btop) echo "btop" ;;
+   glances) echo "glances" ;;
+   nvtop) echo "nvtop" ;;
+   nvitop) echo "nvitop" ;;
+   jtop) echo "jtop" ;;
+   lazydocker) echo "lazydocker" ;;
+   ctop) echo "TERM=xterm-256color ctop" ;;
+   dockerstats) echo "docker stats" ;;
+   bmon) echo "bmon" ;;
+   nload) echo "nload" ;;
+   iotop) echo "iotop" ;;
+   k9s) echo "k9s" ;;
+   __group__) echo "Section header" ;;
+   *) echo "N/A" ;;
+  esac
+}
+
 mem=$(free 2>/dev/null | awk "/Mem:/ {printf(\"%.0f\",\$3/\$2*100)}")
 disk=$(df -P / 2>/dev/null | awk "NR==2{gsub(\"%\",\"\",\$5);print \$5}")
 host=${HOST:-$(hostname 2>/dev/null)}
 uptime_h=$(uptime -p 2>/dev/null || uptime 2>/dev/null)
 loadavg=$(awk "{print \$1\" \"\$2\" \"\$3}" /proc/loadavg 2>/dev/null)
+cmd=$(tool_command "$tool")
 
 cpu=$(LC_ALL=C top -bn1 2>/dev/null | awk -F"," "/Cpu/ {gsub(\"%\",\"\",\$1); gsub(\"[^0-9.]\",\"\",\$1); print int(\$1)}" | head -1)
 cpu=${cpu:-0}
@@ -116,38 +147,53 @@ clamp_percent() {
   echo "$v"
 }
 
+level_color() {
+  local v=${1:-0}
+  if ((v >= 85)); then
+    echo "$C_RED"
+  elif ((v >= 65)); then
+    echo "$C_YELLOW"
+  else
+    echo "$C_GREEN"
+  fi
+}
+
 cpu=$(clamp_percent "$cpu")
 mem=$(clamp_percent "$mem")
 disk=$(clamp_percent "$disk")
+cpu_color=$(level_color "$cpu")
+mem_color=$(level_color "$mem")
+disk_color=$(level_color "$disk")
 
 bar() {
- p=${1:-0}; f=$((p/5)); e=$((20-f))
- printf "["
+ p=${1:-0}; color=${2:-$C_GREEN}; f=$((p/5)); e=$((20-f))
+ printf "%b[" "$color"
  for ((i=0;i<f;i++)); do printf "█"; done
  for ((i=0;i<e;i++)); do printf "░"; done
- printf "] %s%%" "$p"
+ printf "] %s%%%b" "$p" "$C_RESET"
 }
 
-echo "╔══════════════════════════════╗"
-echo "║      MONITOR CENTER V3       ║"
-echo "╚══════════════════════════════╝"
+printf "%b╔══════════════════════════════╗%b\n" "$C_MAGENTA" "$C_RESET"
+printf "%b║      MONITOR CENTER V3       ║%b\n" "$C_MAGENTA" "$C_RESET"
+printf "%b╚══════════════════════════════╝%b\n" "$C_MAGENTA" "$C_RESET"
 echo
-echo "󰒋 Host      : $host"
-echo "󰌽 Platform  : PLATFORM_LABEL"
-echo "󰔠 Uptime    : $uptime_h"
-echo "󰘚 Load Avg  : $loadavg"
+printf "%b󰒋 Host%b      : %s\n" "$C_CYAN" "$C_RESET" "$host"
+printf "%b󰌽 Platform%b  : %s\n" "$C_CYAN" "$C_RESET" "PLATFORM_LABEL"
+printf "%b󰔠 Uptime%b    : %s\n" "$C_CYAN" "$C_RESET" "$uptime_h"
+printf "%b󰘚 Load Avg%b  : %s\n" "$C_CYAN" "$C_RESET" "$loadavg"
+printf "%b󱓞 Command%b   : %b%s%b\n" "$C_CYAN" "$C_RESET" "$C_YELLOW" "$cmd" "$C_RESET"
 echo
-echo "CPU  $(bar $cpu)"
-echo "RAM  $(bar ${mem:-0})"
-echo "DSK  $(bar ${disk:-0})"
+printf "%bCPU%b  %s\n" "$C_BLUE" "$C_RESET" "$(bar "$cpu" "$cpu_color")"
+printf "%bRAM%b  %s\n" "$C_BLUE" "$C_RESET" "$(bar "${mem:-0}" "$mem_color")"
+printf "%bDSK%b  %s\n" "$C_BLUE" "$C_RESET" "$(bar "${disk:-0}" "$disk_color")"
 echo
 
 if command -v docker >/dev/null 2>&1; then
-  echo "󰡨 Containers : $(docker ps -q 2>/dev/null | wc -l)"
+  printf "%b󰡨 Containers%b : %s\n" "$C_GREEN" "$C_RESET" "$(docker ps -q 2>/dev/null | wc -l)"
 fi
 
 if command -v nvidia-smi >/dev/null 2>&1; then
-  echo "󰢮 GPU Present"
+  printf "%b󰢮 GPU%b        : detected\n" "$C_GREEN" "$C_RESET"
 fi
 
 echo
