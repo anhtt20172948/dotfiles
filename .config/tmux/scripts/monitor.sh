@@ -49,49 +49,52 @@ menu() {
   local system=()
   local container=()
   local network=()
+
   local reset=$'\033[0m'
   local c_gpu=$'\033[1;35m'
   local c_system=$'\033[1;36m'
   local c_container=$'\033[1;33m'
   local c_network=$'\033[1;32m'
 
-  have jtop && gpu+=($'󰤽\tjtop\tJetson Stats ★')
-  have nvitop && gpu+=($'󰚗\tnvitop\tCUDA Processes')
-  have nvtop && gpu+=($'󰢮\tnvtop\tGPU Dashboard')
+  # format:
+  # DISPLAY | TOOL | DESC
 
-  have btop && system+=($'󰎴\tbtop\tSystem Dashboard')
-  have htop && system+=($'󰍛\thtop\tCPU Processes')
-  have glances && system+=($'󰢹\tglances\tSystem Analytics')
-  have iotop && system+=($'󰋊\tiotop\tDisk I/O')
+  have jtop       && gpu+=($' 󰤽  jtop\tjtop\tJetson Stats ★')
+  have nvitop     && gpu+=($' 󰚗  nvitop\tnvitop\tCUDA Processes')
+  have nvtop      && gpu+=($' 󰢮  nvtop\tnvtop\tGPU Dashboard')
 
-  have lazydocker && container+=($'󰡨\tlazydocker\tDocker Manager')
-  have ctop && container+=($'󰕈\tctop\tContainer Top')
-  have docker && container+=($'󰖂\tdockerstats\tDocker Stats')
-  have k9s && container+=($'󱃾\tk9s\tKubernetes')
+  have btop       && system+=($' 󰎴  btop\tbtop\tSystem Dashboard')
+  have htop       && system+=($' 󰍛  htop\thtop\tCPU Processes')
+  have glances    && system+=($' 󰢹  glances\tglances\tSystem Analytics')
+  have iotop      && system+=($' 󰋊  iotop\tiotop\tDisk I/O')
 
-  have bmon && network+=($'󰩟\tbmon\tBandwidth')
-  have nload && network+=($'󰤨\tnload\tThroughput')
+  have lazydocker && container+=($' 󰡨  lazydocker\tlazydocker\tDocker Manager')
+  have ctop       && container+=($' 󰕈  ctop\tctop\tContainer Top')
+  have docker     && container+=($' 󰖂  dockerstats\tdockerstats\tDocker Stats')
+  have k9s        && container+=($' 󱃾  k9s \tk9s \tKubernetes')
 
-  if [[ ${#gpu[@]} -gt 0 ]]; then
-    printf '%b\t%s\t%s\n' "${c_gpu}╭─ GPU${reset}" "__group__" ""
+  have bmon       && network+=($' 󰩟  bmon\tbmon\tBandwidth')
+  have nload      && network+=($' 󰤨  nload\tnload\tThroughput')
+
+  if ((${#gpu[@]})); then
+    printf '%bGPU%b\tGROUP\t\n' "$c_gpu" "$reset"
     printf '%s\n' "${gpu[@]}"
   fi
-  if [[ ${#system[@]} -gt 0 ]]; then
-    printf '%b\t%s\t%s\n' "${c_system}├─ System${reset}" "__group__" ""
+
+  if ((${#system[@]})); then
+    printf '%bSystem%b\tGROUP\t\n' "$c_system" "$reset"
     printf '%s\n' "${system[@]}"
   fi
-  if [[ ${#container[@]} -gt 0 ]]; then
-    printf '%b\t%s\t%s\n' "${c_container}├─ Container${reset}" "__group__" ""
+
+  if ((${#container[@]})); then
+    printf '%bContainer%b\tGROUP\t\n' "$c_container" "$reset"
     printf '%s\n' "${container[@]}"
   fi
-  if [[ ${#network[@]} -gt 0 ]]; then
-    printf '%b\t%s\t%s\n' "${c_network}╰─ Network${reset}" "__group__" ""
+
+  if ((${#network[@]})); then
+    printf '%bNetwork%b\tGROUP\t\n' "$c_network" "$reset"
     printf '%s\n' "${network[@]}"
   fi
-
-  # Under set -e + pipefail, ensure this function does not fail
-  # just because the last optional command is unavailable.
-  return 0
 }
 
 PREVIEW='
@@ -232,7 +235,8 @@ have fzf || { echo "fzf is required" >&2; exit 1; }
 menu_entries=$(menu | awk '!seen[$0]++')
 [[ -z "$menu_entries" ]] && { echo "No monitoring tools found in PATH" >&2; exit 1; }
 
-sel=$(printf '%s\n' "$menu_entries" | fzf \
+sel=$(
+printf '%s\n' "$menu_entries" | fzf \
   --ansi \
   --delimiter=$'\t' \
   --with-nth=1,3 \
@@ -244,18 +248,22 @@ sel=$(printf '%s\n' "$menu_entries" | fzf \
   --cycle \
   --info=inline-right \
   --header-first \
-  --prompt="󱂬 Monitor V3 › " \
+  --prompt="󱂬 Monitor › " \
   --pointer="▶" \
-  --header="Platform: $PLATFORM_LABEL  |  Ctrl-R/F5: reload list  |  Alt-P: refresh preview" \
-  --color=fg:#cdd6f4,bg:#1e1e2e,fg+:#f5e0dc,bg+:#313244,hl:#89b4fa,pointer:#f9e2af,border:#6c7086,header:#74c7ec \
+  --header="Platform: $PLATFORM_LABEL" \
   --preview-window="right,70%,wrap" \
   --preview-label=" Live Preview " \
-  --bind "ctrl-r:reload($SCRIPT_PATH --menu),f5:reload($SCRIPT_PATH --menu),alt-p:refresh-preview" \
-  --preview "$PREVIEW")
+  --bind "ctrl-r:reload($SCRIPT_PATH --menu)" \
+  --bind "f5:reload($SCRIPT_PATH --menu)" \
+  --bind "alt-p:refresh-preview" \
+  --preview "$PREVIEW"
+)
 
 [[ -z "$sel" ]] && exit 0
 tool=$(echo "$sel" | cut -f2)
-[[ -z "$tool" || "$tool" == "__group__" ]] && exit 0
+
+[[ -z "$tool" ]] && exit 0
+[[ "$tool" == "GROUP" ]] && exit 0
 
 case "$tool" in
   htop) exec htop ;;
