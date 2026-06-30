@@ -3,7 +3,7 @@ return {
 	{
 		"folke/snacks.nvim",
 		-- commit = "2b52d89",
-		tag = "v2.30.0",
+		tag = "v2.31.0",
 		priority = 1000,
 		lazy = false,
 		---@type snacks.Config
