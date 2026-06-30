@@ -4,7 +4,7 @@ local icons = require("lib.icons")
 return {
 	"saghen/blink.cmp",
 	event = "InsertEnter",
-	-- version = "v0.13.1",
+    version = "1.*",
 	dependencies = {
 		"moyiz/blink-emoji.nvim",
 		"Kaiser-Yang/blink-cmp-dictionary",
