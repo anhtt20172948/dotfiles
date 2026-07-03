@@ -30,6 +30,7 @@ return {
 				transparent_background = true, -- disables setting the background color.
 				float = {
 					transparent = true,
+					solid = false, -- to enable solid-window styling
 				},
 				styles = {
 					comments = { "italic" },
@@ -44,6 +45,20 @@ return {
 					enabled = false,
 					shade = "light",
 					percentage = 0.6,
+				},
+				lsp_styles = { -- Handles the style of specific lsp hl groups (see `:h lsp-highlight`).
+					virtual_text = {
+						hints = { "italic" },
+						information = { "italic" },
+						ok = { "italic" },
+					},
+					underlines = {
+						errors = { "underline" },
+						warnings = { "underline" },
+					},
+					inlay_hints = {
+						background = false,
+					},
 				},
 				highlight_overrides = {
 					all = function(colors)
@@ -186,7 +201,7 @@ return {
 					gitsigns = true,
 					nvimtree = true,
 					neotree = true,
-					treesitter = true,
+					-- treesitter = true, -- remove from: v2.0.0
 					blink_cmp = true,
 					noice = true,
 					harpoon = true,
@@ -197,7 +212,7 @@ return {
 					lsp_saga = true,
 					diffview = true,
 					grug_far = true,
-					markdown = true,
+					-- markdown = true, -- remove from: v2.0.0
 					treesitter_context = true,
 					rainbow_delimiters = true,
 					window_picker = true,
@@ -218,26 +233,27 @@ return {
 						enabled = true,
 						color = "lavender",
 					},
-					native_lsp = {
-						enabled = true,
-						virtual_text = {
-							errors = { "italic" },
-							hints = { "italic" },
-							warnings = { "italic" },
-							information = { "italic" },
-							ok = { "italic" },
-						},
-						underlines = {
-							errors = { "underline" },
-							hints = { "underline" },
-							warnings = { "underline" },
-							information = { "underline" },
-							ok = { "underline" },
-						},
-						inlay_hints = {
-							background = true,
-						},
-					},
+					-- remove from: v2.0.0
+					-- native_lsp = {
+					-- 	enabled = true,
+					-- 	virtual_text = {
+					-- 		errors = { "italic" },
+					-- 		hints = { "italic" },
+					-- 		warnings = { "italic" },
+					-- 		information = { "italic" },
+					-- 		ok = { "italic" },
+					-- 	},
+					-- 	underlines = {
+					-- 		errors = { "underline" },
+					-- 		hints = { "underline" },
+					-- 		warnings = { "underline" },
+					-- 		information = { "underline" },
+					-- 		ok = { "underline" },
+					-- 	},
+					-- 	inlay_hints = {
+					-- 		background = true,
+					-- 	},
+					-- },
 				},
 			})
 		end,
