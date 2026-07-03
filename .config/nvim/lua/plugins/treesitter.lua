@@ -14,6 +14,7 @@ return {
         "c",
         "json",
         "yaml",
+        "bash"
       },
 
       highlight = {
