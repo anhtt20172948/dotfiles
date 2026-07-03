@@ -21,13 +21,16 @@ return {
 	{
 		"catppuccin/nvim",
 		name = "catppuccin",
-		tag = "v1.11.0",
+		tag = "v2.0.0",
 		lazy = true,
 		priority = 1000,
 		config = function()
 			require("catppuccin").setup({
 				flavour = "mocha",
 				transparent_background = true, -- disables setting the background color.
+				float = {
+					transparent = true,
+				},
 				styles = {
 					comments = { "italic" },
 					conditionals = { "italic" },
