@@ -1,4 +1,5 @@
-et -e
+#!/bin/bash
+set -e
 
 # Tự động dọn dẹp nếu script bị lỗi giữa chừng
 trap 'echo "Có lỗi xảy ra. Đang dọn dẹp..."; rm -rf ncurses-6.5* zsh*;' ERR
@@ -26,11 +27,11 @@ tar -xzvf ncurses-6.5.tar.gz
 cd ncurses-6.5
 
 ./configure --prefix="$HOME/.local" \
-	            --enable-shared \
-		                --with-shared \
-				            --enable-pc-files \
-					                --with-pkg-config-libdir="$HOME/.local/lib/pkgconfig" \
-							            --enable-widec # Bật hỗ trợ ký tự UTF-8 ký tự đặc biệt
+            --enable-shared \
+            --with-shared \
+            --enable-pc-files \
+            --with-pkg-config-libdir="$HOME/.local/lib/pkgconfig" \
+            --enable-widec # Bật hỗ trợ ký tự UTF-8 ký tự đặc biệt
 
 make -j"$NUM_CORES"
 make install
@@ -53,10 +54,10 @@ cd zsh_src
 
 # Chỉ định tường minh đường dẫn ncurses thông qua các cờ mở rộng
 ./configure --prefix="$HOME/.local" \
-	            --enable-multibyte \
-		                --with-term-lib="ncurses" \
-				            CPPFLAGS="-I${HOME}/.local/include -I${HOME}/.local/include/ncursesw -I${HOME}/.local/include/ncurses" \
-					                LDFLAGS="-L${HOME}/.local/lib"
+            --enable-multibyte \
+            --with-term-lib="ncurses" \
+            CPPFLAGS="-I${HOME}/.local/include -I${HOME}/.local/include/ncursesw -I${HOME}/.local/include/ncurses" \
+            LDFLAGS="-L${HOME}/.local/lib"
 
 make -j"$NUM_CORES"
 make install
@@ -68,7 +69,7 @@ cd .. && rm -rf zsh.tar.xz zsh_src
 echo "--- Cấu hình chuyển đổi Shell tự động ---"
 
 if ! grep -q "exec ~/.local/bin/zsh" ~/.bash_profile 2>/dev/null; then
-	    cat << 'EOF' >> ~/.bash_profile
+    cat << 'EOF' >> ~/.bash_profile
 
 # Tự động nạp thư mục .local/bin vào PATH nếu chưa có
 if [ -d "$HOME/.local/bin" ] ; then
@@ -83,7 +84,7 @@ fi
 EOF
     echo "Đã thêm cấu hình Zsh vào ~/.bash_profile"
 else
-	    echo "Cấu hình Zsh đã tồn tại trong ~/.bash_profile từ trước."
+    echo "Cấu hình Zsh đã tồn tại trong ~/.bash_profile từ trước."
 fi
 
 echo "--- HOÀN THÀNH ---"
