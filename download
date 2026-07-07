@@ -67,6 +67,7 @@ SERVERS=(
   "jupyter"
   "rack"
   "strong"
+  "jetson50"
   "jetson51"
   "jetson52"
   "jetson53"
