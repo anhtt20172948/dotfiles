@@ -31,6 +31,8 @@ cd ncurses-6.5
             --with-shared \
             --enable-pc-files \
             --with-pkg-config-libdir="$HOME/.local/lib/pkgconfig" \
+            --without-cxx \
+            --without-cxx-binding \
             --enable-widec # Bật hỗ trợ ký tự UTF-8 ký tự đặc biệt
 
 make -j"$NUM_CORES"
