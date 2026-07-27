@@ -1,41 +1,95 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Standardized ANSI Color Palette
-readonly C_RESET=$'\033[0m'
-readonly C_BOLD=$'\033[1m'
-readonly C_DIM=$'\033[2m'
-readonly C_CYAN=$'\033[1;36m'
-readonly C_BLUE=$'\033[1;34m'
-readonly C_GREEN=$'\033[1;32m'
-readonly C_YELLOW=$'\033[1;33m'
-readonly C_MAGENTA=$'\033[1;35m'
-readonly C_RED=$'\033[1;31m'
+C_RESET=$'\033[0m'
+C_BOLD=$'\033[1m'
+C_DIM=$'\033[2m'
+C_CYAN=$'\033[1;36m'
+C_BLUE=$'\033[1;34m'
+C_GREEN=$'\033[1;32m'
+C_YELLOW=$'\033[1;33m'
+C_MAGENTA=$'\033[1;35m'
+C_RED=$'\033[1;31m'
 
-# Graceful exit handling
 cleanup() {
+  local tmpdir="${MONITOR_HISTORY_DIR:-}"
+  [[ -d "$tmpdir" ]] && rm -rf "$tmpdir" 2>/dev/null || true
   printf '%b' "$C_RESET"
 }
 trap cleanup EXIT INT TERM
 
-have() {
-  command -v "$1" >/dev/null 2>&1
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# --- Config ---
+readonly CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tmux"
+readonly CONFIG_FILE="$CONFIG_DIR/monitor.conf"
+
+load_config() {
+  set -a
+  : "${MONITOR_LAUNCH_MODE:=split}"
+  : "${MONITOR_SPLIT_DIRECTION:=h}"
+  : "${MONITOR_SPLIT_SIZE:=}"
+  : "${MONITOR_DANGER_CPU:=85}"
+  : "${MONITOR_DANGER_MEM:=85}"
+  : "${MONITOR_DANGER_DISK:=85}"
+  : "${MONITOR_WARN_CPU:=65}"
+  : "${MONITOR_WARN_MEM:=65}"
+  : "${MONITOR_WARN_DISK:=65}"
+  : "${MONITOR_WINDOW_AUTO_CLEANUP:=true}"
+  : "${MONITOR_PREVIEW_WIDTH:=65%}"
+  : "${MONITOR_PREVIEW_PROCESSES:=6}"
+  : "${MONITOR_HISTORY_ENABLED:=true}"
+  : "${MONITOR_HISTORY_SIZE:=20}"
+  set +a
+
+  [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
+}
+load_config
+
+color_name_to_ansi() {
+  case "${1,,}" in
+    black)   echo '0;30'  ;; red)     echo '1;31'  ;;
+    green)   echo '1;32'  ;; yellow)  echo '1;33'  ;;
+    blue)    echo '1;34'  ;; magenta) echo '1;35'  ;;
+    cyan)    echo '1;36'  ;; white)   echo '1;37'  ;;
+    dim)     echo '2'     ;; bold)    echo '1'     ;;
+    reset)   echo '0'     ;;
+    *)       echo "${1:-}" ;;
+  esac
 }
 
+load_theme() {
+  local ansi
+  for pair in HEADER:MAGENTA LABEL:CYAN BAR_LABEL:BLUE GOOD:GREEN WARN:YELLOW DANGER:RED DIM:DIM; do
+    local config_key="MONITOR_COLOR_${pair%%:*}"
+    local var="C_${pair#*:}"
+    if [[ -n "${!config_key:-}" ]]; then
+      ansi=$(color_name_to_ansi "${!config_key}")
+      [[ -n "$ansi" ]] && printf -v "$var" '\033[%sm' "$ansi"
+    fi
+  done
+}
+load_theme
+
+readonly MONITOR_HISTORY_DIR="${TMPDIR:-/tmp}/monitor-${UID:-$(id -u)}"
+mkdir -p "$MONITOR_HISTORY_DIR"
+
+readonly SCRIPT_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")
+readonly SCRIPT_PATH="$SCRIPT_DIR/monitor.sh"
+readonly PREVIEW_SCRIPT="$SCRIPT_DIR/monitor-preview.sh"
+
+# --- Platform Detection ---
 detect_platform() {
   local tags=()
 
-  # Jetson detection
   if [[ -f /etc/nv_tegra_release ]] || have jtop; then
     tags+=(jetson)
   fi
 
-  # Generic GPU server detection
   if have nvidia-smi && nvidia-smi -L >/dev/null 2>&1; then
     tags+=(gpu)
   fi
 
-  # Container/K8s capabilities
   have docker && tags+=(docker)
   if have kubectl && kubectl config current-context >/dev/null 2>&1; then
     tags+=(kubernetes)
@@ -45,29 +99,36 @@ detect_platform() {
   (IFS=+; echo "${tags[*]}")
 }
 
-PLATFORM=$(detect_platform)
-SCRIPT_PATH=$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")
-
 platform_badges() {
-  local p="$1"
-  local labels=()
+  local p=$1 labels=()
 
-  [[ "$p" == *jetson* ]] && labels+=("Jetson")
-  [[ "$p" == *gpu* ]] && labels+=("GPU")
-  [[ "$p" == *docker* ]] && labels+=("Docker")
-  [[ "$p" == *kubernetes* ]] && labels+=("Kubernetes")
-  [[ ${#labels[@]} -eq 0 ]] && labels+=("Linux")
+  [[ "$p" == *jetson* ]]      && labels+=("Jetson")
+  [[ "$p" == *gpu* ]]         && labels+=("GPU")
+  [[ "$p" == *docker* ]]      && labels+=("Docker")
+  [[ "$p" == *kubernetes* ]]  && labels+=("Kubernetes")
+  [[ ${#labels[@]} -eq 0 ]]   && labels+=("Linux")
 
   local IFS=' | '
   echo "${labels[*]}"
 }
 
-PLATFORM_LABEL=$(platform_badges "$PLATFORM")
+readonly MONITOR_PLATFORM=$(detect_platform)
+readonly MONITOR_PLATFORM_LABEL=$(platform_badges "$MONITOR_PLATFORM")
 
+export MONITOR_PLATFORM
+export MONITOR_PLATFORM_LABEL
+export MONITOR_HISTORY_DIR
+export MONITOR_HISTORY_SIZE
+export MONITOR_PREVIEW_PROCESSES
+export MONITOR_DANGER_CPU MONITOR_DANGER_MEM MONITOR_DANGER_DISK
+export MONITOR_WARN_CPU MONITOR_WARN_MEM MONITOR_WARN_DISK
+export MONITOR_COLOR_HEADER MONITOR_COLOR_LABEL MONITOR_COLOR_BAR_LABEL
+export MONITOR_COLOR_GOOD MONITOR_COLOR_WARN MONITOR_COLOR_DANGER MONITOR_COLOR_DIM
+
+# --- Menu Generation ---
 menu() {
   local gpu=() system=() container=() network=()
 
-  # Menu Data Structure: DISPLAY_TEXT \t TOOL_KEY \t DESCRIPTION
   have jtop        && gpu+=($' 󰤽  jtop\tjtop\tJetson Stats ★')
   have nvitop      && gpu+=($' 󰚗  nvitop\tnvitop\tCUDA Processes')
   have nvtop       && gpu+=($' 󰢮  nvtop\tnvtop\tGPU Dashboard')
@@ -108,176 +169,203 @@ menu() {
   fi
 }
 
-PREVIEW='
-tool=$(awk -F"\t" "{print \$2}" <<< "{}")
+# --- Tmux Launch ---
+launch_tool() {
+  local tool=$1 cmd
+  case "$tool" in
+    htop)        cmd="htop" ;;
+    btop)        cmd="btop" ;;
+    glances)     cmd="glances" ;;
+    nvtop)       cmd="nvtop" ;;
+    nvitop)      cmd="nvitop" ;;
+    jtop)        cmd="jtop" ;;
+    lazydocker)  cmd="lazydocker" ;;
+    ctop)        cmd="env TERM=xterm-256color ctop" ;;
+    dockerstats) cmd="docker stats" ;;
+    bmon)        cmd="bmon" ;;
+    nload)       cmd="nload" ;;
+    iftop)       cmd="sudo iftop" ;;
+    iotop)       cmd="sudo iotop" ;;
+    dstat)       cmd="dstat" ;;
+    k9s)         cmd="k9s" ;;
+    *)
+      echo "Error: Unknown tool ($tool)" >&2
+      exit 1
+      ;;
+  esac
 
-C_RESET="\033[0m"
-C_BOLD="\033[1m"
-C_DIM="\033[2m"
-C_CYAN="\033[1;36m"
-C_BLUE="\033[1;34m"
-C_GREEN="\033[1;32m"
-C_YELLOW="\033[1;33m"
-C_MAGENTA="\033[1;35m"
-C_RED="\033[1;31m"
-
-tool_command() {
-  case "$1" in
-    htop) echo "htop" ;;
-    btop) echo "btop" ;;
-    glances) echo "glances" ;;
-    nvtop) echo "nvtop" ;;
-    nvitop) echo "nvitop" ;;
-    jtop) echo "jtop" ;;
-    lazydocker) echo "lazydocker" ;;
-    ctop) echo "TERM=xterm-256color ctop" ;;
-    dockerstats) echo "docker stats" ;;
-    bmon) echo "bmon" ;;
-    nload) echo "nload" ;;
-    iftop) echo "sudo iftop" ;;
-    iotop) echo "sudo iotop" ;;
-    dstat) echo "dstat" ;;
-    k9s) echo "k9s" ;;
-    __GROUP__) echo "Section Header" ;;
-    *) echo "N/A" ;;
+  case "$MONITOR_LAUNCH_MODE" in
+    split)
+      if [[ -n "${TMUX:-}" ]]; then
+        local dir_flag="-h"
+        [[ "$MONITOR_SPLIT_DIRECTION" == "v" ]] && dir_flag="-v"
+        tmux split-window $dir_flag ${MONITOR_SPLIT_SIZE:+-l "$MONITOR_SPLIT_SIZE"} "$cmd"
+      else
+        exec $cmd
+      fi
+      ;;
+    window)
+      if [[ -n "${TMUX:-}" ]]; then
+        local tool_name="$tool"
+        case "$tool" in
+          dockerstats) tool_name="docker" ;;
+          *)           ;;
+        esac
+        if [[ "$MONITOR_WINDOW_AUTO_CLEANUP" == "true" ]]; then
+          tmux new-window -n "$tool_name" "$cmd; tmux kill-window"
+        else
+          tmux new-window -n "$tool_name" "$cmd"
+        fi
+        cleanup
+        exit 0
+      else
+        exec $cmd
+      fi
+      ;;
+    replace|*)
+      exec $cmd
+      ;;
   esac
 }
 
-# Cross-platform CPU Calculation via /proc/stat
-get_cpu_usage() {
-  if [[ -f /proc/stat ]]; then
-    read -r cpu user nice system idle iowait irq softirq steal _ < /proc/stat
-    local prev_idle=$((idle + iowait))
-    local prev_total=$((user + nice + system + idle + iowait + irq + softirq + steal))
-    sleep 0.1
-    read -r cpu user nice system idle iowait irq softirq steal _ < /proc/stat
-    local idle_now=$((idle + iowait))
-    local total_now=$((user + nice + system + idle + iowait + irq + softirq + steal))
-    local total_diff=$((total_now - prev_total))
-    local idle_diff=$((idle_now - prev_idle))
-    if ((total_diff > 0)); then
-      echo "$(( (total_diff - idle_diff) * 100 / total_diff ))"
-      return
+# --- Status Bar ---
+get_cpu_fast() {
+  local stat_file="${MONITOR_HISTORY_DIR}/cpu-stat"
+  local user nice system idle iowait irq softirq steal _
+  read -r _ user nice system idle iowait irq softirq steal _ < /proc/stat 2>/dev/null || { echo 0; return; }
+  local total=$((user+nice+system+idle+iowait+irq+softirq+steal))
+  local idle_total=$((idle+iowait))
+  if [[ -f "$stat_file" ]]; then
+    local prev_total prev_idle
+    read -r prev_total prev_idle _ < "$stat_file" 2>/dev/null || { prev_total=0; prev_idle=0; }
+    local diff_total=$((total - prev_total))
+    local diff_idle=$((idle_total - prev_idle))
+    if ((diff_total > 0)); then
+      echo "$(( (diff_total - diff_idle) * 100 / diff_total ))"
+    else
+      echo 0
     fi
-  fi
-  echo "0"
-}
-
-# Cross-platform Memory Calculation via free
-get_mem_usage() {
-  free 2>/dev/null | awk '\''/Mem:/ {if ($2 > 0) printf("%.0f", $3/$2*100); else print "0"}'\'' || echo "0"
-}
-
-# Cross-platform Disk Usage
-get_disk_usage() {
-  df -P / 2>/dev/null | awk '\''NR==2{gsub("%","",$5); print $5}'\'' || echo "0"
-}
-
-cpu=$(get_cpu_usage)
-mem=$(get_mem_usage)
-disk=$(get_disk_usage)
-host=${HOST:-$(hostname 2>/dev/null || echo "localhost")}
-uptime_h=$(uptime -p 2>/dev/null || uptime 2>/dev/null || echo "n/a")
-loadavg=$(awk '\''{print $1" "$2" "$3}'\'' /proc/loadavg 2>/dev/null || echo "n/a")
-cmd=$(tool_command "$tool")
-
-clamp_percent() {
-  local v=${1:-0}
-  ((v < 0)) && v=0
-  ((v > 100)) && v=100
-  echo "$v"
-}
-
-level_color() {
-  local v=${1:-0}
-  if ((v >= 85)); then
-    echo "$C_RED"
-  elif ((v >= 65)); then
-    echo "$C_YELLOW"
   else
-    echo "$C_GREEN"
+    echo 0
   fi
+  echo "$total $idle_total" > "$stat_file"
 }
 
-cpu=$(clamp_percent "$cpu")
-mem=$(clamp_percent "$mem")
-disk=$(clamp_percent "$disk")
-cpu_color=$(level_color "$cpu")
-mem_color=$(level_color "$mem")
-disk_color=$(level_color "$disk")
-
-bar() {
-  local p=${1:-0} color=${2:-$C_GREEN} f=$((p/5)) e=$((20-f))
-  printf "%b[" "$color"
-  for ((i=0;i<f;i++)); do printf "█"; done
-  for ((i=0;i<e;i++)); do printf "░"; done
-  printf "] %3s%%%b" "$p" "$C_RESET"
+status_output() {
+  local fields="${MONITOR_STATUS_FORMAT:-cpu mem disk temp}"
+  local out=()
+  for f in $fields; do
+    case "$f" in
+      cpu)
+        local v; v=$(get_cpu_fast)
+        printf -v v '%3s%%' "$v"
+        out+=("CPU:$v")
+        ;;
+      mem)
+        local t u
+        t=$(free -h | awk '/Mem:/{print $2}') 2>/dev/null || t="?"
+        u=$(free -h | awk '/Mem:/{print $3}') 2>/dev/null || u="?"
+        [[ -n "$u" && -n "$t" ]] && out+=("MEM:${u}/${t}")
+        ;;
+      disk)
+        local p; p=$(df -P / | awk 'NR==2{gsub(/%/,""); print $5}') 2>/dev/null || p="?"
+        out+=("DSK:${p}%")
+        ;;
+      temp)
+        local t
+        if have sensors; then
+          t=$(sensors -u 2>/dev/null | awk '/temp1_input/{printf "%.0f", $2; exit}')
+        elif [[ -f /sys/class/thermal/thermal_zone0/temp ]]; then
+          t=$(awk '{printf "%.0f", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
+        fi
+        [[ -n "$t" ]] && out+=("${t}°C")
+        ;;
+      load)
+        local l; l=$(awk '{print $1}' /proc/loadavg 2>/dev/null || echo "?")
+        out+=("LD:$l")
+        ;;
+      uptime)
+        local u; u=$(uptime -p 2>/dev/null | sed 's/up //' || echo "?")
+        out+=("UP:$u")
+        ;;
+    esac
+  done
+  echo "${out[*]}"
 }
 
-printf "%b╔══════════════════════════════╗%b\n" "$C_MAGENTA" "$C_RESET"
-printf "%b║      MONITOR CENTER V3       ║%b\n" "$C_MAGENTA" "$C_RESET"
-printf "%b╚══════════════════════════════╝%b\n" "$C_MAGENTA" "$C_RESET"
-echo
-printf "%b󰒋 Host%b      : %s\n" "$C_CYAN" "$C_RESET" "$host"
-printf "%b󰌽 Platform%b  : %s\n" "$C_CYAN" "$C_RESET" "PLATFORM_LABEL_VAR"
-printf "%b󰔠 Uptime%b    : %s\n" "$C_CYAN" "$C_RESET" "$uptime_h"
-printf "%b󰘚 Load Avg%b  : %s\n" "$C_CYAN" "$C_RESET" "$loadavg"
-printf "%b󱓞 Command%b   : %b%s%b\n" "$C_CYAN" "$C_RESET" "$C_YELLOW" "$cmd" "$C_RESET"
-echo
-printf "%bCPU%b  %s\n" "$C_BLUE" "$C_RESET" "$(bar "$cpu" "$cpu_color")"
-printf "%bRAM%b  %s\n" "$C_BLUE" "$C_RESET" "$(bar "$mem" "$mem_color")"
-printf "%bDSK%b  %s\n" "$C_BLUE" "$C_RESET" "$(bar "$disk" "$disk_color")"
-echo
+# --- Usage ---
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [OPTION]
 
-if command -v docker >/dev/null 2>&1; then
-  printf "%b󰡨 Containers%b : %s active\n" "$C_GREEN" "$C_RESET" "$(docker ps -q 2>/dev/null | wc -l | tr -d " ")"
-fi
+Monitor Center — interactive monitoring tool launcher.
 
-if command -v nvidia-smi >/dev/null 2>&1; then
-  printf "%b󰢮 GPU%b        : Detected\n" "$C_GREEN" "$C_RESET"
-fi
+Options:
+  --menu    Print available tools as fzf-compatible menu and exit
+  --status  Print one-line system status (for tmux status-right)
+  --popup   Launch in a tmux floating popup window (tmux ≥ 3.2)
+  --help    Show this help message and exit
 
-echo
-case "$tool" in
-  jtop)
-    command -v jetson_release >/dev/null && jetson_release
+Environment variables (or configure via $CONFIG_FILE):
+  MONITOR_LAUNCH_MODE              replace|split|window (default: split)
+  MONITOR_SPLIT_DIRECTION          h|v (default: h)
+  MONITOR_WINDOW_AUTO_CLEANUP      true|false (default: true)
+  MONITOR_PREVIEW_WIDTH            65% (default)
+  MONITOR_POPUP_WIDTH              "80%" (default)
+  MONITOR_POPUP_HEIGHT             "85%" (default)
+  MONITOR_STATUS_FORMAT            space-separated: cpu mem disk temp load uptime
+  MONITOR_DANGER_CPU               85
+  MONITOR_DANGER_MEM               85
+  MONITOR_DANGER_DISK              85
+  MONITOR_COLOR_HEADER             color name: magenta (default)
+  MONITOR_COLOR_LABEL              color name: cyan (default)
+  MONITOR_COLOR_GOOD               color name: green (default)
+  MONITOR_COLOR_WARN               color name: yellow (default)
+  MONITOR_COLOR_DANGER             color name: red (default)
+EOF
+  exit 0
+}
+
+# --- Argument Parsing ---
+case "${1:-}" in
+  --help|-h)
+    usage
     ;;
-  nvtop|nvitop)
-    nvidia-smi 2>/dev/null | head -12 || echo "No NVIDIA GPU detected"
+  --status)
+    status_output
+    exit 0
     ;;
-  dockerstats|lazydocker|ctop)
-    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -10 || echo "Docker daemon not responding"
+  --menu)
+    menu | awk '!seen[$0]++'
+    exit 0
     ;;
-  k9s)
-    kubectl config current-context 2>/dev/null || echo "No Kubernetes Context active"
+  --popup)
+    if [[ -n "${TMUX:-}" ]]; then
+      exec tmux display-popup \
+        -w "${MONITOR_POPUP_WIDTH:-80%}" \
+        -h "${MONITOR_POPUP_HEIGHT:-85%}" \
+        -E -T " Monitor Center " \
+        bash "$SCRIPT_PATH" --popup-inner
+    fi
     ;;
-  nload|bmon|iftop)
-    ip -brief address 2>/dev/null | head -10 || echo "Network interfaces unavailable"
-    ;;
-  __GROUP__)
-    echo "Select a specific monitoring tool from the list."
-    ;;
-  *)
-    ps aux --sort=-%cpu 2>/dev/null | head -8
+  --popup-inner)
+    MONITOR_LAUNCH_MODE="window"
+    MONITOR_WINDOW_AUTO_CLEANUP="true"
     ;;
 esac
-'
 
-# Global string replacement fix (using standard // operator)
-PREVIEW="${PREVIEW//PLATFORM_VAR/$PLATFORM}"
-PREVIEW="${PREVIEW//PLATFORM_LABEL_VAR/$PLATFORM_LABEL}"
-
-if [[ "${1:-}" == "--menu" ]]; then
-  menu | awk '!seen[$0]++'
-  exit 0
-fi
-
+# --- Prerequisites ---
 have fzf || { echo "Error: 'fzf' is required but not installed." >&2; exit 1; }
+[[ -x "$PREVIEW_SCRIPT" ]] || { echo "Error: Preview script not found at $PREVIEW_SCRIPT" >&2; exit 1; }
 
 menu_entries=$(menu | awk '!seen[$0]++')
-[[ -z "$menu_entries" ]] && { echo "Error: No supported monitoring tools found in PATH." >&2; exit 1; }
+[[ -z "$menu_entries" ]] && {
+  echo "Error: No supported monitoring tools found in PATH." >&2
+  echo "Install one of: htop, btop, glances, nvtop, bmon, etc." >&2
+  exit 1
+}
 
-# Interactive Selection Loop
+# --- Interactive Loop ---
 while true; do
   sel=$(
     printf '%s\n' "$menu_entries" | fzf \
@@ -294,45 +382,20 @@ while true; do
       --header-first \
       --prompt="󱂬 Monitor › " \
       --pointer="▶" \
-      --header="Platform: $PLATFORM_LABEL" \
-      --preview-window="right,65%,wrap" \
+      --header="Platform: $MONITOR_PLATFORM_LABEL" \
+      --preview-window="right,$MONITOR_PREVIEW_WIDTH,wrap" \
       --preview-label=" Live Preview " \
       --bind "ctrl-r:reload($SCRIPT_PATH --menu)" \
       --bind "f5:reload($SCRIPT_PATH --menu)" \
       --bind "alt-p:refresh-preview" \
-      --preview "$PREVIEW"
+      --preview "bash '$PREVIEW_SCRIPT' {}"
   )
 
-  # Exit quietly on ESC / Ctrl+C inside fzf
   [[ -z "$sel" ]] && exit 0
 
   tool=$(echo "$sel" | cut -f2)
 
-  # Ignore Header selections and loop back
-  if [[ "$tool" == "__GROUP__" || -z "$tool" ]]; then
-    continue
-  fi
+  [[ "$tool" == "__GROUP__" || -z "$tool" ]] && continue
 
-  # Execution mapping
-  case "$tool" in
-    htop)        exec htop ;;
-    btop)        exec btop ;;
-    glances)     exec glances ;;
-    nvtop)       exec nvtop ;;
-    nvitop)      exec nvitop ;;
-    jtop)        exec jtop ;;
-    lazydocker)  exec lazydocker ;;
-    ctop)        exec env TERM=xterm-256color ctop ;;
-    dockerstats) exec docker stats ;;
-    bmon)        exec bmon ;;
-    nload)       exec nload ;;
-    iftop)       exec sudo iftop ;;
-    iotop)       exec sudo iotop ;;
-    dstat)       exec dstat ;;
-    k9s)         exec k9s ;;
-    *)
-      echo "Error: Unknown tool selected ($tool)" >&2
-      exit 1
-      ;;
-  esac
+  launch_tool "$tool"
 done
