@@ -13,7 +13,7 @@ C_RED=$'\033[1;31m'
 
 cleanup() {
   local tmpdir="${MONITOR_HISTORY_DIR:-}"
-  [[ -d "$tmpdir" ]] && rm -rf "$tmpdir" 2>/dev/null || true
+  [[ -n "$tmpdir" && -d "$tmpdir" ]] && rm -rf "$tmpdir" 2>/dev/null || true
   printf '%b' "$C_RESET"
 }
 trap cleanup EXIT INT TERM
@@ -61,10 +61,10 @@ color_name_to_ansi() {
 }
 
 load_theme() {
-  local ansi
+  local ansi config_key var
   for pair in HEADER:MAGENTA LABEL:CYAN BAR_LABEL:BLUE GOOD:GREEN WARN:YELLOW DANGER:RED DIM:DIM; do
-    local config_key="MONITOR_COLOR_${pair%%:*}"
-    local var="C_${pair#*:}"
+    config_key="MONITOR_COLOR_${pair%%:*}"
+    var="C_${pair#*:}"
     if [[ -n "${!config_key:-}" ]]; then
       ansi=$(color_name_to_ansi "${!config_key}")
       [[ -n "$ansi" ]] && printf -v "$var" '\033[%sm' "$ansi"
@@ -73,7 +73,7 @@ load_theme() {
 }
 load_theme
 
-custom_tools=()
+declare -a custom_tools=()
 
 load_custom_tools() {
   custom_tools=()
@@ -81,7 +81,7 @@ load_custom_tools() {
   [[ -z "$tools_str" ]] && return
   local entries
   IFS='|' read -ra entries <<< "$tools_str"
-  for entry in "${entries[@]}"; do
+  for entry in "${entries[@]:-}"; do
     [[ -n "$entry" ]] && custom_tools+=("$entry")
   done
 }
@@ -118,11 +118,11 @@ detect_platform() {
 platform_badges() {
   local p=$1 labels=()
 
-  [[ "$p" == *jetson* ]]      && labels+=("Jetson")
-  [[ "$p" == *gpu* ]]         && labels+=("GPU")
-  [[ "$p" == *docker* ]]      && labels+=("Docker")
-  [[ "$p" == *kubernetes* ]]  && labels+=("Kubernetes")
-  [[ ${#labels[@]} -eq 0 ]]   && labels+=("Linux")
+  [[ "$p" == *jetson* ]]     && labels+=("Jetson")
+  [[ "$p" == *gpu* ]]        && labels+=("GPU")
+  [[ "$p" == *docker* ]]     && labels+=("Docker")
+  [[ "$p" == *kubernetes* ]] && labels+=("Kubernetes")
+  [[ -z "${labels+x}" || ${#labels[@]} -eq 0 ]] && labels+=("Linux")
 
   local IFS=' | '
   echo "${labels[*]}"
@@ -159,17 +159,18 @@ menu() {
   have lazydocker  && container+=($' 󰡨  lazydocker\tlazydocker\tDocker Manager')
   have ctop        && container+=($' 󰕈  ctop\tctop\tContainer Top')
   have docker      && container+=($' 󰖂  dockerstats\tdockerstats\tDocker Stats')
-  have k9s         && container+=($' 󱃾  k9s \tk9s\tKubernetes')
+  have k9s          && container+=($' 󱃾  k9s \tk9s\tKubernetes')
 
   have bmon        && network+=($' 󰩟  bmon\tbmon\tBandwidth')
   have nload       && network+=($' 󰤨  nload\tnload\tThroughput')
   have iftop       && network+=($' 󰛳  iftop\tiftop\tInterface Bandwidth')
 
-  local entry key desc group icon
-  for entry in "${custom_tools[@]}"; do
+  local entry key desc group icon _
+  for entry in "${custom_tools[@]:-}"; do
+    [[ -z "$entry" ]] && continue
     IFS=';' read -r key _ desc group icon <<< "$entry"
     : "${icon:=󰞷}"
-    case "$group" in
+    case "${group:-custom}" in
       gpu)       gpu+=($' '"$icon $key\t$key\t$desc") ;;
       system)    system+=($' '"$icon $key\t$key\t$desc") ;;
       container) container+=($' '"$icon $key\t$key\t$desc") ;;
@@ -206,7 +207,7 @@ menu() {
 
 # --- Tmux Launch ---
 launch_tool() {
-  local tool=$1 cmd
+  local tool=$1 cmd=""
   case "$tool" in
     htop)        cmd="htop" ;;
     btop)        cmd="btop" ;;
@@ -225,9 +226,10 @@ launch_tool() {
     k9s)         cmd="k9s" ;;
   esac
 
-  if [[ -z "${cmd:-}" ]]; then
-    local entry key c
-    for entry in "${custom_tools[@]}"; do
+  if [[ -z "$cmd" ]]; then
+    local entry key c _
+    for entry in "${custom_tools[@]:-}"; do
+      [[ -z "$entry" ]] && continue
       IFS=';' read -r key c _ _ _ <<< "$entry"
       if [[ "$tool" == "$key" ]]; then
         cmd="$c"
@@ -236,7 +238,7 @@ launch_tool() {
     done
   fi
 
-  if [[ -z "${cmd:-}" ]]; then
+  if [[ -z "$cmd" ]]; then
     echo "Error: Unknown tool ($tool)" >&2
     exit 1
   fi
@@ -278,12 +280,15 @@ launch_tool() {
 # --- Status Bar ---
 get_cpu_fast() {
   local stat_file="${MONITOR_HISTORY_DIR}/cpu-stat"
-  local user nice system idle iowait irq softirq steal _
-  read -r _ user nice system idle iowait irq softirq steal _ < /proc/stat 2>/dev/null || { echo 0; return; }
+  local user=0 nice=0 system=0 idle=0 iowait=0 irq=0 softirq=0 steal=0 _
+  if ! { read -r _ user nice system idle iowait irq softirq steal _ < /proc/stat; } 2>/dev/null; then
+    echo 0
+    return
+  fi
   local total=$((user+nice+system+idle+iowait+irq+softirq+steal))
   local idle_total=$((idle+iowait))
   if [[ -f "$stat_file" ]]; then
-    local prev_total prev_idle
+    local prev_total=0 prev_idle=0
     read -r prev_total prev_idle _ < "$stat_file" 2>/dev/null || { prev_total=0; prev_idle=0; }
     local diff_total=$((total - prev_total))
     local diff_idle=$((idle_total - prev_idle))
@@ -310,16 +315,16 @@ status_output() {
         ;;
       mem)
         local t u
-        t=$(free -h | awk '/Mem:/{print $2}') 2>/dev/null || t="?"
-        u=$(free -h | awk '/Mem:/{print $3}') 2>/dev/null || u="?"
+        t=$(free -h 2>/dev/null | awk '/Mem:/{print $2}') || t="?"
+        u=$(free -h 2>/dev/null | awk '/Mem:/{print $3}') || u="?"
         [[ -n "$u" && -n "$t" ]] && out+=("MEM:${u}/${t}")
         ;;
       disk)
-        local p; p=$(df -P / | awk 'NR==2{gsub(/%/,""); print $5}') 2>/dev/null || p="?"
+        local p; p=$(df -P / 2>/dev/null | awk 'NR==2{gsub(/%/,""); print $5}') || p="?"
         out+=("DSK:${p}%")
         ;;
       temp)
-        local t
+        local t=""
         if have sensors; then
           t=$(sensors -u 2>/dev/null | awk '/temp1_input/{printf "%.0f", $2; exit}')
         elif [[ -f /sys/class/thermal/thermal_zone0/temp ]]; then
@@ -337,7 +342,7 @@ status_output() {
         ;;
     esac
   done
-  echo "${out[*]}"
+  echo "${out[*]:-}"
 }
 
 # --- Usage ---
@@ -354,8 +359,8 @@ Options:
   --help    Show this help message and exit
 
 Environment variables (or configure via $CONFIG_FILE):
-  MONITOR_LAUNCH_MODE              replace|split|window (default: split)
-  MONITOR_SPLIT_DIRECTION          h|v (default: h)
+  MONITOR_LAUNCH_MODE             replace|split|window (default: split)
+  MONITOR_SPLIT_DIRECTION         h|v (default: h)
   MONITOR_WINDOW_AUTO_CLEANUP      true|false (default: true)
   MONITOR_PREVIEW_WIDTH            65% (default)
   MONITOR_POPUP_WIDTH              "80%" (default)
