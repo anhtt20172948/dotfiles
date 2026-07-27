@@ -23,6 +23,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 : "${MONITOR_WARN_CPU:=65}"
 : "${MONITOR_WARN_MEM:=65}"
 : "${MONITOR_WARN_DISK:=65}"
+: "${MONITOR_PREVIEW_REFRESH_MS:=0}"
 
 color_name_to_ansi() {
   case "${1,,}" in
@@ -107,7 +108,33 @@ sparkline() {
   done <<< "$vals"
 }
 
+get_cpu_fast() {
+  local stat_file="${MONITOR_HISTORY_DIR}/cpu-stat"
+  local user nice system idle iowait irq softirq steal _
+  read -r _ user nice system idle iowait irq softirq steal _ < /proc/stat 2>/dev/null || { echo 0; return; }
+  local total=$((user+nice+system+idle+iowait+irq+softirq+steal))
+  local idle_total=$((idle+iowait))
+  if [[ -f "$stat_file" ]]; then
+    local prev_total prev_idle
+    read -r prev_total prev_idle _ < "$stat_file" 2>/dev/null || { prev_total=0; prev_idle=0; }
+    local diff_total=$((total - prev_total))
+    local diff_idle=$((idle_total - prev_idle))
+    if ((diff_total > 0)); then
+      echo "$(( (diff_total - diff_idle) * 100 / diff_total ))"
+    else
+      echo 0
+    fi
+  else
+    echo 0
+  fi
+  echo "$total $idle_total" > "$stat_file"
+}
+
 get_cpu_usage() {
+  if [[ "$MONITOR_PREVIEW_REFRESH_MS" -gt 0 ]]; then
+    get_cpu_fast
+    return
+  fi
   if [[ -f /proc/stat ]]; then
     read -r _ user nice system idle iowait irq softirq steal _ < /proc/stat
     local prev_idle=$((idle + iowait))
@@ -223,163 +250,197 @@ tool_command() {
   esac
 }
 
-line="${1:-}"
-tool=$(awk -F"\t" '{print $2}' <<< "$line")
+preview() {
+  local line="${1:-}"
+  local tool
+  tool=$(awk -F"\t" '{print $2}' <<< "$line")
 
-platform="${MONITOR_PLATFORM_LABEL:-Linux}"
-host="${HOST:-$(hostname 2>/dev/null || echo "localhost")}"
-uptime_h=$(uptime -p 2>/dev/null || uptime 2>/dev/null || echo "n/a")
-loadavg=$(awk '{print $1" "$2" "$3}' /proc/loadavg 2>/dev/null || echo "n/a")
-cpu_cores=$(get_cpu_count)
-cmd=$(tool_command "$tool")
+  local platform="${MONITOR_PLATFORM_LABEL:-Linux}"
+  local host="${HOST:-$(hostname 2>/dev/null || echo "localhost")}"
+  local uptime_h
+  uptime_h=$(uptime -p 2>/dev/null || uptime 2>/dev/null || echo "n/a")
+  local loadavg
+  loadavg=$(awk '{print $1" "$2" "$3}' /proc/loadavg 2>/dev/null || echo "n/a")
+  local cpu_cores
+  cpu_cores=$(get_cpu_count)
+  local cmd
+  cmd=$(tool_command "$tool")
 
-cpu=$(get_cpu_usage)
-mem=$(get_mem_usage)
-disk=$(get_disk_usage)
+  local cpu
+  cpu=$(get_cpu_usage)
+  local mem
+  mem=$(get_mem_usage)
+  local disk
+  disk=$(get_disk_usage)
 
-cpu=$(clamp_percent "$cpu")
-mem=$(clamp_percent "$mem")
-disk=$(clamp_percent "$disk")
+  cpu=$(clamp_percent "$cpu")
+  mem=$(clamp_percent "$mem")
+  disk=$(clamp_percent "$disk")
 
-cpu_color=$(level_color "$cpu")
-mem_color=$(level_color "$mem")
-disk_color=$(level_color "$disk")
+  local cpu_color
+  cpu_color=$(level_color "$cpu")
+  local mem_color
+  mem_color=$(level_color "$mem")
+  local disk_color
+  disk_color=$(level_color "$disk")
 
-update_history "$cpu"
+  update_history "$cpu"
 
-printf "%b╔══════════════════════════════╗%b\n" "$C_MAGENTA" "$C_RESET"
-printf "%b║      MONITOR CENTER V3       ║%b\n" "$C_MAGENTA" "$C_RESET"
-printf "%b╚══════════════════════════════╝%b\n" "$C_MAGENTA" "$C_RESET"
-echo
-printf "%b󰒋 Host%b      : %s\n" "$C_CYAN" "$C_RESET" "$host"
-printf "%b󰌽 Platform%b  : %s\n" "$C_CYAN" "$C_RESET" "$platform"
-printf "%b󰔠 Uptime%b    : %s\n" "$C_CYAN" "$C_RESET" "$uptime_h"
-printf "%b󰘚 Load Avg%b  : %s  (%s cores)\n" "$C_CYAN" "$C_RESET" "$loadavg" "$cpu_cores"
-printf "%b󱓞 Command%b   : %b%s%b\n" "$C_CYAN" "$C_RESET" "$C_YELLOW" "$cmd" "$C_RESET"
-echo
-printf "%bCPU%b  %s" "$C_BLUE" "$C_RESET" "$(bar "$cpu" "$cpu_color")"
-spk=$(sparkline "$MONITOR_HISTORY_DIR/cpu" 10)
-[[ -n "$spk" ]] && printf "  %b%s%b" "$C_DIM" "$spk" "$C_RESET"
-echo
-mem_human=$(get_mem_human)
-if [[ -n "$mem_human" ]]; then
-  printf "%bRAM%b  %s  %b(%s)%b\n" "$C_BLUE" "$C_RESET" "$(bar "$mem" "$mem_color")" "$C_DIM" "$mem_human" "$C_RESET"
-else
-  printf "%bRAM%b  %s\n" "$C_BLUE" "$C_RESET" "$(bar "$mem" "$mem_color")"
-fi
-disk_human=$(get_disk_human)
-if [[ -n "$disk_human" ]]; then
-  printf "%bDSK%b  %s  %b(%s)%b\n" "$C_BLUE" "$C_RESET" "$(bar "$disk" "$disk_color")" "$C_DIM" "$disk_human" "$C_RESET"
-else
-  printf "%bDSK%b  %s\n" "$C_BLUE" "$C_RESET" "$(bar "$disk" "$disk_color")"
-fi
-echo
-
-temp=$(get_temperature)
-if [[ -n "$temp" ]]; then
-  if awk "BEGIN {exit !($temp >= 70)}" 2>/dev/null; then
-    temp_color=$C_RED
-  elif awk "BEGIN {exit !($temp >= 50)}" 2>/dev/null; then
-    temp_color=$C_YELLOW
+  printf "%b╔══════════════════════════════╗%b\n" "$C_MAGENTA" "$C_RESET"
+  printf "%b║      MONITOR CENTER V3       ║%b\n" "$C_MAGENTA" "$C_RESET"
+  printf "%b╚══════════════════════════════╝%b\n" "$C_MAGENTA" "$C_RESET"
+  echo
+  printf "%b󰒋 Host%b      : %s\n" "$C_CYAN" "$C_RESET" "$host"
+  printf "%b󰌽 Platform%b  : %s\n" "$C_CYAN" "$C_RESET" "$platform"
+  printf "%b󰔠 Uptime%b    : %s\n" "$C_CYAN" "$C_RESET" "$uptime_h"
+  printf "%b󰘚 Load Avg%b  : %s  (%s cores)\n" "$C_CYAN" "$C_RESET" "$loadavg" "$cpu_cores"
+  printf "%b󱓞 Command%b   : %b%s%b\n" "$C_CYAN" "$C_RESET" "$C_YELLOW" "$cmd" "$C_RESET"
+  echo
+  printf "%bCPU%b  %s" "$C_BLUE" "$C_RESET" "$(bar "$cpu" "$cpu_color")"
+  local spk
+  spk=$(sparkline "$MONITOR_HISTORY_DIR/cpu" 10)
+  [[ -n "$spk" ]] && printf "  %b%s%b" "$C_DIM" "$spk" "$C_RESET"
+  echo
+  local mem_human
+  mem_human=$(get_mem_human)
+  if [[ -n "$mem_human" ]]; then
+    printf "%bRAM%b  %s  %b(%s)%b\n" "$C_BLUE" "$C_RESET" "$(bar "$mem" "$mem_color")" "$C_DIM" "$mem_human" "$C_RESET"
   else
-    temp_color=$C_GREEN
+    printf "%bRAM%b  %s\n" "$C_BLUE" "$C_RESET" "$(bar "$mem" "$mem_color")"
   fi
-  printf "%b󰔄 Temp%b      : %b%.1f°C%b\n" "$C_CYAN" "$C_RESET" "$temp_color" "$temp" "$C_RESET"
-fi
-
-gpu_info=$(get_gpu_info)
-if [[ -n "$gpu_info" ]]; then
-  while IFS=, read -r idx name temp_gpu util_gpu mem_used mem_total; do
-    name="${name# }"
-    printf "%b󰢮 GPU %s%b   : %s  %b|%b  %s°C  %b|%b  %d%%  %b|%b  %dM/%dM\n" \
-      "$C_GREEN" "$idx" "$C_RESET" \
-      "$name" \
-      "$C_RED" "$C_RESET" "$temp_gpu" \
-      "$C_YELLOW" "$C_RESET" "$util_gpu" \
-      "$C_BLUE" "$C_RESET" "$mem_used" "$mem_total"
-  done <<< "$gpu_info"
-fi
-
-container_count=$(get_container_count)
-if [[ -n "$container_count" && "$container_count" -gt 0 ]]; then
-  printf "%b󰡨 Containers%b : %s active\n" "$C_GREEN" "$C_RESET" "$container_count"
-fi
-
-echo
-
-top_procs_raw=$(get_top_processes "$MONITOR_PREVIEW_PROCESSES")
-if [[ -n "$top_procs_raw" ]]; then
-  printf "%b── Top Processes ──%b\n" "$C_BOLD" "$C_RESET"
-  if [[ "$(uname)" == "Darwin" ]]; then
-    printf "  %-7s %5s %5s  %s\n" "PID" "CPU%" "MEM%" "COMMAND"
-    while IFS= read -r line; do
-      read -r pid pcpu pmem comm <<< "$line"
-      printf "  %-7s %b%5s%%%b %b%5s%%%b  %s\n" \
-        "$pid" \
-        "$(level_color "${pcpu%%.*}" 50 80)" "${pcpu}" "$C_RESET" \
-        "$(level_color "${pmem%%.*}" 50 80)" "${pmem}" "$C_RESET" \
-        "$(basename "$comm")"
-    done <<< "$top_procs_raw"
+  local disk_human
+  disk_human=$(get_disk_human)
+  if [[ -n "$disk_human" ]]; then
+    printf "%bDSK%b  %s  %b(%s)%b\n" "$C_BLUE" "$C_RESET" "$(bar "$disk" "$disk_color")" "$C_DIM" "$disk_human" "$C_RESET"
   else
-    printf "  %-7s %5s %5s %6s  %s\n" "PID" "CPU%" "MEM%" "TIME" "COMMAND"
-    while IFS= read -r line; do
-      read -r pid pcpu pmem cputime comm <<< "$line"
-      printf "  %-7s %b%5s%%%b %b%5s%%%b %6s  %s\n" \
-        "$pid" \
-        "$(level_color "${pcpu%%.*}" 50 80)" "${pcpu}" "$C_RESET" \
-        "$(level_color "${pmem%%.*}" 50 80)" "${pmem}" "$C_RESET" \
-        "$cputime" \
-        "$(basename "$comm")"
-    done <<< "$top_procs_raw"
+    printf "%bDSK%b  %s\n" "$C_BLUE" "$C_RESET" "$(bar "$disk" "$disk_color")"
   fi
   echo
-fi
 
-printf "%b── Tool Preview ──%b\n" "$C_BOLD" "$C_RESET"
-case "$tool" in
-  jtop)
-    if have jetson_release; then
-      jetson_release 2>/dev/null
+  local temp
+  temp=$(get_temperature)
+  if [[ -n "$temp" ]]; then
+    local temp_color
+    if awk "BEGIN {exit !($temp >= 70)}" 2>/dev/null; then
+      temp_color=$C_RED
+    elif awk "BEGIN {exit !($temp >= 50)}" 2>/dev/null; then
+      temp_color=$C_YELLOW
     else
-      printf "  %bJetson Stats%b — run jtop for interactive monitoring\n" "$C_MAGENTA" "$C_RESET"
+      temp_color=$C_GREEN
     fi
-    ;;
-  nvtop|nvitop)
-    if have nvidia-smi; then
-      nvidia-smi 2>/dev/null | tail -n +3 | head -10
-    else
-      printf "  %bNo NVIDIA GPU detected%b\n" "$C_YELLOW" "$C_RESET"
-    fi
-    ;;
-  dockerstats|lazydocker|ctop)
-    docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -10 || \
-      printf "  %bDocker daemon not responding%b\n" "$C_RED" "$C_RESET"
-    ;;
-  k9s)
-    local ctx
-    ctx=$(kubectl config current-context 2>/dev/null) || ctx=""
-    if [[ -n "$ctx" ]]; then
-      printf "  %bKubernetes context%b: %s\n" "$C_YELLOW" "$C_RESET" "$ctx"
-      kubectl config get-contexts 2>/dev/null | head -6
-    else
-      printf "  %bNo Kubernetes context active%b\n" "$C_DIM" "$C_RESET"
-    fi
-    ;;
-  nload|bmon|iftop)
-    ip -brief address 2>/dev/null | head -10 || \
-      printf "  %bNetwork interfaces unavailable%b\n" "$C_DIM" "$C_RESET"
-    ;;
-  btop|htop|glances|iotop|dstat)
-    printf "  %bInteractive system monitor — launches on selection%b\n" "$C_DIM" "$C_RESET"
-    ;;
-  __GROUP__)
-    printf "  %bSelect a specific monitoring tool from the list above%b\n" "$C_DIM" "$C_RESET"
-    ;;
-  *)
+    printf "%b󰔄 Temp%b      : %b%.1f°C%b\n" "$C_CYAN" "$C_RESET" "$temp_color" "$temp" "$C_RESET"
+  fi
+
+  local gpu_info
+  gpu_info=$(get_gpu_info)
+  if [[ -n "$gpu_info" ]]; then
+    while IFS=, read -r idx name temp_gpu util_gpu mem_used mem_total; do
+      name="${name# }"
+      printf "%b󰢮 GPU %s%b   : %s  %b|%b  %s°C  %b|%b  %d%%  %b|%b  %dM/%dM\n" \
+        "$C_GREEN" "$idx" "$C_RESET" \
+        "$name" \
+        "$C_RED" "$C_RESET" "$temp_gpu" \
+        "$C_YELLOW" "$C_RESET" "$util_gpu" \
+        "$C_BLUE" "$C_RESET" "$mem_used" "$mem_total"
+    done <<< "$gpu_info"
+  fi
+
+  local container_count
+  container_count=$(get_container_count)
+  if [[ -n "$container_count" && "$container_count" -gt 0 ]]; then
+    printf "%b󰡨 Containers%b : %s active\n" "$C_GREEN" "$C_RESET" "$container_count"
+  fi
+
+  echo
+
+  local top_procs_raw
+  top_procs_raw=$(get_top_processes "$MONITOR_PREVIEW_PROCESSES")
+  if [[ -n "$top_procs_raw" ]]; then
+    printf "%b── Top Processes ──%b\n" "$C_BOLD" "$C_RESET"
     if [[ "$(uname)" == "Darwin" ]]; then
-      ps -axo pid=,pcpu=,pmem=,comm= -r 2>/dev/null | head -8
+      printf "  %-7s %5s %5s  %s\n" "PID" "CPU%" "MEM%" "COMMAND"
+      while IFS= read -r proc_line; do
+        read -r pid pcpu pmem comm <<< "$proc_line"
+        printf "  %-7s %b%5s%%%b %b%5s%%%b  %s\n" \
+          "$pid" \
+          "$(level_color "${pcpu%%.*}" 50 80)" "${pcpu}" "$C_RESET" \
+          "$(level_color "${pmem%%.*}" 50 80)" "${pmem}" "$C_RESET" \
+          "$(basename "$comm")"
+      done <<< "$top_procs_raw"
     else
-      ps -axo pid=,pcpu=,pmem=,cputime=,comm= --sort=-pcpu 2>/dev/null | head -10
+      printf "  %-7s %5s %5s %6s  %s\n" "PID" "CPU%" "MEM%" "TIME" "COMMAND"
+      while IFS= read -r proc_line; do
+        read -r pid pcpu pmem cputime comm <<< "$proc_line"
+        printf "  %-7s %b%5s%%%b %b%5s%%%b %6s  %s\n" \
+          "$pid" \
+          "$(level_color "${pcpu%%.*}" 50 80)" "${pcpu}" "$C_RESET" \
+          "$(level_color "${pmem%%.*}" 50 80)" "${pmem}" "$C_RESET" \
+          "$cputime" \
+          "$(basename "$comm")"
+      done <<< "$top_procs_raw"
     fi
-    ;;
-esac
+    echo
+  fi
+
+  printf "%b── Tool Preview ──%b\n" "$C_BOLD" "$C_RESET"
+  case "$tool" in
+    jtop)
+      if have jetson_release; then
+        jetson_release 2>/dev/null
+      else
+        printf "  %bJetson Stats%b — run jtop for interactive monitoring\n" "$C_MAGENTA" "$C_RESET"
+      fi
+      ;;
+    nvtop|nvitop)
+      if have nvidia-smi; then
+        nvidia-smi 2>/dev/null | tail -n +3 | head -10
+      else
+        printf "  %bNo NVIDIA GPU detected%b\n" "$C_YELLOW" "$C_RESET"
+      fi
+      ;;
+    dockerstats|lazydocker|ctop)
+      docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -10 || \
+        printf "  %bDocker daemon not responding%b\n" "$C_RED" "$C_RESET"
+      ;;
+    k9s)
+      local ctx
+      ctx=$(kubectl config current-context 2>/dev/null) || ctx=""
+      if [[ -n "$ctx" ]]; then
+        printf "  %bKubernetes context%b: %s\n" "$C_YELLOW" "$C_RESET" "$ctx"
+        kubectl config get-contexts 2>/dev/null | head -6
+      else
+        printf "  %bNo Kubernetes context active%b\n" "$C_DIM" "$C_RESET"
+      fi
+      ;;
+    nload|bmon|iftop)
+      ip -brief address 2>/dev/null | head -10 || \
+        printf "  %bNetwork interfaces unavailable%b\n" "$C_DIM" "$C_RESET"
+      ;;
+    btop|htop|glances|iotop|dstat)
+      printf "  %bInteractive system monitor — launches on selection%b\n" "$C_DIM" "$C_RESET"
+      ;;
+    __GROUP__)
+      printf "  %bSelect a specific monitoring tool from the list above%b\n" "$C_DIM" "$C_RESET"
+      ;;
+    *)
+      if [[ "$(uname)" == "Darwin" ]]; then
+        ps -axo pid=,pcpu=,pmem=,comm= -r 2>/dev/null | head -8
+      else
+        ps -axo pid=,pcpu=,pmem=,cputime=,comm= --sort=-pcpu 2>/dev/null | head -10
+      fi
+      ;;
+  esac
+}
+
+# --- Main Execution ---
+if [[ "$MONITOR_PREVIEW_REFRESH_MS" -gt 0 ]]; then
+  interval=$(( MONITOR_PREVIEW_REFRESH_MS / 1000 ))
+  (( interval < 1 )) && interval=1
+  while true; do
+    printf '\033[2J\033[H'
+    preview "$@" || true
+    sleep "$interval"
+  done
+else
+  preview "$@"
+fi

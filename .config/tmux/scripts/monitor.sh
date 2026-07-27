@@ -40,6 +40,8 @@ load_config() {
   : "${MONITOR_PREVIEW_PROCESSES:=6}"
   : "${MONITOR_HISTORY_ENABLED:=true}"
   : "${MONITOR_HISTORY_SIZE:=20}"
+  : "${MONITOR_PREVIEW_REFRESH_MS:=0}"
+  : "${MONITOR_CUSTOM_TOOLS:=}"
   set +a
 
   [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
@@ -70,6 +72,20 @@ load_theme() {
   done
 }
 load_theme
+
+custom_tools=()
+
+load_custom_tools() {
+  custom_tools=()
+  local tools_str="${MONITOR_CUSTOM_TOOLS:-}"
+  [[ -z "$tools_str" ]] && return
+  local entries
+  IFS='|' read -ra entries <<< "$tools_str"
+  for entry in "${entries[@]}"; do
+    [[ -n "$entry" ]] && custom_tools+=("$entry")
+  done
+}
+load_custom_tools
 
 readonly MONITOR_HISTORY_DIR="${TMPDIR:-/tmp}/monitor-${UID:-$(id -u)}"
 mkdir -p "$MONITOR_HISTORY_DIR"
@@ -124,10 +140,11 @@ export MONITOR_DANGER_CPU MONITOR_DANGER_MEM MONITOR_DANGER_DISK
 export MONITOR_WARN_CPU MONITOR_WARN_MEM MONITOR_WARN_DISK
 export MONITOR_COLOR_HEADER MONITOR_COLOR_LABEL MONITOR_COLOR_BAR_LABEL
 export MONITOR_COLOR_GOOD MONITOR_COLOR_WARN MONITOR_COLOR_DANGER MONITOR_COLOR_DIM
+export MONITOR_PREVIEW_REFRESH_MS
 
 # --- Menu Generation ---
 menu() {
-  local gpu=() system=() container=() network=()
+  local gpu=() system=() container=() network=() custom=()
 
   have jtop        && gpu+=($' 󰤽  jtop\tjtop\tJetson Stats ★')
   have nvitop      && gpu+=($' 󰚗  nvitop\tnvitop\tCUDA Processes')
@@ -142,11 +159,24 @@ menu() {
   have lazydocker  && container+=($' 󰡨  lazydocker\tlazydocker\tDocker Manager')
   have ctop        && container+=($' 󰕈  ctop\tctop\tContainer Top')
   have docker      && container+=($' 󰖂  dockerstats\tdockerstats\tDocker Stats')
-  have k9s         && container+=($' 󱃾  k9s\tk9s\tKubernetes')
+  have k9s         && container+=($' 󱃾  k9s \tk9s\tKubernetes')
 
   have bmon        && network+=($' 󰩟  bmon\tbmon\tBandwidth')
   have nload       && network+=($' 󰤨  nload\tnload\tThroughput')
   have iftop       && network+=($' 󰛳  iftop\tiftop\tInterface Bandwidth')
+
+  local entry key desc group icon
+  for entry in "${custom_tools[@]}"; do
+    IFS=';' read -r key _ desc group icon <<< "$entry"
+    : "${icon:=󰞷}"
+    case "$group" in
+      gpu)       gpu+=($' '"$icon $key\t$key\t$desc") ;;
+      system)    system+=($' '"$icon $key\t$key\t$desc") ;;
+      container) container+=($' '"$icon $key\t$key\t$desc") ;;
+      network)   network+=($' '"$icon $key\t$key\t$desc") ;;
+      custom|*)  custom+=($' '"$icon $key\t$key\t$desc") ;;
+    esac
+  done
 
   if ((${#gpu[@]})); then
     printf '%bGPU%b\t__GROUP__\t\n' "$C_MAGENTA" "$C_RESET"
@@ -166,6 +196,11 @@ menu() {
   if ((${#network[@]})); then
     printf '%bNetwork%b\t__GROUP__\t\n' "$C_GREEN" "$C_RESET"
     printf '%s\n' "${network[@]}"
+  fi
+
+  if ((${#custom[@]})); then
+    printf '%bCustom%b\t__GROUP__\t\n' "$C_DIM" "$C_RESET"
+    printf '%s\n' "${custom[@]}"
   fi
 }
 
@@ -188,11 +223,23 @@ launch_tool() {
     iotop)       cmd="sudo iotop" ;;
     dstat)       cmd="dstat" ;;
     k9s)         cmd="k9s" ;;
-    *)
-      echo "Error: Unknown tool ($tool)" >&2
-      exit 1
-      ;;
   esac
+
+  if [[ -z "${cmd:-}" ]]; then
+    local entry key c
+    for entry in "${custom_tools[@]}"; do
+      IFS=';' read -r key c _ _ _ <<< "$entry"
+      if [[ "$tool" == "$key" ]]; then
+        cmd="$c"
+        break
+      fi
+    done
+  fi
+
+  if [[ -z "${cmd:-}" ]]; then
+    echo "Error: Unknown tool ($tool)" >&2
+    exit 1
+  fi
 
   case "$MONITOR_LAUNCH_MODE" in
     split)
@@ -322,6 +369,8 @@ Environment variables (or configure via $CONFIG_FILE):
   MONITOR_COLOR_GOOD               color name: green (default)
   MONITOR_COLOR_WARN               color name: yellow (default)
   MONITOR_COLOR_DANGER             color name: red (default)
+  MONITOR_PREVIEW_REFRESH_MS       2000 (default, 0 to disable auto-refresh)
+  MONITOR_CUSTOM_TOOLS             pipe-separated tool definitions (see monitor.conf)
 EOF
   exit 0
 }
@@ -382,12 +431,13 @@ while true; do
       --header-first \
       --prompt="󱂬 Monitor › " \
       --pointer="▶" \
-      --header="Platform: $MONITOR_PLATFORM_LABEL" \
+      --header=$'Platform: '"$MONITOR_PLATFORM_LABEL"$'\n  Ctrl+R reload | F5 refresh | Ctrl+O preview | Esc quit' \
       --preview-window="right,$MONITOR_PREVIEW_WIDTH,wrap" \
       --preview-label=" Live Preview " \
       --bind "ctrl-r:reload($SCRIPT_PATH --menu)" \
       --bind "f5:reload($SCRIPT_PATH --menu)" \
       --bind "alt-p:refresh-preview" \
+      --bind "ctrl-o:refresh-preview" \
       --preview "bash '$PREVIEW_SCRIPT' {}"
   )
 
