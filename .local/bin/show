@@ -55,36 +55,31 @@ print_separator() {
   echo -e "${DIM}────────────────────────────────────────${RESET}"
 }
 
-# Spinner for background tasks
-spinner() {
-  local pid=$1
-  local delay=0.1
-  local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-  while ps -p $pid > /dev/null 2>&1; do
-    local temp=${spinstr#?}
-    printf " [%c]  " "$spinstr"
-    local spinstr=$temp${spinstr%"$temp"}
-    sleep $delay
-    printf "\b\b\b\b\b\b"
-  done
-  printf "    \b\b\b\b"
-}
-
 print_header
 
-REMOTE_PATH="$1"
+REMOTE_PATH="${1:-}"
 
-# 🔧 Define your servers here
-SERVERS=(
-  "jupyter"
-  "rack"
-  "strong"
-  "jetson50"
-  "jetson51"
-  "jetson52"
-  "jetson53"
-  "jetson54"
-)
+# Usage check first, before touching the host list, so `show` with no arguments
+# prints usage rather than a config error.
+if [[ -z "$REMOTE_PATH" ]]; then
+  print_error "No path provided"
+  echo -e "${DIM}Usage: show <abs_path>${RESET}"
+  echo -e "${DIM}Example: show /home/user/project/file.txt${RESET}"
+  exit 1
+fi
+
+# Server list is shared with `download` — see .config/remote-hosts
+HOSTS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/remote-hosts"
+if [[ ! -r "$HOSTS_FILE" ]]; then
+  print_error "Host list not found: $HOSTS_FILE"
+  echo -e "${DIM}Create it with one hostname per line.${RESET}"
+  exit 1
+fi
+mapfile -t SERVERS < <(grep -vE '^[[:space:]]*(#|$)' "$HOSTS_FILE")
+if [[ ${#SERVERS[@]} -eq 0 ]]; then
+  print_error "No hosts enabled in $HOSTS_FILE"
+  exit 1
+fi
 
 MOUNT_BASE="/tmp/mnt_show"
 
@@ -94,13 +89,6 @@ for SERVER in "${SERVERS[@]}"; do
   echo -e "  ${DIM}•${RESET} ${CYAN}${SERVER}${RESET}"
 done
 print_separator
-
-if [[ -z "$REMOTE_PATH" ]]; then
-  print_error "No path provided"
-  echo -e "${DIM}Usage: show <abs_path>${RESET}"
-  echo -e "${DIM}Example: show /home/user/project/file.txt${RESET}"
-  exit 1
-fi
 
 print_step "Target path: ${MAGENTA}$REMOTE_PATH${RESET}"
 print_separator
@@ -121,7 +109,10 @@ for i in "${!SERVERS[@]}"; do
   SERVER="${SERVERS[$i]}"
   echo -ne "${DIM}  ${ICON_SEARCH} Checking ${SERVER}...${RESET}\r"
   (
-    if ssh -o ConnectTimeout=3 -o LogLevel=ERROR "$SERVER" "[ -e \"$REMOTE_PATH\" ]" 2>/dev/null; then
+    # printf %q so a path containing quotes, $ or backticks is not evaluated
+    # by the remote shell.
+    if ssh -o ConnectTimeout=3 -o LogLevel=ERROR "$SERVER" \
+         "test -e $(printf '%q' "$REMOTE_PATH")" 2>/dev/null; then
       echo "$SERVER" > "$TEMP_DIR/$i"
     fi
   ) &
@@ -160,6 +151,14 @@ if [[ ${#FOUND_SERVERS[@]} -gt 1 ]]; then
       print_error "Invalid choice. Try again."
     fi
   done
+  # select exits its loop on EOF without setting a choice (non-interactive
+  # stdin), which previously fell through with FOUND_SERVER empty and tried to
+  # sshfs-mount ":/".
+  if [[ -z "${FOUND_SERVER:-}" ]]; then
+    print_error "No server selected"
+    echo -e "${DIM}Run interactively, or pipe a choice: echo 1 | show <path>${RESET}"
+    exit 1
+  fi
 else
   FOUND_SERVER="${FOUND_SERVERS[0]}"
 fi
@@ -230,9 +229,25 @@ open_item() {
 open_item
 
 # --- Auto-unmount after 10 min ---
-(sleep 600 && fusermount -u "$MOUNT_POINT" 2>/dev/null) &
+# Arch (and any distro on libfuse3) ships fusermount3, NOT fusermount. The old
+# code called the latter with stderr silenced, so unmounting never happened and
+# every `show` invocation leaked an sshfs mount of the remote root filesystem.
+# Failures are logged rather than discarded so this cannot rot silently again.
+UNMOUNT_LOG="${TMPDIR:-/tmp}/show-unmount.log"
+(
+  sleep 600
+  for unmounter in fusermount3 fusermount umount; do
+    command -v "$unmounter" >/dev/null 2>&1 || continue
+    if "$unmounter" -u "$MOUNT_POINT" 2>>"$UNMOUNT_LOG"; then
+      exit 0
+    fi
+  done
+  printf '%s: failed to unmount %s\n' "$(date -Is)" "$MOUNT_POINT" >>"$UNMOUNT_LOG"
+) &
+disown 2>/dev/null || true
 
 print_separator
 print_success "${ICON_ROCKET} Successfully opened!"
 print_info "Auto-unmount in ${YELLOW}10 minutes${RESET}"
+print_info "Unmount manually: ${CYAN}fusermount3 -u $MOUNT_POINT${RESET}"
 echo ""

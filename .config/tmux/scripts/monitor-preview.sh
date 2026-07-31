@@ -1,21 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly C_RESET=$'\033[0m'
-readonly C_BOLD=$'\033[1m'
-readonly C_DIM=$'\033[2m'
-readonly C_CYAN=$'\033[1;36m'
-readonly C_BLUE=$'\033[1;34m'
-readonly C_GREEN=$'\033[1;32m'
-readonly C_YELLOW=$'\033[1;33m'
-readonly C_MAGENTA=$'\033[1;35m'
-readonly C_RED=$'\033[1;31m'
-readonly C_ORANGE=$'\033[38;5;214m'
-
-have() { command -v "$1" >/dev/null 2>&1; }
+readonly LIB_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")
+# shellcheck source=./monitor-lib.sh
+source "$LIB_DIR/monitor-lib.sh"
 
 : "${MONITOR_PLATFORM_LABEL:=Linux}"
 : "${MONITOR_HISTORY_SIZE:=20}"
+: "${MONITOR_HISTORY_ENABLED:=true}"
 : "${MONITOR_PREVIEW_PROCESSES:=6}"
 : "${MONITOR_DANGER_CPU:=85}"
 : "${MONITOR_DANGER_MEM:=85}"
@@ -25,29 +17,8 @@ have() { command -v "$1" >/dev/null 2>&1; }
 : "${MONITOR_WARN_DISK:=65}"
 : "${MONITOR_PREVIEW_REFRESH_MS:=0}"
 
-color_name_to_ansi() {
-  case "${1,,}" in
-    black)   echo '0;30'  ;; red)     echo '1;31'  ;;
-    green)   echo '1;32'  ;; yellow)  echo '1;33'  ;;
-    blue)    echo '1;34'  ;; magenta) echo '1;35'  ;;
-    cyan)    echo '1;36'  ;; white)   echo '1;37'  ;;
-    dim)     echo '2'     ;; bold)    echo '1'     ;;
-    reset)   echo '0'     ;;
-    *)       echo "${1:-}" ;;
-  esac
-}
-
-for pair in HEADER:MAGENTA LABEL:CYAN BAR_LABEL:BLUE GOOD:GREEN WARN:YELLOW DANGER:RED DIM:DIM; do
-  config_key="MONITOR_COLOR_${pair%%:*}"
-  var="C_${pair#*:}"
-  if [[ -n "${!config_key:-}" ]]; then
-    ansi=$(color_name_to_ansi "${!config_key}")
-    [[ -n "$ansi" ]] && printf -v "$var" '\033[%sm' "$ansi"
-  fi
-done
-
-readonly MONITOR_HISTORY_DIR="${TMPDIR:-/tmp}/monitor-${UID:-$(id -u)}"
-readonly MONITOR_HISTORY_SIZE=$MONITOR_HISTORY_SIZE
+# color_name_to_ansi / load_theme / MONITOR_HISTORY_DIR come from monitor-lib.sh
+load_theme
 
 clamp_percent() {
   local v=${1:-0}
@@ -79,8 +50,11 @@ bar() {
 }
 
 update_history() {
+  # MONITOR_HISTORY_ENABLED was previously documented in monitor.conf but never
+  # actually consulted — history was always written. Now it is honoured.
+  [[ "$MONITOR_HISTORY_ENABLED" == "true" ]] || return 0
   local val=$1
-  mkdir -p "$MONITOR_HISTORY_DIR"
+  monitor_init_history_dir || return 0
   printf '%s\n' "$val" >> "$MONITOR_HISTORY_DIR/cpu"
   local tmp
   tmp=$(tail -n "$MONITOR_HISTORY_SIZE" "$MONITOR_HISTORY_DIR/cpu" 2>/dev/null)
@@ -108,27 +82,7 @@ sparkline() {
   done <<< "$vals"
 }
 
-get_cpu_fast() {
-  local stat_file="${MONITOR_HISTORY_DIR}/cpu-stat"
-  local user nice system idle iowait irq softirq steal _
-  read -r _ user nice system idle iowait irq softirq steal _ < /proc/stat 2>/dev/null || { echo 0; return; }
-  local total=$((user+nice+system+idle+iowait+irq+softirq+steal))
-  local idle_total=$((idle+iowait))
-  if [[ -f "$stat_file" ]]; then
-    local prev_total prev_idle
-    read -r prev_total prev_idle _ < "$stat_file" 2>/dev/null || { prev_total=0; prev_idle=0; }
-    local diff_total=$((total - prev_total))
-    local diff_idle=$((idle_total - prev_idle))
-    if ((diff_total > 0)); then
-      echo "$(( (diff_total - diff_idle) * 100 / diff_total ))"
-    else
-      echo 0
-    fi
-  else
-    echo 0
-  fi
-  echo "$total $idle_total" > "$stat_file"
-}
+# get_cpu_fast comes from monitor-lib.sh (shared with monitor.sh).
 
 get_cpu_usage() {
   if [[ "$MONITOR_PREVIEW_REFRESH_MS" -gt 0 ]]; then
@@ -228,26 +182,15 @@ get_temperature() {
   fi
 }
 
-tool_command() {
-  case "$1" in
-    htop) echo "htop" ;;
-    btop) echo "btop" ;;
-    glances) echo "glances" ;;
-    nvtop) echo "nvtop" ;;
-    nvitop) echo "nvitop" ;;
-    jtop) echo "jtop" ;;
-    lazydocker) echo "lazydocker" ;;
-    ctop) echo "TERM=xterm-256color ctop" ;;
-    dockerstats) echo "docker stats" ;;
-    bmon) echo "bmon" ;;
-    nload) echo "nload" ;;
-    iftop) echo "sudo iftop" ;;
-    iotop) echo "sudo iotop" ;;
-    dstat) echo "dstat" ;;
-    k9s) echo "k9s" ;;
-    __GROUP__) echo "Section Header" ;;
-    *) echo "N/A" ;;
-  esac
+# The builtin tool->command map lives in monitor-lib.sh so this preview shows
+# exactly what monitor.sh will run. This wrapper only adds the display-only
+# cases and resolves MONITOR_CUSTOM_TOOLS entries.
+display_command() {
+  local tool=$1 cmd
+  [[ "$tool" == "__GROUP__" ]] && { echo "Section Header"; return; }
+  load_custom_tools
+  cmd=$(resolve_tool_command "$tool" || true)
+  printf '%s' "${cmd:-N/A}"
 }
 
 preview() {
@@ -264,7 +207,7 @@ preview() {
   local cpu_cores
   cpu_cores=$(get_cpu_count)
   local cmd
-  cmd=$(tool_command "$tool")
+  cmd=$(display_command "$tool")
 
   local cpu
   cpu=$(get_cpu_usage)
@@ -399,8 +342,14 @@ preview() {
       fi
       ;;
     dockerstats|lazydocker|ctop)
-      docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -10 || \
+      # `have docker` first: this branch is reachable whenever lazydocker or ctop
+      # is installed, and without the guard a missing docker binary reported
+      # "daemon not responding", which points at the wrong problem.
+      if ! have docker; then
+        printf "  %bdocker CLI not installed%b\n" "$C_DIM" "$C_RESET"
+      elif ! docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -10; then
         printf "  %bDocker daemon not responding%b\n" "$C_RED" "$C_RESET"
+      fi
       ;;
     k9s)
       local ctx

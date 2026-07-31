@@ -1,24 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-C_RESET=$'\033[0m'
-C_BOLD=$'\033[1m'
-C_DIM=$'\033[2m'
-C_CYAN=$'\033[1;36m'
-C_BLUE=$'\033[1;34m'
-C_GREEN=$'\033[1;32m'
-C_YELLOW=$'\033[1;33m'
-C_MAGENTA=$'\033[1;35m'
-C_RED=$'\033[1;31m'
+readonly LIB_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")
+# shellcheck source=./monitor-lib.sh
+source "$LIB_DIR/monitor-lib.sh"
 
+# Only resets terminal attributes. It deliberately does NOT remove
+# $MONITOR_HISTORY_DIR — that is the CPU-delta / sparkline cache and must
+# survive between runs, see monitor-lib.sh.
 cleanup() {
-  local tmpdir="${MONITOR_HISTORY_DIR:-}"
-  [[ -n "$tmpdir" && -d "$tmpdir" ]] && rm -rf "$tmpdir" 2>/dev/null || true
   printf '%b' "$C_RESET"
 }
 trap cleanup EXIT INT TERM
-
-have() { command -v "$1" >/dev/null 2>&1; }
 
 # --- Config ---
 readonly CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/tmux"
@@ -26,16 +19,20 @@ readonly CONFIG_FILE="$CONFIG_DIR/monitor.conf"
 
 load_config() {
   set -a
+  # Launch-mode defaults. These are only reachable when monitor.sh is invoked
+  # directly or via --popup; the tmux keybinding (prefix M) goes through
+  # --popup-inner, which forces window mode below.
   : "${MONITOR_LAUNCH_MODE:=split}"
   : "${MONITOR_SPLIT_DIRECTION:=h}"
   : "${MONITOR_SPLIT_SIZE:=}"
+  : "${MONITOR_WINDOW_AUTO_CLEANUP:=true}"
+  : "${MONITOR_STATUS_FORMAT:=cpu mem disk temp}"
   : "${MONITOR_DANGER_CPU:=85}"
   : "${MONITOR_DANGER_MEM:=85}"
   : "${MONITOR_DANGER_DISK:=85}"
   : "${MONITOR_WARN_CPU:=65}"
   : "${MONITOR_WARN_MEM:=65}"
   : "${MONITOR_WARN_DISK:=65}"
-  : "${MONITOR_WINDOW_AUTO_CLEANUP:=true}"
   : "${MONITOR_PREVIEW_WIDTH:=65%}"
   : "${MONITOR_PREVIEW_PROCESSES:=6}"
   : "${MONITOR_HISTORY_ENABLED:=true}"
@@ -48,49 +45,12 @@ load_config() {
 }
 load_config
 
-color_name_to_ansi() {
-  case "${1,,}" in
-    black)   echo '0;30'  ;; red)     echo '1;31'  ;;
-    green)   echo '1;32'  ;; yellow)  echo '1;33'  ;;
-    blue)    echo '1;34'  ;; magenta) echo '1;35'  ;;
-    cyan)    echo '1;36'  ;; white)   echo '1;37'  ;;
-    dim)     echo '2'     ;; bold)    echo '1'     ;;
-    reset)   echo '0'     ;;
-    *)       echo "${1:-}" ;;
-  esac
-}
-
-load_theme() {
-  local ansi config_key var
-  for pair in HEADER:MAGENTA LABEL:CYAN BAR_LABEL:BLUE GOOD:GREEN WARN:YELLOW DANGER:RED DIM:DIM; do
-    config_key="MONITOR_COLOR_${pair%%:*}"
-    var="C_${pair#*:}"
-    if [[ -n "${!config_key:-}" ]]; then
-      ansi=$(color_name_to_ansi "${!config_key}")
-      [[ -n "$ansi" ]] && printf -v "$var" '\033[%sm' "$ansi"
-    fi
-  done
-}
+# color_name_to_ansi / load_theme / load_custom_tools come from monitor-lib.sh
 load_theme
-
-declare -a custom_tools=()
-
-load_custom_tools() {
-  custom_tools=()
-  local tools_str="${MONITOR_CUSTOM_TOOLS:-}"
-  [[ -z "$tools_str" ]] && return
-  local entries
-  IFS='|' read -ra entries <<< "$tools_str"
-  for entry in "${entries[@]:-}"; do
-    [[ -n "$entry" ]] && custom_tools+=("$entry")
-  done
-}
 load_custom_tools
+monitor_init_history_dir
 
-readonly MONITOR_HISTORY_DIR="${TMPDIR:-/tmp}/monitor-${UID:-$(id -u)}"
-mkdir -p "$MONITOR_HISTORY_DIR"
-
-readonly SCRIPT_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")
+readonly SCRIPT_DIR="$LIB_DIR"
 readonly SCRIPT_PATH="$SCRIPT_DIR/monitor.sh"
 readonly PREVIEW_SCRIPT="$SCRIPT_DIR/monitor-preview.sh"
 
@@ -124,8 +84,15 @@ platform_badges() {
   [[ "$p" == *kubernetes* ]] && labels+=("Kubernetes")
   [[ -z "${labels+x}" || ${#labels[@]} -eq 0 ]] && labels+=("Linux")
 
-  local IFS=' | '
-  echo "${labels[*]}"
+  # Joined manually. `local IFS=' | '` does not work here: IFS is a set of
+  # delimiter *characters*, so "${labels[*]}" would join on a single space and
+  # render "Docker Linux" instead of "Docker | Linux".
+  local out="" label
+  for label in "${labels[@]}"; do
+    [[ -n "$out" ]] && out+=" | "
+    out+="$label"
+  done
+  echo "$out"
 }
 
 readonly MONITOR_PLATFORM=$(detect_platform)
@@ -208,49 +175,27 @@ menu() {
 # --- Tmux Launch ---
 launch_tool() {
   local tool=$1 cmd=""
-  case "$tool" in
-    htop)        cmd="htop" ;;
-    btop)        cmd="btop" ;;
-    glances)     cmd="glances" ;;
-    nvtop)       cmd="nvtop" ;;
-    nvitop)      cmd="nvitop" ;;
-    jtop)        cmd="jtop" ;;
-    lazydocker)  cmd="lazydocker" ;;
-    ctop)        cmd="env TERM=xterm-256color ctop" ;;
-    dockerstats) cmd="docker stats" ;;
-    bmon)        cmd="bmon" ;;
-    nload)       cmd="nload" ;;
-    iftop)       cmd="sudo iftop" ;;
-    iotop)       cmd="sudo iotop" ;;
-    dstat)       cmd="dstat" ;;
-    k9s)         cmd="k9s" ;;
-  esac
-
-  if [[ -z "$cmd" ]]; then
-    local entry key c _
-    for entry in "${custom_tools[@]:-}"; do
-      [[ -z "$entry" ]] && continue
-      IFS=';' read -r key c _ _ _ <<< "$entry"
-      if [[ "$tool" == "$key" ]]; then
-        cmd="$c"
-        break
-      fi
-    done
-  fi
+  # Builtin map lives in monitor-lib.sh so the preview shows the same command
+  # this function actually runs; falls back to MONITOR_CUSTOM_TOOLS.
+  cmd=$(resolve_tool_command "$tool" || true)
 
   if [[ -z "$cmd" ]]; then
     echo "Error: Unknown tool ($tool)" >&2
     exit 1
   fi
 
+  # Always run through `bash -c`: $cmd is a command *line* (e.g. "docker stats",
+  # or a custom tool like "tail -f /var/log/syslog"). Bare `exec $cmd` relied on
+  # word splitting and was also subject to glob expansion.
   case "$MONITOR_LAUNCH_MODE" in
     split)
       if [[ -n "${TMUX:-}" ]]; then
-        local dir_flag="-h"
-        [[ "$MONITOR_SPLIT_DIRECTION" == "v" ]] && dir_flag="-v"
-        tmux split-window $dir_flag ${MONITOR_SPLIT_SIZE:+-l "$MONITOR_SPLIT_SIZE"} "$cmd"
+        local split_args=("-h")
+        [[ "$MONITOR_SPLIT_DIRECTION" == "v" ]] && split_args=("-v")
+        [[ -n "$MONITOR_SPLIT_SIZE" ]] && split_args+=("-l" "$MONITOR_SPLIT_SIZE")
+        tmux split-window "${split_args[@]}" "$cmd"
       else
-        exec $cmd
+        exec bash -c "$cmd"
       fi
       ;;
     window)
@@ -265,43 +210,21 @@ launch_tool() {
         else
           tmux new-window -n "$tool_name" "$cmd"
         fi
-        cleanup
+        # No explicit cleanup call here: the EXIT trap runs it, and calling it
+        # directly meant it ran twice.
         exit 0
       else
-        exec $cmd
+        exec bash -c "$cmd"
       fi
       ;;
     replace|*)
-      exec $cmd
+      exec bash -c "$cmd"
       ;;
   esac
 }
 
 # --- Status Bar ---
-get_cpu_fast() {
-  local stat_file="${MONITOR_HISTORY_DIR}/cpu-stat"
-  local user=0 nice=0 system=0 idle=0 iowait=0 irq=0 softirq=0 steal=0 _
-  if ! { read -r _ user nice system idle iowait irq softirq steal _ < /proc/stat; } 2>/dev/null; then
-    echo 0
-    return
-  fi
-  local total=$((user+nice+system+idle+iowait+irq+softirq+steal))
-  local idle_total=$((idle+iowait))
-  if [[ -f "$stat_file" ]]; then
-    local prev_total=0 prev_idle=0
-    read -r prev_total prev_idle _ < "$stat_file" 2>/dev/null || { prev_total=0; prev_idle=0; }
-    local diff_total=$((total - prev_total))
-    local diff_idle=$((idle_total - prev_idle))
-    if ((diff_total > 0)); then
-      echo "$(( (diff_total - diff_idle) * 100 / diff_total ))"
-    else
-      echo 0
-    fi
-  else
-    echo 0
-  fi
-  echo "$total $idle_total" > "$stat_file"
-}
+# get_cpu_fast comes from monitor-lib.sh (shared with monitor-preview.sh).
 
 status_output() {
   local fields="${MONITOR_STATUS_FORMAT:-cpu mem disk temp}"
