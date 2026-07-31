@@ -59,28 +59,11 @@ print_separator() {
 
 print_header
 
-REMOTE_PATH="$1"
-LOCAL_PATH="$2"
+REMOTE_PATH="${1:-}"
+LOCAL_PATH="${2:-}"
 
-# 🔧 Define your servers here
-SERVERS=(
-  "jupyter"
-  "rack"
-  "strong"
-  "jetson50"
-  "jetson51"
-  "jetson52"
-  "jetson53"
-  "jetson54"
-)
-
-# Show supported servers
-print_step "Supported servers (${#SERVERS[@]} total):"
-for SERVER in "${SERVERS[@]}"; do
-  echo -e "  ${DIM}•${RESET} ${CYAN}${SERVER}${RESET}"
-done
-print_separator
-
+# Usage check first, before touching the host list, so `download` with no
+# arguments prints usage rather than a config error.
 if [[ -z "$REMOTE_PATH" ]]; then
   print_error "No remote path provided"
   echo -e "${DIM}Usage: download <remote_path> [local_path]${RESET}"
@@ -89,6 +72,26 @@ if [[ -z "$REMOTE_PATH" ]]; then
   exit 1
 fi
 
+# Server list is shared with `show` — see .config/remote-hosts
+HOSTS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/remote-hosts"
+if [[ ! -r "$HOSTS_FILE" ]]; then
+  print_error "Host list not found: $HOSTS_FILE"
+  echo -e "${DIM}Create it with one hostname per line.${RESET}"
+  exit 1
+fi
+mapfile -t SERVERS < <(grep -vE '^[[:space:]]*(#|$)' "$HOSTS_FILE")
+if [[ ${#SERVERS[@]} -eq 0 ]]; then
+  print_error "No hosts enabled in $HOSTS_FILE"
+  exit 1
+fi
+
+# Show supported servers
+print_step "Supported servers (${#SERVERS[@]} total):"
+for SERVER in "${SERVERS[@]}"; do
+  echo -e "  ${DIM}•${RESET} ${CYAN}${SERVER}${RESET}"
+done
+print_separator
+
 # Set local path to current directory if not provided
 if [[ -z "$LOCAL_PATH" ]]; then
   BASENAME=$(basename "$REMOTE_PATH")
@@ -96,10 +99,11 @@ if [[ -z "$LOCAL_PATH" ]]; then
   print_info "No local path specified, using: ${CYAN}$BASENAME${RESET} (current directory)"
 fi
 
-# Convert to absolute path
-if [[ ! "$LOCAL_PATH" = /* ]]; then
-  LOCAL_PATH="$(cd "$(dirname "$LOCAL_PATH")" 2>/dev/null && pwd)/$(basename "$LOCAL_PATH")"
-fi
+# Convert to absolute path. realpath -m does not require the path to exist —
+# the previous 'cd $(dirname ...) && pwd' silently produced "/basename" when the
+# target directory did not exist yet, and the later mkdir -p could not recover
+# the lost prefix.
+LOCAL_PATH=$(realpath -m -- "$LOCAL_PATH")
 
 print_step "Remote path: ${MAGENTA}$REMOTE_PATH${RESET}"
 print_step "Local path: ${CYAN}$LOCAL_PATH${RESET}"
@@ -117,7 +121,10 @@ for i in "${!SERVERS[@]}"; do
   SERVER="${SERVERS[$i]}"
   echo -ne "${DIM}  ${ICON_SEARCH} Checking ${SERVER}...${RESET}\r"
   (
-    if ssh -o ConnectTimeout=3 -o LogLevel=ERROR "$SERVER" "[ -e \"$REMOTE_PATH\" ]" 2>/dev/null; then
+    # printf %q so a path containing quotes, $ or backticks is not evaluated
+    # by the remote shell.
+    if ssh -o ConnectTimeout=3 -o LogLevel=ERROR "$SERVER" \
+         "test -e $(printf '%q' "$REMOTE_PATH")" 2>/dev/null; then
       echo "$SERVER" > "$TEMP_DIR/$i"
     fi
   ) &
@@ -156,6 +163,14 @@ if [[ ${#FOUND_SERVERS[@]} -gt 1 ]]; then
       print_error "Invalid choice. Try again."
     fi
   done
+  # select exits its loop on EOF without setting a choice (non-interactive
+  # stdin), which previously fell through with FOUND_SERVER empty and produced a
+  # confusing rsync error against ":path".
+  if [[ -z "${FOUND_SERVER:-}" ]]; then
+    print_error "No server selected"
+    echo -e "${DIM}Run interactively, or pipe a choice: echo 1 | download <path>${RESET}"
+    exit 1
+  fi
 else
   FOUND_SERVER="${FOUND_SERVERS[0]}"
 fi
@@ -165,8 +180,10 @@ print_separator
 
 # --- Get remote file/folder info ---
 print_step "Getting remote file information..."
-REMOTE_SIZE=$(ssh "$FOUND_SERVER" "du -sh \"$REMOTE_PATH\" 2>/dev/null | cut -f1" 2>/dev/null || echo "unknown")
-IS_DIR=$(ssh "$FOUND_SERVER" "[ -d \"$REMOTE_PATH\" ] && echo 1 || echo 0")
+QPATH=$(printf '%q' "$REMOTE_PATH")
+REMOTE_SIZE=$(ssh "$FOUND_SERVER" "du -sh $QPATH 2>/dev/null | cut -f1" 2>/dev/null || echo "unknown")
+[[ -z "$REMOTE_SIZE" ]] && REMOTE_SIZE="unknown"
+IS_DIR=$(ssh "$FOUND_SERVER" "test -d $QPATH && echo 1 || echo 0")
 
 if [[ "$IS_DIR" == "1" ]]; then
   print_info "Type: ${ICON_FOLDER} Directory"
@@ -190,8 +207,12 @@ fi
 print_step "${ICON_DOWNLOAD} Downloading from ${GREEN}${FOUND_SERVER}${RESET}..."
 print_info "This may take a while for large files..."
 
-# Determine best progress option for rsync (use overall progress if available)
-if rsync --help 2>&1 | grep -q -- '--info=progress2'; then
+# Determine best progress option for rsync (overall progress if available).
+# Probe by actually trying the flag: `rsync --help` only lists "--info=FLAGS",
+# never the individual sub-flags, so grepping its help output for
+# "--info=progress2" always failed and this silently fell back to per-file
+# --progress even on rsync versions that support it.
+if rsync --info=progress2 --version >/dev/null 2>&1; then
   RSYNC_PROGRESS_OPTS=("--info=progress2")
 else
   RSYNC_PROGRESS_OPTS=("--progress")
@@ -204,28 +225,34 @@ run_rsync() {
   rsync -avzh "${RSYNC_PROGRESS_OPTS[@]}" -e "ssh -o LogLevel=ERROR" "$src" "$dest"
 }
 
+# Checked with `if ! run_rsync`, not a trailing `[[ $? -eq 0 ]]`: `set -e` above
+# aborts the script the moment rsync returns non-zero, so the old $? test always
+# saw 0 and its error branch was unreachable.
 if [[ "$IS_DIR" == "1" ]]; then
   # Download directory recursively with progress
-  run_rsync "$FOUND_SERVER:$REMOTE_PATH/" "$LOCAL_PATH/"
+  if ! run_rsync "$FOUND_SERVER:$REMOTE_PATH/" "$LOCAL_PATH/"; then
+    print_separator
+    print_error "Download failed"
+    exit 1
+  fi
 else
   # Download single file with progress using rsync
-  run_rsync "$FOUND_SERVER:$REMOTE_PATH" "$LOCAL_PATH"
+  if ! run_rsync "$FOUND_SERVER:$REMOTE_PATH" "$LOCAL_PATH"; then
+    print_separator
+    print_error "Download failed"
+    exit 1
+  fi
 fi
 
-if [[ $? -eq 0 ]]; then
-  print_separator
-  print_success "${ICON_ROCKET} Download completed successfully!"
-  
-  # Show local file info
-  if [[ -e "$LOCAL_PATH" ]]; then
-    LOCAL_SIZE=$(du -sh "$LOCAL_PATH" 2>/dev/null | cut -f1 || echo "unknown")
-    print_info "Downloaded to: ${CYAN}$LOCAL_PATH${RESET}"
-    print_info "Local size: ${YELLOW}$LOCAL_SIZE${RESET}"
-  fi
-  echo ""
-else
-  print_separator
-  print_error "Download failed"
-  exit 1
+print_separator
+print_success "${ICON_ROCKET} Download completed successfully!"
+
+# Show local file info
+if [[ -e "$LOCAL_PATH" ]]; then
+  LOCAL_SIZE=$(du -sh "$LOCAL_PATH" 2>/dev/null | cut -f1 || echo "unknown")
+  [[ -z "$LOCAL_SIZE" ]] && LOCAL_SIZE="unknown"
+  print_info "Downloaded to: ${CYAN}$LOCAL_PATH${RESET}"
+  print_info "Local size: ${YELLOW}$LOCAL_SIZE${RESET}"
 fi
+echo ""
 

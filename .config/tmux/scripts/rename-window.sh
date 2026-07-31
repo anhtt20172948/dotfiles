@@ -6,17 +6,29 @@ input=""
 while IFS= read -r -s -n 1 ch; do
     case "$ch" in
         $'\e')
-            exit 0
-            ;;
+            # Escape sequence: could be a bare Esc (cancel) or the start of an
+            # arrow/function key (\e[A etc). Drain the rest of the sequence with
+            # a zero timeout — without this, any arrow key aborted the rename.
+            rest=""
+            while IFS= read -r -s -n 1 -t 0.01 more; do
+                rest+="$more"
+            done
+            [[ -z "$rest" ]] && { echo; exit 0; }   # bare Esc → cancel
+            ;;                                       # otherwise ignore the key
         $'\n'|$'\r'|'')
             echo
             break
             ;;
         $'\177'|$'\b')
-            input="${input%?}"
-            printf "\b \b"
+            # Only emit the erase sequence when there is something to erase,
+            # otherwise repeated backspace chewed through the prompt text.
+            if [[ -n "$input" ]]; then
+                input="${input%?}"
+                printf "\b \b"
+            fi
             ;;
         $'\004')
+            echo
             exit 0
             ;;
         *)

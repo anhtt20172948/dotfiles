@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 export PATH="$HOME/.local/bin:$PATH"
 
-# Chọn session qua fzf-tmux
+for bin in sesh fzf fd; do
+  command -v "$bin" >/dev/null 2>&1 || {
+    printf 'sesh-picker: %s not found in PATH\n' "$bin" >&2
+    read -rsn1 -p 'Press any key to close...'
+    exit 1
+  }
+done
+
+# Pick a session. Plain fzf, not fzf-tmux: this script already runs inside a
+# tmux display-popup (see popup.conf), and popup-in-popup does not work.
 target=$(
-  sesh list --icons | fzf-tmux --reverse -p 60%,65% \
+  sesh list --icons | fzf --reverse \
     --no-sort --ansi --border-label ' sesh ' --prompt '⚡ ' \
     --header ' ^a all ^t tmux ^g configs ^x zoxide ^d kill ^f find' \
     --bind 'tab:down,btab:up' \
@@ -17,8 +26,8 @@ target=$(
     --preview 'sesh preview {}'
 )
 
-# Nếu hủy chọn (bấm ESC) thì thoát an toàn
+# Cancelled with ESC — exit cleanly
 [[ -z "$target" ]] && exit 0
 
-# Kết nối tới session/thư mục đã chọn
+# Connect to the chosen session/directory
 sesh connect "$target"
