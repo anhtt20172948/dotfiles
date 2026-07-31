@@ -31,10 +31,20 @@ download /home/user/project/data.csv            # rsync into ./data.csv
 download /home/user/project/dir ./local-dir     # explicit destination
 ```
 
-Both read their host list from `.config/remote-hosts` (one host per line, `#`
-comments allowed). Host names must be resolvable by ssh — normally a `Host`
-entry in `~/.ssh/config`. Every enabled host costs one parallel ssh probe per
-lookup, so keep the list to what you actually use.
+Both derive their host list directly from `~/.ssh/config` — every non-wildcard
+name on a `Host` line. There is no separate list to keep in sync: adding a host
+to your ssh config is enough.
+
+Each host costs one parallel ssh probe (3s connect timeout) per lookup. To
+narrow a single run:
+
+```bash
+REMOTE_HOSTS="rack jupyter" download /path/to/file
+SSH_CONFIG=~/.ssh/config.work show /path/to/file
+```
+
+`Include` directives in the ssh config are not followed; use `REMOTE_HOSTS` or
+`SSH_CONFIG` if your config is split across files.
 
 If a path exists on several hosts, both scripts prompt for a choice. Piping
 works too: `echo 1 | download /path`.

@@ -72,16 +72,38 @@ if [[ -z "$REMOTE_PATH" ]]; then
   exit 1
 fi
 
-# Server list is shared with `show` — see .config/remote-hosts
-HOSTS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/remote-hosts"
-if [[ ! -r "$HOSTS_FILE" ]]; then
-  print_error "Host list not found: $HOSTS_FILE"
-  echo -e "${DIM}Create it with one hostname per line.${RESET}"
-  exit 1
+# --- Server list: taken straight from ~/.ssh/config ---
+# Single source of truth — no separate host list to keep in sync. Every
+# non-wildcard name on a `Host` line is probed. Override for one-off runs with
+#   REMOTE_HOSTS="rack jupiter" download <path>
+SSH_CONFIG="${SSH_CONFIG:-$HOME/.ssh/config}"
+
+if [[ -n "${REMOTE_HOSTS:-}" ]]; then
+  read -ra SERVERS <<< "$REMOTE_HOSTS"
+else
+  if [[ ! -r "$SSH_CONFIG" ]]; then
+    print_error "ssh config not readable: $SSH_CONFIG"
+    echo -e "${DIM}Set SSH_CONFIG=/path/to/config, or REMOTE_HOSTS=\"host1 host2\"${RESET}"
+    exit 1
+  fi
+  # Strip comments, take every field after `Host` (a Host line may list several
+  # aliases), skip pattern entries (* ? !) since those are not connectable, and
+  # de-duplicate while preserving file order.
+  # Note: `Include` directives are not followed — add hosts to this file or use
+  # REMOTE_HOSTS if you split your ssh config.
+  mapfile -t SERVERS < <(
+    awk '
+      { sub(/#.*/, "") }
+      tolower($1) == "host" {
+        for (i = 2; i <= NF; i++)
+          if ($i !~ /[*?!]/) print $i
+      }
+    ' "$SSH_CONFIG" | awk 'NF && !seen[$0]++'
+  )
 fi
-mapfile -t SERVERS < <(grep -vE '^[[:space:]]*(#|$)' "$HOSTS_FILE")
+
 if [[ ${#SERVERS[@]} -eq 0 ]]; then
-  print_error "No hosts enabled in $HOSTS_FILE"
+  print_error "No usable hosts found in $SSH_CONFIG"
   exit 1
 fi
 
