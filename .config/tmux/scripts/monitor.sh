@@ -19,9 +19,8 @@ readonly CONFIG_FILE="$CONFIG_DIR/monitor.conf"
 
 load_config() {
   set -a
-  # Launch-mode defaults. These are only reachable when monitor.sh is invoked
-  # directly or via --popup; the tmux keybinding (prefix M) goes through
-  # --popup-inner, which forces window mode below.
+  # Launch-mode defaults. `--popup-inner` forces window mode below; the normal
+  # prefix-M binding enters through --popup and therefore does not use these.
   : "${MONITOR_LAUNCH_MODE:=split}"
   : "${MONITOR_SPLIT_DIRECTION:=h}"
   : "${MONITOR_SPLIT_SIZE:=}"
@@ -278,7 +277,9 @@ Monitor Center — interactive monitoring tool launcher.
 Options:
   --menu    Print available tools as fzf-compatible menu and exit
   --status  Print one-line system status (for tmux status-right)
-  --popup   Launch in a tmux floating popup window (tmux ≥ 3.2)
+  --popup [pane-id]
+            Launch in a tmux floating popup window (tmux ≥ 3.2). An optional
+            pane ID makes the popup inherit that pane's working directory.
   --help    Show this help message and exit
 
 Environment variables (or configure via $CONFIG_FILE):
@@ -318,7 +319,16 @@ case "${1:-}" in
     ;;
   --popup)
     if [[ -n "${TMUX:-}" ]]; then
+      # popup.conf passes a pane ID, not a raw path. Resolving it here avoids
+      # injecting an arbitrary directory name into a run-shell command and
+      # keeps the popup in the pane's current working directory.
+      popup_target="${2:-${TMUX_PANE:-}}"
+      popup_dir="$PWD"
+      if [[ -n "$popup_target" ]]; then
+        popup_dir=$(tmux display-message -p -t "$popup_target" '#{pane_current_path}' 2>/dev/null || printf '%s' "$PWD")
+      fi
       exec tmux display-popup \
+        -d "$popup_dir" \
         -w "${MONITOR_POPUP_WIDTH:-80%}" \
         -h "${MONITOR_POPUP_HEIGHT:-85%}" \
         -E -T " Monitor Center " \
@@ -367,7 +377,16 @@ while true; do
       --bind "alt-p:refresh-preview" \
       --bind "ctrl-o:refresh-preview" \
       --preview "bash '$PREVIEW_SCRIPT' {}"
-  )
+  ) || {
+    # fzf uses 1 for an empty/cancelled selection and 130 when the popup closes
+    # and sends an interrupt. Neither is an error worth reporting via tmux's
+    # "run-shell ... returned 130" message.
+    fzf_status=$?
+    case "$fzf_status" in
+      1|130) exit 0 ;;
+      *)     exit "$fzf_status" ;;
+    esac
+  }
 
   [[ -z "$sel" ]] && exit 0
 
