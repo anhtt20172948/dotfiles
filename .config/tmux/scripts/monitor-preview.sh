@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly LIB_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")
+LIB_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")
+readonly LIB_DIR
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=./monitor-lib.sh
 source "$LIB_DIR/monitor-lib.sh"
 

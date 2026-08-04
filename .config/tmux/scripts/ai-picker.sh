@@ -2,52 +2,29 @@
 # Interactive AI coding CLI picker (runs inside a tmux display-popup).
 set -uo pipefail
 
-export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$PATH"
+LIB_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")
+readonly LIB_DIR
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=./ai-lib.sh
+source "$LIB_DIR/ai-lib.sh"
 
 SCRIPT_PATH=${BASH_SOURCE[0]}
 
-reset=$'\033[0m'
-bold=$'\033[1m'
-lavender=$'\033[38;2;180;190;254m'
-mauve=$'\033[38;2;203;166;247m'
-blue=$'\033[38;2;137;180;250m'
-green=$'\033[38;2;166;227;161m'
-yellow=$'\033[38;2;249;226;175m'
-red=$'\033[38;2;243;139;168m'
-subtext=$'\033[38;2;166;173;200m'
+reset=$AI_RESET
+bold=$AI_BOLD
+lavender=$AI_LAVENDER
+mauve=$AI_MAUVE
+blue=$AI_BLUE
+green=$AI_GREEN
+yellow=$AI_YELLOW
+red=$AI_RED
+subtext=$AI_SUBTEXT
 
 pause_with_error() {
   printf '%sai-picker:%s %s\n' "$red" "$reset" "$1" >&2
   read -rsn1 -p 'Press any key to close...'
   printf '\n'
   exit 1
-}
-
-tool_name() {
-  case "$1" in
-    codex)    printf 'Codex' ;;
-    opencode) printf 'OpenCode' ;;
-    claude)   printf 'Claude Code' ;;
-    *)        return 1 ;;
-  esac
-}
-
-tool_icon() {
-  case "$1" in
-    codex)    printf '󰘩' ;;
-    opencode) printf '' ;;
-    claude)   printf '󱑺' ;;
-    *)        return 1 ;;
-  esac
-}
-
-tool_description() {
-  case "$1" in
-    codex)    printf 'OpenAI coding agent for terminal-first development' ;;
-    opencode) printf 'Open-source AI coding agent with multiple providers' ;;
-    claude)   printf 'Anthropic agentic coding assistant for the terminal' ;;
-    *)        return 1 ;;
-  esac
 }
 
 tool_is_running() {
@@ -106,11 +83,13 @@ format_count() {
   printf '%s%s' "$number" "$grouped"
 }
 
-format_time() {
-  local value=${1:-}
-
-  [[ -n "$value" ]] || return
-  date -d "$value" '+%Y-%m-%d %H:%M %Z' 2>/dev/null || printf '%s' "$value"
+# ISO8601 -> local display string. Falls back to echoing the raw value so a
+# format we cannot parse is still visible rather than silently blanked.
+format_iso() {
+  local value=${1:-} epoch
+  [[ -n "$value" ]] || return 0
+  epoch=$(ai_iso_to_epoch "$value") || { printf '%s' "$value"; return 0; }
+  ai_fmt_epoch "$epoch" '%Y-%m-%d %H:%M %Z'
 }
 
 format_window() {
@@ -142,143 +121,189 @@ usage_bar() {
   printf '%s%s%s' "$subtext" "$bar" "$reset"
 }
 
+# ------------------------------------------------------------
+# Usage panes.
+#
+# Both used to spawn jq per file — up to three per file across eighty files for
+# Codex — which is a few hundred processes before the preview could paint. Each
+# is now a single batched pass that emits one TSV row of every field the pane
+# needs, so the whole pane costs one awk plus one jq.
+#
+# awk prefixes each line with its file's index rather than letting jq read the
+# files itself: a transcript with no trailing newline (i.e. one being written
+# right now) makes jq splice its last line onto the next file's first line,
+# which loses rows in raw mode and aborts the entire program in JSON mode.
+# The index is what makes "newest file that has this field" resolvable, since
+# the file list is already newest-first.
+# ------------------------------------------------------------
 print_codex_usage() {
-  local usage_json='' rate_json='' file file_cwd candidate
-  local timestamp total input cached output context percent remaining
-  local window_minutes reset_at plan
+  local files file row
+  local has_usage total input cached output context updated_epoch
+  local has_rate percent window_minutes reset_at plan remaining
 
   print_section 'LIVE USAGE'
-  if ! command -v jq >/dev/null 2>&1 || [[ ! -d $HOME/.codex/sessions ]]; then
-    printf '  %sLocal Codex usage data is unavailable.%s\n' "$yellow" "$reset"
+  if ! have jq; then
+    printf '  %sjq is required to read Codex usage.%s\n' "$yellow" "$reset"
+    return
+  fi
+  # Codex creates sessions/ lazily, on the first real conversation, so a missing
+  # directory means "nothing recorded yet" rather than a broken path. Say that
+  # instead of the old flat "unavailable", which read like a fault.
+  if [[ ! -d $HOME/.codex/sessions ]]; then
+    printf '  %sNo Codex history on this machine yet.%s\n' "$yellow" "$reset"
+    printf '  Use %s/status%s inside Codex for live context and limits.\n' \
+      "$bold" "$reset"
     return
   fi
 
+  files=()
   while IFS= read -r file; do
-    file_cwd=$(jq -r 'select(.type == "session_meta") | .payload.cwd // empty' \
-      "$file" 2>/dev/null | head -n 1)
-    [[ "$file_cwd" == "$PWD" ]] || continue
+    [[ -n "$file" ]] && files+=("$file")
+  done < <(ai_recent_files "$HOME/.codex/sessions" 6 80)
+  if (( ${#files[@]} == 0 )); then
+    printf '  %sNo Codex session history found.%s\n' "$yellow" "$reset"
+    return
+  fi
 
-    if [[ -z "$usage_json" ]]; then
-      candidate=$(jq -c '
-        select(.type == "event_msg" and .payload.type == "token_count" and .payload.info != null)
-        | {timestamp, usage: .payload.info.total_token_usage,
-           context: .payload.info.model_context_window}' \
-        "$file" 2>/dev/null | tail -n 1)
-      [[ -n "$candidate" ]] && usage_json=$candidate
-    fi
+  row=$(awk 'FNR == 1 { n++ } { printf "%d\t%s\n", n, $0 }' "${files[@]}" 2>/dev/null \
+    | jq -nRr --arg cwd "$PWD" '
+    reduce ( inputs
+             | index("\t") as $i
+             | select($i != null)
+             | {k: .[0:$i], r: (.[$i + 1:] | try fromjson catch empty)}
+             | select(.r | type == "object") ) as $e
+      ({};
+        $e.k as $k | $e.r as $r
+        | .[$k] = ( (.[$k] // {cwdok: false, usage: null, rate: null})
+            | (if ($r.type // "") == "session_meta" and ($r.payload.cwd // "") == $cwd
+               then .cwdok = true else . end)
+            | (if ($r.type // "") == "event_msg"
+                  and ($r.payload.type // "") == "token_count"
+               then (if ($r.payload.info // null) != null
+                     then .usage = {timestamp: $r.timestamp,
+                                    usage: $r.payload.info.total_token_usage,
+                                    context: $r.payload.info.model_context_window}
+                     else . end)
+                  | (if ($r.payload.rate_limits // null) != null
+                     then .rate = {timestamp: $r.timestamp,
+                                   rate: $r.payload.rate_limits}
+                     else . end)
+               else . end) ) )
+    | [ to_entries[] | select(.value.cwdok) ] | sort_by(.key | tonumber) as $f
+    | { u: ([$f[] | .value.usage | select(. != null)] | first),
+        r: ([$f[] | .value.rate  | select(. != null)] | first) }
+    | [ (if .u == null then 0 else 1 end),
+        (.u.usage.total_tokens // 0),
+        (.u.usage.input_tokens // 0),
+        (.u.usage.cached_input_tokens // 0),
+        (.u.usage.output_tokens // 0),
+        (.u.context // 0),
+        (if (.u.timestamp // null) == null then 0
+         else (try (.u.timestamp | sub("\\.[0-9]+";"") | fromdateiso8601) catch 0) end),
+        (if .r == null then 0 else 1 end),
+        (.r.rate.primary.used_percent // ""),
+        (.r.rate.primary.window_minutes // 0),
+        ((.r.rate.primary.resets_at // 0) | try (tonumber | floor) catch 0),
+        (.r.rate.plan_type // "") ] | @tsv
+  ' 2>/dev/null)
 
-    if [[ -z "$rate_json" ]]; then
-      candidate=$(jq -c '
-        select(.type == "event_msg" and .payload.type == "token_count"
-               and .payload.rate_limits != null)
-        | {timestamp, rate: .payload.rate_limits}' \
-        "$file" 2>/dev/null | tail -n 1)
-      [[ -n "$candidate" ]] && rate_json=$candidate
-    fi
+  IFS=$'\t' read -r has_usage total input cached output context updated_epoch \
+    has_rate percent window_minutes reset_at plan <<<"$row"
 
-    [[ -n "$usage_json" && -n "$rate_json" ]] && break
-  done < <(find "$HOME/.codex/sessions" -type f -name '*.jsonl' \
-    -printf '%T@ %p\n' 2>/dev/null | sort -rn | cut -d' ' -f2- | head -n 80)
-
-  if [[ -n "$usage_json" ]]; then
-    timestamp=$(jq -r '.timestamp // empty' <<<"$usage_json")
-    total=$(jq -r '.usage.total_tokens // 0' <<<"$usage_json")
-    input=$(jq -r '.usage.input_tokens // 0' <<<"$usage_json")
-    cached=$(jq -r '.usage.cached_input_tokens // 0' <<<"$usage_json")
-    output=$(jq -r '.usage.output_tokens // 0' <<<"$usage_json")
-    context=$(jq -r '.context // 0' <<<"$usage_json")
+  if [[ "${has_usage:-0}" == 1 ]]; then
     print_field 'Session' "$(format_count "$total") tokens"
     print_field 'Input' "$(format_count "$input") ($(format_count "$cached") cached)"
     print_field 'Output' "$(format_count "$output") tokens"
     print_field 'Context' "$(format_count "$context") tokens"
-    print_field 'Updated' "$(format_time "$timestamp")"
+    print_field 'Updated' "$(ai_fmt_epoch "$updated_epoch" '%Y-%m-%d %H:%M %Z')"
   else
     printf '  %sNo completed Codex turn found for this directory.%s\n' "$yellow" "$reset"
   fi
 
-  [[ -n "$rate_json" ]] || return
-  percent=$(jq -r '.rate.primary.used_percent // empty' <<<"$rate_json")
-  window_minutes=$(jq -r '.rate.primary.window_minutes // 0' <<<"$rate_json")
-  reset_at=$(jq -r '.rate.primary.resets_at // empty' <<<"$rate_json")
-  plan=$(jq -r '.rate.plan_type // empty' <<<"$rate_json")
-  [[ -n "$percent" ]] || return
+  [[ "${has_rate:-0}" == 1 && -n "${percent:-}" ]] || return
   remaining=$((100 - ${percent%.*}))
 
   printf '\n  %s%-12s%s %s %s%% used · %s%% left\n' \
     "$subtext" "$(format_window "$window_minutes") limit" "$reset" \
     "$(usage_bar "$percent")" "${percent%.*}" "$remaining"
-  [[ -n "$reset_at" ]] && print_field 'Resets' "$(format_time "@$reset_at")"
-  [[ -n "$plan" ]] && print_field 'Plan' "${plan^}"
+  [[ "${reset_at:-0}" != 0 ]] && print_field 'Resets' "$(ai_fmt_epoch "$reset_at" '%Y-%m-%d %H:%M %Z')"
+  [[ -n "${plan:-}" ]] && print_field 'Plan' "$(ai_capitalize "$plan")"
+  return 0
 }
 
 print_claude_usage() {
-  local project_dir usage_json messages input output cache_read cache_write first last
-  local -a files=()
+  local project_dir files file row
+  local messages input output cache_read cache_write first last
 
   print_section 'LOCAL USAGE'
   project_dir="$HOME/.claude/projects/${PWD//\//-}"
-  if ! command -v jq >/dev/null 2>&1 || [[ ! -d "$project_dir" ]]; then
+  if ! have jq || [[ ! -d "$project_dir" ]]; then
     printf '  %sNo local Claude usage data found for this directory.%s\n' "$yellow" "$reset"
     printf '  Use %s/usage%s inside Claude Code for subscription limits.\n' "$bold" "$reset"
     return
   fi
 
-  mapfile -d '' files < <(find "$project_dir" -maxdepth 1 -type f -name '*.jsonl' -print0)
+  files=()
+  while IFS= read -r file; do
+    [[ -n "$file" ]] && files+=("$file")
+  done < <(ai_recent_files "$project_dir" 1 200)
+  # Guard before expanding: in bash 3.2, expanding an empty array under `set -u`
+  # is itself an unbound-variable error.
   if (( ${#files[@]} == 0 )); then
     printf '  %sNo Claude session history found for this directory.%s\n' "$yellow" "$reset"
     return
   fi
 
-  usage_json=$(jq -n '
-    reduce inputs as $row (
-      {messages: 0, input: 0, output: 0, cache_read: 0, cache_write: 0,
-       first: null, last: null};
-      if ($row.message.usage? != null) then
-        .messages += 1
-        | .input += ($row.message.usage.input_tokens // 0)
-        | .output += ($row.message.usage.output_tokens // 0)
-        | .cache_read += ($row.message.usage.cache_read_input_tokens // 0)
-        | .cache_write += ($row.message.usage.cache_creation_input_tokens // 0)
-        | .first = (if .first == null or $row.timestamp < .first then $row.timestamp else .first end)
-        | .last = (if .last == null or $row.timestamp > .last then $row.timestamp else .last end)
-      else . end
-    )' "${files[@]}" 2>/dev/null) || usage_json=''
+  row=$(awk '{ printf "%s\n", $0 }' "${files[@]}" 2>/dev/null \
+    | jq -nRr '
+    reduce ( inputs | (try fromjson catch empty) | select(type == "object") ) as $r
+      ({messages: 0, input: 0, output: 0, cache_read: 0, cache_write: 0,
+        first: null, last: null};
+        if ($r.message.usage? // null) != null then
+          .messages += 1
+          | .input += ($r.message.usage.input_tokens // 0)
+          | .output += ($r.message.usage.output_tokens // 0)
+          | .cache_read += ($r.message.usage.cache_read_input_tokens // 0)
+          | .cache_write += ($r.message.usage.cache_creation_input_tokens // 0)
+          | .first = (if .first == null or ($r.timestamp // "") < .first
+                      then ($r.timestamp // .first) else .first end)
+          | .last = (if .last == null or ($r.timestamp // "") > .last
+                     then ($r.timestamp // .last) else .last end)
+        else . end)
+    | [ .messages, .input, .output, .cache_read, .cache_write,
+        (if .first == null then 0
+         else (try (.first | sub("\\.[0-9]+";"") | fromdateiso8601) catch 0) end),
+        (if .last == null then 0
+         else (try (.last | sub("\\.[0-9]+";"") | fromdateiso8601) catch 0) end)
+      ] | @tsv
+  ' 2>/dev/null)
 
-  if [[ -z "$usage_json" ]]; then
+  if [[ -z "$row" ]]; then
     printf '  %sClaude usage history could not be parsed.%s\n' "$yellow" "$reset"
     return
   fi
 
-  messages=$(jq -r '.messages // 0' <<<"$usage_json")
-  input=$(jq -r '.input // 0' <<<"$usage_json")
-  output=$(jq -r '.output // 0' <<<"$usage_json")
-  cache_read=$(jq -r '.cache_read // 0' <<<"$usage_json")
-  cache_write=$(jq -r '.cache_write // 0' <<<"$usage_json")
-  first=$(jq -r '.first // empty' <<<"$usage_json")
-  last=$(jq -r '.last // empty' <<<"$usage_json")
+  IFS=$'\t' read -r messages input output cache_read cache_write first last <<<"$row"
 
   print_field 'Messages' "$(format_count "$messages") assistant responses"
   print_field 'Input' "$(format_count "$input") tokens"
   print_field 'Output' "$(format_count "$output") tokens"
   print_field 'Cache read' "$(format_count "$cache_read") tokens"
   print_field 'Cache write' "$(format_count "$cache_write") tokens"
-  [[ -n "$first" ]] && print_field 'Since' "$(format_time "$first")"
-  [[ -n "$last" ]] && print_field 'Updated' "$(format_time "$last")"
+  [[ "${first:-0}" != 0 ]] && print_field 'Since' "$(ai_fmt_epoch "$first" '%Y-%m-%d %H:%M %Z')"
+  [[ "${last:-0}" != 0 ]] && print_field 'Updated' "$(ai_fmt_epoch "$last" '%Y-%m-%d %H:%M %Z')"
   printf '\n  %sLocal project totals; use %s/usage%s for subscription limits.%s\n' \
     "$yellow" "$bold" "$reset$yellow" "$reset"
+  return 0
 }
 
 print_opencode_stats() {
   local executable=$1 stats status
 
   print_section 'USAGE STATISTICS'
-  if ! command -v timeout >/dev/null 2>&1; then
-    printf '  %sRun %sopencode stats%s in a shell to view tokens and cost.%s\n' \
-      "$yellow" "$bold" "$reset$yellow" "$reset"
-    return
-  fi
-
-  stats=$(NO_COLOR=1 timeout 4 "$executable" stats \
+  # ai_run_limited caps the wall clock without needing coreutils `timeout`,
+  # which stock macOS does not ship — this pane used to be unreachable here.
+  stats=$(NO_COLOR=1 ai_run_limited 6 "$executable" stats \
     --project '' --models 5 --tools 5 2>&1)
   status=$?
   if (( status == 0 )) && [[ -n "$stats" ]]; then
@@ -351,16 +376,20 @@ select_only=false
 [[ ${1:-} == '--select' ]] && select_only=true
 
 for bin in tmux fzf; do
-  command -v "$bin" >/dev/null 2>&1 || pause_with_error "'$bin' not found in PATH"
+  have "$bin" || pause_with_error "'$bin' not found in PATH"
 done
 
-codex_status=$(tool_menu_status codex)
-opencode_status=$(tool_menu_status opencode)
-claude_status=$(tool_menu_status claude)
-entries=$(printf '%s\n' \
-  $'codex\t\033[38;2;180;190;254m󰘩  Codex\033[0m  '"$codex_status"$'\tOpenAI coding agent' \
-  $'opencode\t\033[38;2;137;180;250m  OpenCode\033[0m  '"$opencode_status"$'\tOpen-source, provider-agnostic' \
-  $'claude\t\033[38;2;203;166;247m󱑺  Claude Code\033[0m  '"$claude_status"$'\tAnthropic agentic coding assistant')
+# Built from the shared tool tables rather than hand-written ANSI literals, so
+# the icons and names cannot drift from the session picker's copies again.
+newline=$'\n'
+tab=$'\t'
+entries=''
+for candidate in $AI_TOOLS; do
+  label="$(tool_color "$candidate")$(tool_icon "$candidate")  $(tool_name "$candidate")${reset}"
+  label="${label}  $(tool_menu_status "$candidate")"
+  line="${candidate}${tab}${label}${tab}$(tool_description "$candidate")"
+  entries="${entries:+${entries}${newline}}${line}"
+done
 
 printf -v preview_command 'bash %q --preview {1}' "$SCRIPT_PATH"
 
@@ -380,11 +409,11 @@ selection=$(
     --header-first \
     --header=$'Ctrl-j/k move  •  Enter select  •  Esc close  •  ● running  ○ idle\nWorking directory: '"$PWD" \
     --prompt='󱒜  Select › ' \
-    --pointer='' \
-    --marker='' \
+    --pointer='' \
+    --marker='' \
     --preview-window='right,60%,wrap,border-left' \
     --preview-label=' Details & Usage ' \
-    --bind='ctrl-j:down,ctrl-k:up,tab:down,btab:up,ctrl-r:refresh-preview' \
+    --bind='ctrl-j:down,ctrl-k:up' \
     --color='bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8,fg:#cdd6f4,header:#89b4fa,info:#cba6f7,pointer:#f5e0dc,marker:#a6e3a1,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8,border:#6c7086,label:#cba6f7' \
     --preview="$preview_command"
 ) || {
@@ -398,16 +427,15 @@ selection=$(
 [[ -n "$selection" ]] || exit 0
 tool=$selection
 
-case "$tool" in
-  codex|opencode|claude) ;;
-  *) pause_with_error "invalid tool selection: $tool" ;;
-esac
+tool_is_valid "$tool" || pause_with_error "invalid tool selection: $tool"
 
 if [[ "$select_only" == true ]]; then
   printf '%s\n' "$tool"
   exit 0
 fi
 
+# Standalone fallback: invoked without --select (i.e. not from the controller),
+# just open the tool in a new window on the current server.
 executable=$(command -v "$tool" 2>/dev/null || true)
 [[ -n "$executable" ]] || pause_with_error "'$tool' not found in PATH"
 
