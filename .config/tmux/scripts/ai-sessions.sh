@@ -11,6 +11,7 @@ mauve=$'\033[38;2;203;166;247m'
 blue=$'\033[38;2;137;180;250m'
 green=$'\033[38;2;166;227;161m'
 yellow=$'\033[38;2;249;226;175m'
+red=$'\033[38;2;243;139;168m'
 subtext=$'\033[38;2;166;173;200m'
 
 pause_with_message() {
@@ -18,6 +19,20 @@ pause_with_message() {
   read -rsn1 -p '  Press any key to return...'
   printf '\n'
   exit 0
+}
+
+wait_with_message() {
+  printf '\033[2J\033[H\n  %s%s%s\n\n' "$yellow" "$1" "$reset"
+  read -rsn1 -p '  Press any key to return...'
+  printf '\n'
+}
+
+confirm_action() {
+  local prompt=$1 answer
+  printf '\033[2J\033[H\n  %s%s%s\n\n' "$red$bold" "$prompt" "$reset"
+  read -rsn1 -p '  Continue? [y/N] ' answer
+  printf '\n'
+  [[ "$answer" == y || "$answer" == Y ]]
 }
 
 clean_title() {
@@ -135,8 +150,75 @@ running_name_for_id() {
   done <<<"${running_rows:-}"
 }
 
+stop_running_session() {
+  local target=$1
+  tmux -L "$server_name" has-session -t "=${target}" 2>/dev/null || return 1
+  tmux -L "$server_name" kill-session -t "=${target}"
+}
+
+delete_saved_session() {
+  local delete_tool=$1 session_id=$2 output project_dir session_file session_dir
+  local -a trash_targets=()
+
+  case "$delete_tool" in
+    codex)
+      [[ "$session_id" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]] || {
+        printf 'invalid session ID'
+        return 2
+      }
+      command -v codex >/dev/null 2>&1 || {
+        printf 'codex command not found'
+        return 3
+      }
+      output=$(codex delete --force "$session_id" 2>&1) || {
+        printf '%s' "$output"
+        return 1
+      }
+      ;;
+    opencode)
+      [[ "$session_id" =~ ^ses_[[:alnum:]_-]+$ ]] || {
+        printf 'invalid session ID'
+        return 2
+      }
+      command -v opencode >/dev/null 2>&1 || {
+        printf 'opencode command not found'
+        return 3
+      }
+      output=$(opencode session delete "$session_id" 2>&1) || {
+        printf '%s' "$output"
+        return 1
+      }
+      ;;
+    claude)
+      [[ "$session_id" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]] || {
+        printf 'invalid session ID'
+        return 2
+      }
+      command -v gio >/dev/null 2>&1 || {
+        printf 'gio command not found'
+        return 3
+      }
+      project_dir="$HOME/.claude/projects/${PWD//\//-}"
+      session_file="$project_dir/${session_id}.jsonl"
+      session_dir="$project_dir/$session_id"
+      [[ -f "$session_file" ]] && trash_targets+=("$session_file")
+      [[ -d "$session_dir" ]] && trash_targets+=("$session_dir")
+      (( ${#trash_targets[@]} > 0 )) || {
+        printf 'saved history was not found'
+        return 4
+      }
+      output=$(gio trash -- "${trash_targets[@]}" 2>&1) || {
+        printf '%s' "$output"
+        return 1
+      }
+      ;;
+    *) return 2 ;;
+  esac
+}
+
 preview_session() {
-  local action=${1:-} preview_tool=${2:-} value=${3:-} epoch=${4:-0} title=${5:-}
+  local action=${1:-} preview_tool=${2:-} value=${3:-} session_id=${4:-}
+  local epoch=${5:-0} title=${6:-}
   local details icon name color status command updated
   details=$(tool_details "$preview_tool") || exit 1
   IFS='|' read -r icon name color <<<"$details"
@@ -169,12 +251,26 @@ preview_session() {
   printf '  %s%-11s%s %s\n' "$subtext" 'Status' "$reset" "$status"
   printf '  %s%-11s%s %s\n' "$subtext" 'Updated' "$reset" "$updated"
   printf '  %s%-11s%s %s\n' "$subtext" 'Directory' "$reset" "$PWD"
-  [[ "$action" == resume ]] && printf '  %s%-11s%s %s\n' "$subtext" 'Session ID' "$reset" "$value"
+  [[ -n "$session_id" && "$session_id" != - ]] && \
+    printf '  %s%-11s%s %s\n' "$subtext" 'Session ID' "$reset" "$session_id"
   printf '  %s%-11s%s %s\n' "$subtext" 'Command' "$reset" "$command"
+
+  printf '\n%s%sACTIONS%s\n' "$mauve" "$bold" "$reset"
+  printf '%s\n' "${lavender}──────────────────────────────────────────${reset}"
+  if [[ "$action" == attach ]]; then
+    printf '  %sCtrl-x%s      Stop running session\n' "$yellow$bold" "$reset"
+  else
+    printf '  %sCtrl-x%s      Stop unavailable\n' "$subtext" "$reset"
+  fi
+  if [[ -n "$session_id" && "$session_id" != - ]]; then
+    printf '  %sCtrl-d%s      Delete saved session\n' "$red$bold" "$reset"
+  else
+    printf '  %sCtrl-d%s      Delete unavailable\n' "$subtext" "$reset"
+  fi
 }
 
 if [[ ${1:-} == '--preview' ]]; then
-  preview_session "${2:-}" "${3:-}" "${4:-}" "${5:-0}" "${6:-}"
+  preview_session "${2:-}" "${3:-}" "${4:-}" "${5:-}" "${6:-0}" "${7:-}"
   exit
 fi
 
@@ -184,76 +280,123 @@ details=$(tool_details "$tool") || pause_with_message "Unknown AI tool: $tool"
 IFS='|' read -r icon name color <<<"$details"
 command -v fzf >/dev/null 2>&1 || pause_with_message 'fzf is required for the session picker.'
 
-case "$tool" in
-  codex) saved_rows=$(list_codex_sessions | sort -t $'\t' -k2,2nr) ;;
-  opencode) saved_rows=$(list_opencode_sessions | sort -t $'\t' -k2,2nr) ;;
-  claude) saved_rows=$(list_claude_sessions | sort -t $'\t' -k2,2nr) ;;
-esac
-
 server_name=${AI_POPUP_SERVER_NAME:-codex-popup}
-running_rows=$(tmux -L "$server_name" list-sessions \
-  -F '#{session_name}|#{@ai_popup_tool}|#{@ai_popup_path}|#{@ai_popup_session_id}|#{session_created}|#{@ai_popup_label}' \
-  2>/dev/null || true)
 
-now=$(date '+%s')
-printf -v entries 'new\t%s\t-\t%s\tNew %s session\t%s%s＋  New session%s  %sStart a new %s conversation%s' \
-  "$tool" "$now" "$name" "$green" "$bold" "$reset" "$subtext" "$name" "$reset"
+while :; do
+  case "$tool" in
+    codex) saved_rows=$(list_codex_sessions | sort -t $'\t' -k2,2nr) ;;
+    opencode) saved_rows=$(list_opencode_sessions | sort -t $'\t' -k2,2nr) ;;
+    claude) saved_rows=$(list_claude_sessions | sort -t $'\t' -k2,2nr) ;;
+  esac
 
-# Live sessions without a corresponding saved row get their own attach entry.
-while IFS='|' read -r session_name row_tool row_path session_id created label; do
-  [[ "$row_tool" == "$tool" && "$row_path" == "$PWD" ]] || continue
-  [[ -n "$session_id" ]] && saved_has_id "$session_id" && continue
-  [[ -n "$label" ]] || label="Live ${name} session"
-  updated=$(date -d "@$created" '+%m-%d %H:%M' 2>/dev/null || printf 'now')
-  printf -v entry 'attach\t%s\t%s\t%s\t%s\t%s%s%s  %s● running%s  %s  %s' \
-    "$tool" "$session_name" "$created" "$label" "$color$bold" "$icon" "$reset" \
-    "$green$bold" "$reset" "$updated" "$label"
-  entries+=$'\n'"$entry"
-done <<<"$running_rows"
+  running_rows=$(tmux -L "$server_name" list-sessions \
+    -F '#{session_name}|#{@ai_popup_tool}|#{@ai_popup_path}|#{@ai_popup_session_id}|#{session_created}|#{@ai_popup_label}' \
+    2>/dev/null || true)
 
-while IFS=$'\t' read -r session_id epoch title; do
-  [[ -n "$session_id" ]] || continue
-  running_name=$(running_name_for_id "$session_id")
-  updated=$(date -d "@$epoch" '+%m-%d %H:%M' 2>/dev/null || printf 'unknown')
-  if [[ -n "$running_name" ]]; then
-    action=attach
-    value=$running_name
-    status="${green}${bold}● running${reset}"
+  now=$(date '+%s')
+  printf -v entries 'new\t%s\t-\t-\t%s\tNew %s session\t%s%s＋  New session%s  %sStart a new %s conversation%s' \
+    "$tool" "$now" "$name" "$green" "$bold" "$reset" "$subtext" "$name" "$reset"
+
+  # Live sessions without a corresponding saved row get their own attach entry.
+  while IFS='|' read -r session_name row_tool row_path session_id created label; do
+    [[ "$row_tool" == "$tool" && "$row_path" == "$PWD" ]] || continue
+    [[ -n "$session_id" ]] && saved_has_id "$session_id" && continue
+    [[ -n "$label" ]] || label="Live ${name} session"
+    updated=$(date -d "@$created" '+%m-%d %H:%M' 2>/dev/null || printf 'now')
+    printf -v entry 'attach\t%s\t%s\t%s\t%s\t%s\t%s%s%s  %s● running%s  %s  %s' \
+      "$tool" "$session_name" "${session_id:--}" "$created" "$label" \
+      "$color$bold" "$icon" "$reset" "$green$bold" "$reset" "$updated" "$label"
+    entries+=$'\n'"$entry"
+  done <<<"$running_rows"
+
+  while IFS=$'\t' read -r session_id epoch title; do
+    [[ -n "$session_id" ]] || continue
+    running_name=$(running_name_for_id "$session_id")
+    updated=$(date -d "@$epoch" '+%m-%d %H:%M' 2>/dev/null || printf 'unknown')
+    if [[ -n "$running_name" ]]; then
+      action=attach
+      value=$running_name
+      status="${green}${bold}● running${reset}"
+    else
+      action=resume
+      value=$session_id
+      status="${subtext}○ saved${reset}"
+    fi
+    printf -v entry '%s\t%s\t%s\t%s\t%s\t%s\t%s%s%s  %s  %s  %s' \
+      "$action" "$tool" "$value" "$session_id" "$epoch" "$title" \
+      "$color$bold" "$icon" "$reset" "$status" "$updated" "$title"
+    entries+=$'\n'"$entry"
+  done <<<"$saved_rows"
+
+  printf -v preview_command 'bash %q --preview {1} {2} {3} {4} {5} {6}' "${BASH_SOURCE[0]}"
+  fzf_output=$(printf '%s\n' "$entries" | fzf \
+    --ansi \
+    --delimiter=$'\t' \
+    --with-nth=7 \
+    --accept-nth=1,2,3,4,5,6 \
+    --expect=ctrl-x,ctrl-d \
+    --no-sort \
+    --cycle \
+    --layout=reverse \
+    --margin=1,2 \
+    --border=rounded \
+    --border-label=" ${name} Sessions " \
+    --info=inline-right \
+    --header-first \
+    --header=$'Ctrl-j/k move  •  Enter select  •  Ctrl-x stop  •  Ctrl-d delete  •  Esc back\nCurrent project: '"$PWD" \
+    --prompt="${icon}  ${name} › " \
+    --pointer='' \
+    --preview-window='right,48%,wrap,border-left' \
+    --preview-label=' Session Details ' \
+    --bind='ctrl-j:down,ctrl-k:up,tab:down,btab:up' \
+    --color='bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8,fg:#cdd6f4,header:#89b4fa,info:#cba6f7,pointer:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8,border:#6c7086,label:#cba6f7' \
+    --preview="$preview_command")
+  fzf_status=$?
+  case "$fzf_status" in 0) ;; 1|130) exit 0 ;; *) exit "$fzf_status" ;; esac
+
+  if [[ "$fzf_output" == *$'\n'* ]]; then
+    pressed_key=${fzf_output%%$'\n'*}
+    selected=${fzf_output#*$'\n'}
   else
-    action=resume
-    value=$session_id
-    status="${subtext}○ saved${reset}"
+    pressed_key=''
+    selected=$fzf_output
   fi
-  printf -v entry '%s\t%s\t%s\t%s\t%s\t%s%s%s  %s  %s  %s' \
-    "$action" "$tool" "$value" "$epoch" "$title" "$color$bold" "$icon" "$reset" \
-    "$status" "$updated" "$title"
-  entries+=$'\n'"$entry"
-done <<<"$saved_rows"
+  [[ -n "$selected" ]] || continue
+  IFS=$'\t' read -r action selected_tool value selected_id _epoch _title <<<"$selected"
 
-printf -v preview_command 'bash %q --preview {1} {2} {3} {4} {5}' "${BASH_SOURCE[0]}"
-selection=$(printf '%s\n' "$entries" | fzf \
-  --ansi \
-  --delimiter=$'\t' \
-  --with-nth=6 \
-  --accept-nth=1,2,3 \
-  --no-sort \
-  --cycle \
-  --layout=reverse \
-  --margin=1,2 \
-  --border=rounded \
-  --border-label=" ${name} Sessions " \
-  --info=inline-right \
-  --header-first \
-  --header=$'Ctrl-j/k move  •  Enter select  •  Esc back\nCurrent project: '"$PWD" \
-  --prompt="${icon}  ${name} › " \
-  --pointer='' \
-  --preview-window='right,48%,wrap,border-left' \
-  --preview-label=' Session Details ' \
-  --bind='ctrl-j:down,ctrl-k:up,tab:down,btab:up' \
-  --color='bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8,fg:#cdd6f4,header:#89b4fa,info:#cba6f7,pointer:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8,border:#6c7086,label:#cba6f7' \
-  --preview="$preview_command") || {
-    status=$?
-    case "$status" in 1|130) exit 0 ;; *) exit "$status" ;; esac
-  }
-
-[[ -n "$selection" ]] && printf '%s\n' "$selection"
+  case "$pressed_key" in
+    ctrl-x)
+      if [[ "$action" != attach ]]; then
+        wait_with_message 'Only a running session can be stopped.'
+        continue
+      fi
+      confirm_action "Stop this ${name} session? Saved history will be kept." || continue
+      if stop_running_session "$value"; then
+        wait_with_message "Stopped ${name} session."
+      else
+        wait_with_message 'The session already stopped.'
+      fi
+      ;;
+    ctrl-d)
+      if [[ -z "$selected_id" || "$selected_id" == - ]]; then
+        wait_with_message 'This live session has no saved history to delete. Use Ctrl-x to stop it.'
+        continue
+      fi
+      confirm_action "Delete this ${name} session and its saved history?" || continue
+      if [[ "$action" == attach ]] && ! stop_running_session "$value"; then
+        wait_with_message 'Could not stop the running session; saved history was not deleted.'
+        continue
+      fi
+      delete_error=''
+      if delete_error=$(delete_saved_session "$tool" "$selected_id"); then
+        wait_with_message "Deleted ${name} session ${selected_id:0:12}."
+      else
+        wait_with_message "Delete failed${delete_error:+: ${delete_error%%$'\n'*}}"
+      fi
+      ;;
+    '')
+      printf '%s\t%s\t%s\n' "$action" "$selected_tool" "$value"
+      exit 0
+      ;;
+  esac
+done
