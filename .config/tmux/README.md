@@ -57,7 +57,9 @@ session list. Each list starts with `New session`, followed by live and saved
 conversations for the current project. New sessions are always independent;
 selecting a live session attaches it, while selecting a saved one resumes it.
 `Esc` returns from the session list or closes the main picker. Inside an agent,
-`Esc` or `C-b d` detaches the popup and `Ctrl-c` passes through normally.
+`Esc` or `C-b d` detaches the popup and `Ctrl-c` passes through normally. In a
+session list, `Ctrl-x` stops a running session while preserving history;
+`Ctrl-d` confirms before deleting its saved history.
 `C-b A` skips both pickers and attaches the most recently used live AI session
 for the current project; if none is running, it falls back to the full picker.
 
