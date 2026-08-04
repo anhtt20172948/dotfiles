@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly LIB_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")
+LIB_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")
+readonly LIB_DIR
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=./monitor-lib.sh
 source "$LIB_DIR/monitor-lib.sh"
 
@@ -40,6 +42,7 @@ load_config() {
   : "${MONITOR_CUSTOM_TOOLS:=}"
   set +a
 
+  # shellcheck source=/dev/null  # runtime path: monitor.conf, not a fixed file
   [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
 }
 load_config
@@ -94,8 +97,10 @@ platform_badges() {
   echo "$out"
 }
 
-readonly MONITOR_PLATFORM=$(detect_platform)
-readonly MONITOR_PLATFORM_LABEL=$(platform_badges "$MONITOR_PLATFORM")
+MONITOR_PLATFORM=$(detect_platform)
+readonly MONITOR_PLATFORM
+MONITOR_PLATFORM_LABEL=$(platform_badges "$MONITOR_PLATFORM")
+readonly MONITOR_PLATFORM_LABEL
 
 export MONITOR_PLATFORM
 export MONITOR_PLATFORM_LABEL

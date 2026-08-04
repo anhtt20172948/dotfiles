@@ -8,6 +8,13 @@
 # string while the launcher used the correct "env TERM=... ctop").
 # ============================================================
 
+# File-level: this is a sourced library, so from a single-file view every C_* it
+# defines looks unused. Same rationale as ai-lib.sh.
+#
+# Note the wording above: a comment line may not *begin* with "# shellcheck",
+# even in prose, or it is parsed as a malformed directive (SC1073) and takes
+# both files that source this one down with it.
+# shellcheck disable=SC2034
 # --- Colors -------------------------------------------------
 # Deliberately NOT readonly: load_theme uses `printf -v` to override these from
 # MONITOR_COLOR_*, which fails hard under `set -e` on a readonly variable.
@@ -25,7 +32,11 @@ C_ORANGE=$'\033[38;5;214m'
 have() { command -v "$1" >/dev/null 2>&1; }
 
 color_name_to_ansi() {
-  case "${1,,}" in
+  # tr, not ${1,,}: that is bash 4+ and stock macOS ships bash 3.2, where it is
+  # a "bad substitution" error rather than a lowercase conversion.
+  local key
+  key=$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')
+  case "$key" in
     black)   echo '0;30'  ;; red)     echo '1;31'  ;;
     green)   echo '1;32'  ;; yellow)  echo '1;33'  ;;
     blue)    echo '1;34'  ;; magenta) echo '1;35'  ;;
