@@ -1,0 +1,31 @@
+# Global clangd config (XDG: ~/.config/clangd/config.yaml)
+# Trims noisy clang-tidy check families while keeping the high-signal bug checks.
+Diagnostics:
+  ClangTidy:
+    # Keep useful, low-noise families; drop the style/opinion nags.
+    Add:
+      - bugprone-*
+      - performance-*
+      - portability-*
+      - clang-analyzer-*
+    Remove:
+      # "every global variable" spam seen on this project:
+      - cppcoreguidelines-avoid-non-const-global-variables
+      - misc-use-anonymous-namespace
+      # broad opinionated families that flood C/C++ code:
+      - cppcoreguidelines-*
+      - modernize-use-trailing-return-type
+      - readability-identifier-length
+      - readability-magic-numbers
+      - readability-braces-around-statements
+      - altera-*
+      - fuchsia-*
+      - llvmlibc-*
+  # Don't add unused-include/missing-include nags (extra noise).
+  UnusedIncludes: None
+  MissingIncludes: None
+
+InlayHints:
+  Enabled: true
+  ParameterNames: true
+  DeducedTypes: true
