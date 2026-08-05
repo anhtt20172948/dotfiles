@@ -332,7 +332,8 @@ preview_tool() {
   if [[ "$(location_kind "$location")" == container ]]; then
     in_container=true
     executable=$(locate_tool "$location" "$tool" || true)
-    container_path=$(map_host_path_to_container "$container" "$PWD")
+    # Prefer the path the controller already resolved; fall back to computing it.
+    container_path=${AI_POPUP_CONTAINER_PATH:-$(map_host_path_to_container "$container" "$PWD")}
   else
     executable=$(command -v "$tool" 2>/dev/null || true)
   fi

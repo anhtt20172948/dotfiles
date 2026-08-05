@@ -376,17 +376,31 @@ location_run() {
   esac
 }
 
-# _map_fallback <name> <host_path> -> a plausible container path when no mount
-# matched. Same path if it exists in the container (common), else the image's
-# configured WorkingDir, else /.
+# _map_fallback <name> <host_path> -> a plausible container working dir when no
+# bind mount matched the host path. Order matters, because this dir is used BOTH
+# to launch (`-w`) and to filter saved sessions, so it must match where the user
+# actually works inside the container:
+#   1. the identical host path, if it happens to exist in the container
+#      (mirrored-layout setups);
+#   2. the container user's HOME — where `docker exec -it bash` and hand-run
+#      tools land when the project is NOT mounted, which is the common "I just
+#      work inside this container" case and is exactly the cwd such sessions
+#      record (e.g. /root);
+#   3. the image's declared WorkingDir;
+#   4. /.
 _map_fallback() {
-  local name=$1 host_path=$2 wd
+  local name=$1 host_path=$2 wd home
   if ai_run_limited 5 docker exec "$name" test -d "$host_path" >/dev/null 2>&1; then
     printf '%s' "$host_path"; return 0
   fi
+  home=$(container_home "$name")
+  if [ -n "$home" ] \
+     && ai_run_limited 5 docker exec "$name" test -d "$home" >/dev/null 2>&1; then
+    printf '%s' "$home"; return 0
+  fi
   wd=$(ai_run_limited 5 docker inspect \
     --format '{{.Config.WorkingDir}}' "$name" 2>/dev/null)
-  [ -n "$wd" ] && { printf '%s' "$wd"; return 0; }
+  case $wd in /?*) printf '%s' "$wd"; return 0 ;; esac
   printf '/'
 }
 
@@ -420,4 +434,73 @@ EOF
     return 0
   fi
   _map_fallback "$name" "$host_path"
+}
+
+# container_home <name> -> the container user's $HOME (fallback /root).
+# Session stores live under $HOME, and it is not always /root (a container may
+# run as a non-root user), so ask rather than assume.
+container_home() {
+  local name=$1 h
+  h=$(ai_run_limited 5 docker exec "$name" sh -c 'printf %s "$HOME"' 2>/dev/null)
+  case $h in /*) printf '%s' "$h" ;; *) printf '/root' ;; esac
+}
+
+# extract_container_sessions <name> <tool> <container_path> <dest_root>
+#   Copy the tool's on-disk session store OUT of the container into <dest_root>,
+#   laid out at the SAME relative paths the host list_*_sessions() expect, so the
+#   existing jq/sqlite parsers can read it unchanged — just pointed at <dest_root>
+#   with the CONTAINER project path as the directory filter. This is what lets
+#   saved container sessions appear in the picker without needing jq/sqlite inside
+#   the container. rc 0 on success.
+#
+# Only the data actually parsed is pulled: opencode's sqlite db (+ WAL/SHM so an
+# uncommitted latest session is not missed), and — for the jsonl tools — just the
+# subtree that could match this project (claude keys by a path-slug directory;
+# codex mixes all projects under dated dirs, so its whole sessions tree comes
+# across and the cwd filter runs on the host side).
+extract_container_sessions() {
+  local name=$1 tool=$2 cpath=$3 dest=$4 all=${5:-0} chome cslug
+  have docker || return 1
+  chome=$(container_home "$name")
+  case "$tool" in
+    codex)
+      # codex mixes every directory under dated dirs, so the whole tree comes
+      # across in both modes; the cwd filter runs host-side.
+      mkdir -p "$dest/.codex" || return 1
+      ai_run_limited 30 docker cp \
+        "$name:$chome/.codex/sessions" "$dest/.codex/sessions" >/dev/null 2>&1 || return 1
+      ;;
+    opencode)
+      # The single sqlite db holds every directory's sessions already.
+      mkdir -p "$dest/.local/share/opencode" || return 1
+      ai_run_limited 20 docker cp \
+        "$name:$chome/.local/share/opencode/opencode.db" \
+        "$dest/.local/share/opencode/opencode.db" >/dev/null 2>&1 || return 1
+      ai_run_limited 10 docker cp \
+        "$name:$chome/.local/share/opencode/opencode.db-wal" \
+        "$dest/.local/share/opencode/opencode.db-wal" >/dev/null 2>&1 || true
+      ai_run_limited 10 docker cp \
+        "$name:$chome/.local/share/opencode/opencode.db-shm" \
+        "$dest/.local/share/opencode/opencode.db-shm" >/dev/null 2>&1 || true
+      ;;
+    claude)
+      # claude keys by a path-slug directory. Scoped: copy just this dir's slug.
+      # all: copy the whole projects tree so every directory's sessions parse.
+      # The cp target must NOT pre-exist, or docker nests it (…/projects/projects),
+      # so create only the parent and let cp create the leaf.
+      if [ "$all" = 1 ]; then
+        mkdir -p "$dest/.claude" || return 1
+        ai_run_limited 30 docker cp \
+          "$name:$chome/.claude/projects" "$dest/.claude/projects" >/dev/null 2>&1 || return 1
+      else
+        cslug=${cpath//\//-}
+        mkdir -p "$dest/.claude/projects" || return 1
+        ai_run_limited 30 docker cp \
+          "$name:$chome/.claude/projects/$cslug" \
+          "$dest/.claude/projects/$cslug" >/dev/null 2>&1 || return 1
+      fi
+      ;;
+    *) return 1 ;;
+  esac
+  return 0
 }
