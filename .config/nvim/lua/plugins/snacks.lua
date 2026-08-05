@@ -291,10 +291,54 @@ return {
                         { icon = " ", key = "r", desc = "Recent Files", action = ":lua Snacks.dashboard.pick('oldfiles')" },
                         { icon = " ", key = "c", desc = "Config", action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})" },
                         { icon = " ", key = "s", desc = "Restore Session", section = "session" },
+                        { icon = " ", key = "a", desc = "AI Sessions", action = ":lua require('customize.aiterm').pick()" },
                         { icon = " ", key = "x", desc = "Lazy Extras", action = ":LazyExtras" },
                         { icon = "󰒲 ", key = "l", desc = "Lazy", action = ":Lazy" },
                         { icon = " ", key = "q", desc = "Quit", action = ":qa" },
                     },
+				},
+				-- Phải khai sections tường minh mới chèn được mục AI (default chỉ
+				-- gồm header / keys / startup).
+				sections = {
+					{ section = "header" },
+					{ section = "keys", gap = 1, padding = 1 },
+					{
+						title = "  AI Sessions",
+						padding = 1,
+						-- 3 session AI gần nhất của cwd, bấm 1/2/3 để resume ngay.
+						-- limit=3 là giới hạn MỖI TOOL nên chỉ parse 3 file jsonl
+						-- (~12ms lúc mở nvim). pcall để dashboard không bao giờ vỡ.
+						function()
+							local ok, h = pcall(require, "customize.aiterm_history")
+							if not ok then
+								return {}
+							end
+							local items = {}
+							for i, e in ipairs(h.list(h.project_cwd(), 3)) do
+								if i > 3 then
+									break
+								end
+								-- Cắt title cho khớp bề rộng các mục keys ở trên,
+								-- nếu không dòng dài sẽ đẩy lệch cột phím tắt.
+								-- strcharpart chứ không sub: tránh cắt giữa UTF-8.
+								local t = e.title or e.id
+								if vim.api.nvim_strwidth(t) > 34 then
+									t = vim.fn.strcharpart(t, 0, 33) .. "…"
+								end
+								items[#items + 1] = {
+									icon = " ",
+									key = tostring(i),
+									indent = 2,
+									desc = ("%-9s %s"):format(e.tool, t),
+									action = function()
+										require("customize.aiterm").resume(e)
+									end,
+								}
+							end
+							return items
+						end,
+					},
+					{ section = "startup" },
 				},
 			},
 		},

@@ -13,7 +13,7 @@ return {
 			{ "<leader>s", group = "Search" },
 			{ "<leader>f", group = "Find" },
 			{ "<leader>x", group = "Trouble/Diagnostics" },
-			{ "<leader>a", group = "AI (Supermaven)" },
+			{ "<leader>a", group = "AI" },
 			{ "<leader>c", group = "Code/LSP" },
 			{ "<leader>u", group = "UI Toggles" },
 		},
