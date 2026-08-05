@@ -4,7 +4,7 @@ local icons = require("lib.icons")
 return {
 	"saghen/blink.cmp",
 	event = "InsertEnter",
-    version = "1.*",
+	version = "1.*",
 	dependencies = {
 		"moyiz/blink-emoji.nvim",
 		"Kaiser-Yang/blink-cmp-dictionary",
@@ -33,7 +33,7 @@ return {
 		-- Merge custom sources with the existing ones from lazyvim
 		-- NOTE: by default lazyvim already includes the lazydev source, so not adding it here again
 		opts.sources = vim.tbl_deep_extend("force", opts.sources or {}, {
-			default = { "copilot", "lsp", "path", "snippets", "buffer", "dadbod", "emoji", "dictionary" },
+			default = { "lsp", "path", "snippets", "buffer", "dadbod" },
 			providers = {
 				copilot = {
 					name = "copilot",
