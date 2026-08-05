@@ -1,5 +1,6 @@
 return {
 	"nvim-zh/colorful-winsep.nvim",
+	enabled = false,
 	event = { "WinNew", "WinLeave" },
 	opts = {
 		no_exec_files = {

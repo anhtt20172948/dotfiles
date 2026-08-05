@@ -37,6 +37,7 @@ return {
 				"lua-language-server",
 				"pyright",
 				"clangd",
+				"clang-format",
 				"ruff",
 				"isort",
 				"harper-ls",
@@ -44,6 +45,10 @@ return {
 				"stylua",
 				"markdownlint-cli2",
 				"shellcheck",
+				"typescript-language-server", -- ts_ls is enabled in lspconfig.lua
+				-- debuggers (also handled by mason-nvim-dap, listed here to pin them)
+				"debugpy",
+				"codelldb",
 			},
 
 			run_on_start = true,

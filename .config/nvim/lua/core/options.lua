@@ -5,7 +5,6 @@ vim.opt.undofile = true
 
 -- Use system clipboard
 vim.opt.clipboard:append({ "unnamed", "unnamedplus" })
-vim.opt.undofile = true
 
 -- Tab and indent
 vim.opt.expandtab = true
@@ -19,8 +18,7 @@ vim.opt.wrap = true -- Wrap lines
 -- Set relative number
 vim.opt.relativenumber = true
 
--- Enable filetype plugins
-vim.api.nvim_command("filetype plugin indent on")
+-- filetype plugin/indent and syntax are enabled by default in Neovim.
 
 -- Use magic for regex
 vim.opt.magic = true
@@ -28,10 +26,8 @@ vim.opt.magic = true
 -- Show matching brackets when text indicator is over them
 vim.opt.showmatch = true
 
--- Make scrolling and painting fast
--- ttyfast kept for vim compatibility but not needed for nvim
-vim.opt.ttyfast = true
-vim.opt.lazyredraw = true
+-- NOTE: lazyredraw is intentionally left to init.lua (set to false there to fix noice).
+-- ttyfast removed: it is a no-op on Neovim.
 
 -- Split windows to right and below
 vim.opt.splitright = true
@@ -68,11 +64,8 @@ vim.opt.visualbell = false
 vim.cmd("set t_vb=")
 vim.opt.tm = 500
 
--- Always show the status line
-vim.opt.laststatus = 2
-
--- Syntax highlight
-vim.cmd("syntax enable")
+-- Global status line (one bar for all splits; pairs well with lualine)
+vim.opt.laststatus = 3
 
 -- set cusorline
 vim.opt.cursorline = true

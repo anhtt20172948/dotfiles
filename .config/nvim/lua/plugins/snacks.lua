@@ -272,7 +272,7 @@ return {
 			dashboard = {
 				preset = {
 					pick = function(cmd, opts)
-						return LazyVim.pick(cmd, opts)()
+						return Snacks.dashboard.pick(cmd, opts)
 					end,
 					header = [[
 ███╗   ███╗ █████╗ ██╗     █████╗ ███╗   ██╗██╗  ██╗
@@ -342,11 +342,11 @@ return {
 				desc = "Command History",
 			},
 			{
-				"<leader>n",
+				"<leader>sn",
 				function()
 					Snacks.picker.notifications()
 				end,
-				desc = "Notification History",
+				desc = "Notifications (Picker)",
 			}, -- find
 			{
 				"<leader>fb",
@@ -497,20 +497,6 @@ return {
 					Snacks.picker.search_history()
 				end,
 				desc = "Search History",
-			},
-			{
-				"<leader>sa",
-				function()
-					-- Snacks.picker.autocmds()
-				end,
-				desc = "Autocmds",
-			},
-			{
-				"<leader>sb",
-				function()
-					Snacks.picker.lines()
-				end,
-				desc = "Buffer Lines",
 			},
 			{
 				"<leader>sc",

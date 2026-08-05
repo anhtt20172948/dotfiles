@@ -1,5 +1,6 @@
 return {
 	"rasulomaroff/reactive.nvim",
+	enabled = false,
 	event = "VeryLazy",
 	keys = {
 		{ "<leader>uM", "<cmd>ReactiveToggle<cr>", desc = "Mode Lines" },
