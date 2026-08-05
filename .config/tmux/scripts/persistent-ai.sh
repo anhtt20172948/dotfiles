@@ -183,17 +183,25 @@ pick_location() {
 # and from the location picker the popup closes. Sets action/tool/value plus
 # location/container, or returns 1 when the user backed all the way out.
 pick_interactive() {
-  local selection selected_tool
+  local selection selected_tool picked_dir
 
   while :; do
     pick_location || return 1
+    # Resolve the container project path once, here: the session picker filters
+    # saved sessions by it and the launch reuses it, so neither recomputes.
+    if [ "$(location_kind "$location")" = container ]; then
+      container_path=$(map_host_path_to_container "$container" "$project_dir")
+    else
+      container_path=''
+    fi
     refresh_running "$location"
 
     while :; do
       tool=$(AI_POPUP_RUNNING_TOOLS="$running_tools" \
         AI_POPUP_RUNNING_COUNTS="$running_counts" \
         AI_POPUP_LOCATION="$location" \
-        AI_POPUP_CONTAINER="$container" "$picker" --select)
+        AI_POPUP_CONTAINER="$container" \
+        AI_POPUP_CONTAINER_PATH="$container_path" "$picker" --select)
       if [ -z "$tool" ]; then
         # Escape at the tool picker: step back to the location picker when it was
         # shown, otherwise (host-only, picker skipped) close the popup.
@@ -204,12 +212,21 @@ pick_interactive() {
 
       selection=$(AI_POPUP_SERVER_NAME="$server_name" \
         AI_POPUP_LOCATION="$location" \
-        AI_POPUP_CONTAINER="$container" "$session_picker" --tool "$tool")
+        AI_POPUP_CONTAINER="$container" \
+        AI_POPUP_CONTAINER_PATH="$container_path" "$session_picker" --tool "$tool")
       # An empty selection means Escape in the submenu: go back to the tool
       # picker.
       [ -n "$selection" ] || continue
-      IFS=$'\t' read -r action selected_tool value <<<"$selection"
+      # 4th field is the launch directory the picker resolved (scope_dir for a
+      # new session, the session's own dir for resume). For a container it
+      # overrides container_path so the session opens in the right place — the
+      # user may have changed it with Ctrl-w or picked an all-mode session from a
+      # different directory.
+      IFS=$'\t' read -r action selected_tool value picked_dir <<<"$selection"
       [ "$selected_tool" = "$tool" ] || pause_with_error 'invalid AI session selection'
+      if [ "$(location_kind "$location")" = container ] && [ -n "$picked_dir" ]; then
+        container_path=$picked_dir
+      fi
       return 0
     done
   done
@@ -222,6 +239,7 @@ tool=''
 value=''
 location=host
 container=''
+container_path=''
 location_interactive=0
 
 while :; do
@@ -265,7 +283,8 @@ resume_id=''
 created_at=''
 session_kind=''
 session_label=''
-container_path=''
+# container_path is resolved in pick_interactive (and defended again at launch);
+# do not reset it here or the picker's value would be lost.
 
 # A short, tmux-safe location tag so host and container sessions for the same
 # project get distinct names (and so a container name with slashes or spaces
@@ -307,8 +326,12 @@ case "$action" in
       resume_hash=$(printf '%s' "$resume_id" | cksum | awk '{print $1}')
     fi
     session_kind=resume
-    session_label="Resumed ${tool} · ${resume_id:0:12}"
-    session_name="ai-${tool}-resume-${safe_name:0:12}-${resume_hash}"
+    if [[ "$loc_slug" == host ]]; then
+      session_label="Resumed ${tool} · ${resume_id:0:12}"
+    else
+      session_label="Resumed ${tool} @${container} · ${resume_id:0:12}"
+    fi
+    session_name="ai-${tool}-resume-${loc_slug}-${safe_name:0:12}-${resume_hash}"
     ;;
   *) pause_with_error 'invalid AI session action' ;;
 esac
@@ -319,29 +342,43 @@ if [[ "$action" != attach ]] \
     && ! tmux -L "$server_name" has-session -t "$session_target" 2>/dev/null; then
   if [[ "$(location_kind "$location")" == container ]]; then
     # Container: discover the tool INSIDE the container and rebase the host
-    # project path onto its mount. resume is host-only in v1, so only the plain
-    # `new` launch is reachable here.
+    # project path onto its mount (reusing the path pick_interactive resolved).
     executable=$(locate_tool "$location" "$tool" || true)
     [[ -n "$executable" ]] || \
       pause_with_error "'$tool' not found in container '$container'"
-    container_path=$(map_host_path_to_container "$container" "$project_dir")
-    # Run the tool through an INTERACTIVE bash (bash -ic), not the bare binary: a
+    [[ -n "$container_path" ]] || \
+      container_path=$(map_host_path_to_container "$container" "$project_dir")
+
+    # The tool invocation, mirroring the host resume flags but with the CONTAINER
+    # project path. `exec %q…` keeps the resolved absolute binary.
+    case "$action" in
+      resume)
+        case "$tool" in
+          codex)    printf -v tool_invocation 'exec %q resume -C %q %q' \
+                      "$executable" "$container_path" "$resume_id" ;;
+          opencode) printf -v tool_invocation 'exec %q --session %q %q' \
+                      "$executable" "$resume_id" "$container_path" ;;
+          claude)   printf -v tool_invocation 'exec %q --resume %q' \
+                      "$executable" "$resume_id" ;;
+        esac
+        ;;
+      *) printf -v tool_invocation 'exec %q' "$executable" ;;
+    esac
+
+    # Run through an INTERACTIVE bash (bash -ic), not the bare binary: a
     # hand-installed CLI needs the PATH/env its ~/.bashrc sets up (node, API keys,
     # version-manager shims), exactly as when the user runs it after
     # `docker exec -it NAME bash`. -i is what makes bash read ~/.bashrc (a login
     # shell would not); sourcing /etc/profile as well covers a system-wide PATH.
-    # sh -lc for images without bash. The inner `exec %q` still launches the
-    # resolved absolute path, so PATH lookup can't pick a different binary. -it
-    # gives docker the session's pty; -w sets cwd.
+    # sh -lc for images without bash. -it gives docker the session's pty; -w cwd.
     if location_run "$location" sh -c 'command -v bash' >/dev/null 2>&1; then
       printf -v inner_command \
-        '[ -r /etc/profile ] && . /etc/profile >/dev/null 2>&1; exec %q' "$executable"
+        '[ -r /etc/profile ] && . /etc/profile >/dev/null 2>&1; %s' "$tool_invocation"
       printf -v launch_command 'exec docker exec -it -w %q %q bash -ic %q' \
         "$container_path" "$container" "$inner_command"
     else
-      printf -v inner_command 'exec %q' "$executable"
       printf -v launch_command 'exec docker exec -it -w %q %q sh -lc %q' \
-        "$container_path" "$container" "$inner_command"
+        "$container_path" "$container" "$tool_invocation"
     fi
   else
     executable=$(command -v "$tool" 2>/dev/null || true)
