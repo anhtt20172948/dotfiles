@@ -137,15 +137,6 @@ vim.lsp.config("lua_ls", {
 	},
 })
 
--- General LSP setup
-vim.lsp.config["*"] = {
-	capabilities = { textDocument = { semanticTokens = { multilineTokenSupport = true } } },
-	root_markers = { ".git" },
-}
--- NOTE: virtual_lines is intentionally OFF. tiny-inline-diagnostic renders
--- diagnostics; enabling virtual_lines here double-rendered every diagnostic as a
--- multi-line tree (heavy + laggy on files with many clang-tidy warnings).
-
 -- Harper (grammar/spell) — restrict to prose filetypes ONLY.
 -- mason-lspconfig auto-enables it under the real name `harper_ls`, whose default
 -- filetypes include C/C++/Python/etc. That made Harper spell-check code comments
