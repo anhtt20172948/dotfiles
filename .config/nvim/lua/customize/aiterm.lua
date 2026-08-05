@@ -44,6 +44,7 @@ M.icon_sets = {
 		past = c(0xF1DA), -- history
 		new = c(0xF067), -- plus
 		browse = c(0xF002), -- search
+		install = c(0xF019), -- download
 		branch = c(0xF418), -- git-branch
 		all_dirs = c(0xF07C), -- folder-open
 	},
@@ -55,6 +56,8 @@ M.icon_sets = {
 		past = c(0x21BA), -- ↺
 		new = "+",
 		browse = c(0x00BB), -- »
+		-- KHÔNG dùng U+26A0 warning: đã kiểm là THIẾU trong SFMono NF.
+		install = c(0x2193), -- ↓
 		branch = c(0x21B3), -- ↳
 		all_dirs = c(0x25A4), -- ▤
 	},
@@ -66,6 +69,7 @@ M.icon_sets = {
 		past = "~",
 		new = "+",
 		browse = "?",
+		install = "!",
 		branch = "@",
 		all_dirs = "/",
 	},
@@ -91,6 +95,11 @@ M.config = {
 		{
 			name = "claude",
 			cmd = "claude",
+			-- PATH của nvim cố định từ lúc khởi động -> cài xong mà thư mục đích
+			-- không có trong PATH thì executable() vẫn báo không có tới khi restart.
+			-- path là fallback để tool_cmd() nhận ra ngay sau khi cài.
+			path = vim.fn.expand("~/.local/bin/claude"),
+			install = "curl -fsSL https://claude.ai/install.sh | bash",
 			-- icon tra tu M.icons()[name], KHONG luu glyph o day (xem dau file).
 			resume = function(id)
 				return { "--resume", id }
@@ -104,6 +113,8 @@ M.config = {
 		{
 			name = "codex",
 			cmd = "codex",
+			path = vim.fn.expand("~/.local/bin/codex"),
+			install = "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
 			-- icon tra tu M.icons()[name], KHONG luu glyph o day (xem dau file).
 			resume = function(id)
 				return { "resume", id }
@@ -118,8 +129,10 @@ M.config = {
 			name = "opencode",
 			cmd = "opencode",
 			-- ~/.zshrc thêm ~/.opencode/bin vào PATH, nhưng nvim mở từ GUI/launchd
-			-- thì không có -> path làm fallback cho tool_cmd().
+			-- thì không có -> path làm fallback cho tool_cmd(). Đã đo: PATH của nvim
+			-- KHÔNG có ~/.opencode/bin, nên riêng opencode phải dựa vào path này.
 			path = vim.fn.expand("~/.opencode/bin/opencode"),
+			install = "curl -fsSL https://opencode.ai/install | bash",
 			-- icon tra tu M.icons()[name], KHONG luu glyph o day (xem dau file).
 			resume = function(id)
 				return { "--session", id }
@@ -251,14 +264,9 @@ end
 -- id session vẫn là "<tool>-<n>": uuid 36 ký tự làm buffer name / winbar không
 -- dùng được. Phần người-đọc-được nằm ở session.label (winbar) và session.title.
 ---@param tool table
----@param opts? { args?: string[], cwd?: string, title?: string }
+---@param opts? { args?: string[], cwd?: string, title?: string, cmd?: string[], on_exit?: fun(code:number) }
 local function new_session(tool, opts)
 	opts = opts or {}
-	local exe = tool_cmd(tool)
-	if not exe then
-		notify(("binary '%s' not found in PATH"):format(tool.cmd), "warn")
-		return nil
-	end
 
 	-- jobstart throw E475 nếu cwd không tồn tại (session cũ của repo đã xoá).
 	local cwd = opts.cwd
@@ -267,11 +275,23 @@ local function new_session(tool, opts)
 		cwd = nil
 	end
 
+	-- opts.cmd: argv tuỳ ý, BỎ QUA tool_cmd và guard binary-not-found. Chỉ dùng
+	-- cho install (lúc đó binary của tool chưa tồn tại là chuyện đương nhiên).
+	local cmd
+	if opts.cmd then
+		cmd = opts.cmd
+	else
+		local exe = tool_cmd(tool)
+		if not exe then
+			notify(("binary '%s' not found in PATH"):format(tool.cmd), "warn")
+			return nil
+		end
+		cmd = { exe }
+		vim.list_extend(cmd, opts.args or {})
+	end
+
 	counters[tool.name] = (counters[tool.name] or 0) + 1
 	local id = tool.name .. "-" .. counters[tool.name]
-
-	local cmd = { exe }
-	vim.list_extend(cmd, opts.args or {})
 
 	local buf = vim.api.nvim_create_buf(false, true)
 	vim.bo[buf].bufhidden = "hide"
@@ -301,6 +321,10 @@ local function new_session(tool, opts)
 		once = true,
 		callback = function()
 			remove_session(id)
+			if opts.on_exit then
+				-- vim.v.event.status = exit code của tiến trình vừa kết thúc.
+				opts.on_exit(tonumber(vim.v.event.status) or 0)
+			end
 		end,
 	})
 
@@ -316,6 +340,35 @@ local function attach(session)
 	if M.config.start_insert then
 		vim.cmd("startinsert")
 	end
+end
+
+-- Cài tool chưa có. tool.install là lệnh SHELL (có pipe) nên phải chạy qua shell.
+-- Đây là tải script từ mạng về chạy trực tiếp -> LUÔN hiện nguyên câu lệnh và hỏi
+-- xác nhận, mặc định No: một lần bấm nhầm trong picker rất khó hoàn tác.
+-- Chạy trong pane AI (không chạy ngầm) để đọc được output và lỗi.
+local function install_tool(tool)
+	if not tool or not tool.install then
+		notify(("no install script configured for '%s'"):format(tool and tool.name or "?"), "warn")
+		return
+	end
+	local prompt = ("Install %s?\n\n%s\n\nThis downloads and runs a remote script."):format(tool.name, tool.install)
+	if vim.fn.confirm(prompt, "&Yes\n&No", 2) ~= 1 then
+		return
+	end
+	attach(new_session(tool, {
+		-- argv tường minh { shell, -c, lệnh } thay vì truyền string thẳng, để giữ
+		-- đúng hợp đồng "cmd là list" của start_term.
+		cmd = { vim.o.shell, "-c", tool.install },
+		cwd = history().project_cwd(),
+		title = "install",
+		on_exit = function(code)
+			if code == 0 then
+				notify(("%s installed - reopen the picker to use it"):format(tool.name), "info")
+			else
+				notify(("%s install failed (exit %d) - see the pane output"):format(tool.name, code), "warn")
+			end
+		end,
+	}))
 end
 
 -- codex archive HOÀN TÁC được (codex unarchive); opencode session delete và xoá
@@ -339,6 +392,7 @@ local KIND_HL = {
 	past = "SnacksPickerTime",
 	new = "SnacksPickerLabel",
 	browse = "SnacksPickerSpecial",
+	install = "DiagnosticWarn", -- amber, khác hẳn mọi màu khác trong dòng
 }
 
 -- Cột tool bên trái: "opencode" (8) + icon (1) + dấu cách (1) = 10, chừa 1 cột đệm.
@@ -385,6 +439,18 @@ local function preview_text(item)
 		if v and v ~= "" then
 			l[#l + 1] = ("**%s:** %s"):format(k, v)
 		end
+	end
+
+	-- BẮT BUỘC early-return: nhánh fallthrough cuối hàm đọc item.entry (nil với
+	-- install) -> lỗi ngay trong finder, picker không mở nổi.
+	if item.kind == "install" then
+		l[#l + 1] = "# Install " .. item.tool.name
+		l[#l + 1] = ""
+		add("command", "`" .. tostring(item.tool.install) .. "`")
+		l[#l + 1] = ""
+		l[#l + 1] = "Downloads and runs a remote script. Read the URL before continuing."
+		l[#l + 1] = "Press <CR> to run it in the AI pane - you will be asked to confirm first."
+		return table.concat(l, "\n")
 	end
 
 	if item.kind == "new" then
@@ -531,6 +597,10 @@ local function format_item(item, picker)
 	elseif item.kind == "new" then
 		-- cột trái đã ghi tên tool -> title không lặp lại ("New session").
 		title_hl = "SnacksPickerLabel"
+	elseif item.kind == "install" then
+		-- phải có nhánh riêng: rơi vào else sẽ đọc tool.browse_label -> meta sai.
+		title_hl = "DiagnosticWarn"
+		segs[#segs + 1] = { "install", "DiagnosticWarn", drop = 1 }
 	else
 		-- title chỉ là args; binary đã nằm ở cột tool -> đọc thành "claude  --resume".
 		title_hl = "SnacksPickerCode"
@@ -669,11 +739,23 @@ local function build_items(all_dirs)
 		end
 	end
 
+	-- Tool chưa cài mà có script cài -> thay new + browse bằng ĐÚNG 1 dòng install.
+	-- Bấm vào new/browse của tool chưa cài chỉ ra "binary not found" nên giữ lại
+	-- chúng chỉ tạo dòng chết. Tính trạng thái một lần rồi dùng cho cả hai vòng.
+	local needs_install = {}
 	for _, t in ipairs(M.config.tools) do
-		items[#items + 1] = { kind = "new", tool = t, text = "new " .. t.name }
+		needs_install[t.name] = tool_cmd(t) == nil and t.install ~= nil
+	end
+
+	for _, t in ipairs(M.config.tools) do
+		if needs_install[t.name] then
+			items[#items + 1] = { kind = "install", tool = t, text = "install " .. t.name }
+		else
+			items[#items + 1] = { kind = "new", tool = t, text = "new " .. t.name }
+		end
 	end
 	for _, t in ipairs(M.config.tools) do
-		if t.browse then
+		if t.browse and not needs_install[t.name] then
 			items[#items + 1] = { kind = "browse", tool = t, text = "browse " .. t.name }
 		end
 	end
@@ -688,6 +770,9 @@ local function build_items(all_dirs)
 			it.title = it.entry.title or it.entry.id
 		elseif it.kind == "new" then
 			it.title = "New session"
+		elseif it.kind == "install" then
+			-- nhánh riêng: else phía dưới trả browse args -> sai cho install.
+			it.title = "not installed"
 		else
 			it.title = table.concat(it.tool.browse or {}, " ")
 		end
@@ -772,6 +857,8 @@ function M.pick(opts)
 					attach(item.session)
 				elseif item.kind == "past" then
 					M.resume(item.entry)
+				elseif item.kind == "install" then
+					install_tool(item.tool)
 				elseif item.kind == "browse" then
 					attach(new_session(item.tool, {
 						args = item.tool.browse,
@@ -787,6 +874,14 @@ function M.pick(opts)
 			-- <C-x>: bỏ qua resume, mở session TRẮNG cùng tool + cùng cwd của item.
 			aiterm_fresh = function(picker, item)
 				if not item then
+					return
+				end
+				-- trên dòng install thì new_session chỉ ra "binary not found"
+				-- -> chuyển sang cài luôn, để <C-x> không thành đường chết.
+				if item.kind == "install" then
+					run(picker, function()
+						install_tool(item.tool)
+					end)
 					return
 				end
 				local cwd = item.cwd or history().project_cwd()
