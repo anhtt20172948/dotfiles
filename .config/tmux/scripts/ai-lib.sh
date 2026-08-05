@@ -308,18 +308,53 @@ docker_note() {
   esac
 }
 
+# _container_locate_script <tool> -> a POSIX-sh snippet that resolves the tool
+# inside a container by every reasonable means: source the standard profiles
+# (in case PATH is set there), try `command -v`, then scan the dirs hand-installs
+# usually land in. Printed to stdout so callers can `docker exec sh -c "$(...)"`.
+# $tool is a validated AI_TOOLS value, so interpolating it is safe.
+_container_locate_script() {
+  local tool=$1
+  cat <<SH
+for f in /etc/profile "\$HOME/.profile" "\$HOME/.bash_profile" "\$HOME/.bash_login"; do
+  [ -r "\$f" ] && . "\$f" >/dev/null 2>&1
+done
+p=\$(command -v $tool 2>/dev/null)
+case \$p in /*) printf '%s' "\$p"; exit 0 ;; esac
+for d in "\$HOME/.local/bin" "\$HOME/bin" "\$HOME/.$tool/bin" "\$HOME/.opencode/bin" \\
+         "\$HOME/.bun/bin" "\$HOME/.npm-global/bin" "\$HOME/.deno/bin" \\
+         "\$HOME/.cargo/bin" /usr/local/bin /usr/bin /bin /opt/$tool/bin \\
+         /usr/local/lib/node_modules/.bin; do
+  [ -x "\$d/$tool" ] && { printf '%s' "\$d/$tool"; exit 0; }
+done
+exit 1
+SH
+}
+
 # locate_tool <location> <tool> -> absolute path of the tool, or empty + rc 1.
-# Host: the `command -v` builtin. Container: a LOGIN shell inside the container,
-# because a hand-installed CLI usually lives on a PATH set by the image's
-# profile (nvm, ~/.local/bin, pipx), which a bare non-login `docker exec` misses.
-# `$tool` is always a validated AI_TOOLS whitelist value, so it is safe to splice
-# into the `sh -lc` string.
+# Host: the `command -v` builtin.
+# Container: a hand-installed CLI usually sits on a PATH the user set up in
+# ~/.bashrc, which only an INTERACTIVE shell reads — a login shell does not. So
+# try, in order:
+#   1. `bash -ic` — reproduces `docker exec -it NAME bash` then typing the tool,
+#      the exact context the user installed it for. grep keeps only a path line,
+#      discarding any banner/MOTD the rc files print.
+#   2. a login-sh probe that sources the profiles and scans the usual install
+#      dirs — covers no-bash images and absolute installs not on any PATH.
 locate_tool() {
-  local location=$1 tool=$2 out
+  local location=$1 tool=$2 name out
   case "$location" in
     container:*)
-      out=$(ai_run_limited 8 docker exec "${location#container:}" \
-        sh -lc "command -v $tool" 2>/dev/null) || return 1
+      name=${location#container:}
+      if ai_run_limited 5 docker exec "$name" sh -c 'command -v bash' >/dev/null 2>&1; then
+        out=$(ai_run_limited 10 docker exec "$name" bash -ic "command -v $tool" 2>/dev/null \
+          | grep -m1 '^/')
+        case $out in /*) printf '%s' "$out"; return 0 ;; esac
+      fi
+      out=$(ai_run_limited 10 docker exec "$name" \
+        sh -c "$(_container_locate_script "$tool")" 2>/dev/null | grep -m1 '^/')
+      case $out in /*) printf '%s' "$out"; return 0 ;; esac
+      return 1
       ;;
     *)
       out=$(command -v "$tool" 2>/dev/null) || return 1
