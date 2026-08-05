@@ -325,11 +325,24 @@ if [[ "$action" != attach ]] \
     [[ -n "$executable" ]] || \
       pause_with_error "'$tool' not found in container '$container'"
     container_path=$(map_host_path_to_container "$container" "$project_dir")
-    # -it: the session's pty is the tty docker attaches to; -w runs the agent in
-    # the mapped directory. %q on every interpolation keeps a hostile container
-    # name or path from breaking out of the command.
-    printf -v launch_command 'exec docker exec -it -w %q %q %q' \
-      "$container_path" "$container" "$executable"
+    # Run the tool through an INTERACTIVE bash (bash -ic), not the bare binary: a
+    # hand-installed CLI needs the PATH/env its ~/.bashrc sets up (node, API keys,
+    # version-manager shims), exactly as when the user runs it after
+    # `docker exec -it NAME bash`. -i is what makes bash read ~/.bashrc (a login
+    # shell would not); sourcing /etc/profile as well covers a system-wide PATH.
+    # sh -lc for images without bash. The inner `exec %q` still launches the
+    # resolved absolute path, so PATH lookup can't pick a different binary. -it
+    # gives docker the session's pty; -w sets cwd.
+    if location_run "$location" sh -c 'command -v bash' >/dev/null 2>&1; then
+      printf -v inner_command \
+        '[ -r /etc/profile ] && . /etc/profile >/dev/null 2>&1; exec %q' "$executable"
+      printf -v launch_command 'exec docker exec -it -w %q %q bash -ic %q' \
+        "$container_path" "$container" "$inner_command"
+    else
+      printf -v inner_command 'exec %q' "$executable"
+      printf -v launch_command 'exec docker exec -it -w %q %q sh -lc %q' \
+        "$container_path" "$container" "$inner_command"
+    fi
   else
     executable=$(command -v "$tool" 2>/dev/null || true)
     [[ -n "$executable" ]] || pause_with_error "'$tool' not found in PATH"
@@ -358,8 +371,30 @@ if [[ "$action" != attach ]] \
     esac
   fi
 
-  if ! tmux -L "$server_name" -f "$server_config" new-session -d \
-    -s "$session_name" -n "$tool" -c "$project_dir" "$launch_command" 2>/dev/null; then
+  # Born-at-popup-size. A detached session defaults to 80x24; on attach tmux
+  # resizes the window to this popup, but for a container the tool runs behind
+  # `docker exec`, whose TTY does not reliably follow that resize — so opencode
+  # would paint 80x24 in the top-left of a full-size popup. Creating the session
+  # at the popup's exact character size means docker exec's TTY is correct from
+  # birth and the attach triggers no resize at all. `stty size` on the popup's
+  # controlling terminal is that exact size; a bad read falls back to the old
+  # default-size path.
+  popup_size=$(stty size </dev/tty 2>/dev/null || true)
+  popup_rows=${popup_size%% *}
+  popup_cols=${popup_size##* }
+  create_ok=1
+  if [[ "$popup_cols" =~ ^[0-9]+$ && "$popup_rows" =~ ^[0-9]+$ \
+        && "$popup_cols" -gt 0 && "$popup_rows" -gt 0 ]]; then
+    tmux -L "$server_name" -f "$server_config" new-session -d \
+      -x "$popup_cols" -y "$popup_rows" \
+      -s "$session_name" -n "$tool" -c "$project_dir" "$launch_command" 2>/dev/null \
+      || create_ok=0
+  else
+    tmux -L "$server_name" -f "$server_config" new-session -d \
+      -s "$session_name" -n "$tool" -c "$project_dir" "$launch_command" 2>/dev/null \
+      || create_ok=0
+  fi
+  if [[ "$create_ok" -eq 0 ]]; then
     tmux -L "$server_name" has-session -t "$session_target" 2>/dev/null || \
       pause_with_error 'could not create the persistent AI session'
   fi
