@@ -64,7 +64,7 @@ tool_name() {
 tool_icon() {
   case "$1" in
     codex)    printf '󰘩' ;;
-    opencode) printf '' ;;
+    opencode) printf '' ;;
     claude)   printf '󱑺' ;;
     *)        return 1 ;;
   esac
@@ -235,4 +235,154 @@ ai_trash() {
   dest="$HOME/.Trash"
   [ -d "$dest" ] || dest="${TMPDIR:-/tmp}"
   mv -f "$@" "$dest/" 2>&1
+}
+
+# --- Location: host vs Docker container ----------------------
+# A "location" is WHERE an AI tool actually runs, and it is threaded through the
+# whole pipeline exactly like the tool name. Two forms:
+#   host              the machine tmux runs on (the original, only behavior)
+#   container:<name>  inside a running Docker container, reached via docker exec
+#
+# The point of the container form is the workflow where the CLIs (codex, claude,
+# opencode) are installed BY HAND inside a container and do not exist on the
+# host at all: host `command -v` finds nothing, and even a host copy would run
+# against the host filesystem rather than the project as mounted in the
+# container. Every docker call here is wrapped in ai_run_limited because a stale
+# DOCKER_HOST or an unreachable remote context makes the CLI hang, and some of
+# this runs on the `a` hot path.
+
+# location_kind <location> -> host | container
+location_kind() {
+  case "${1:-host}" in
+    container:*) printf 'container' ;;
+    *)           printf 'host' ;;
+  esac
+}
+
+# location_container <location> -> container name, or empty for the host
+location_container() {
+  case "${1:-}" in
+    container:*) printf '%s' "${1#container:}" ;;
+  esac
+}
+
+# location_matches <filter> <session-location>
+# An empty filter matches everything; an empty session location counts as host,
+# so sessions created before locations existed keep showing on the host.
+location_matches() {
+  local filter=${1:-} s_loc=${2:-}
+  [ -z "$filter" ] && return 0
+  [ -n "$s_loc" ] || s_loc=host
+  [ "$filter" = "$s_loc" ]
+}
+
+# list_containers -> "name<TAB>image<TAB>status", one row per running container.
+# Empty output (no containers, no docker, or a dead daemon) is the signal the
+# callers use to skip the location picker entirely, so the host path is never
+# taxed with an extra step.
+list_containers() {
+  have docker || return 0
+  ai_run_limited 5 docker ps \
+    --format '{{.Names}}	{{.Image}}	{{.Status}}' 2>/dev/null || true
+}
+
+# docker_note -> a short human explanation when docker IS installed but a
+# `docker ps` fails (permission denied, daemon down). Empty when docker is
+# absent or working. Callers use it to distinguish "no reason to show the
+# location picker" (host-only, silent) from "you wanted containers but docker
+# is broken" (show the picker with this note), instead of a baffling silent
+# skip. Only invoke it when list_containers came back empty, so the working
+# path pays nothing.
+docker_note() {
+  have docker || return 0
+  local err
+  err=$(ai_run_limited 5 docker ps --format '{{.Names}}' 2>&1 >/dev/null)
+  [ -n "$err" ] || return 0
+  case $err in
+    *"permission denied"*)
+      printf 'Docker: permission denied — add your user to the docker group, then re-login' ;;
+    *"Cannot connect"*|*"daemon"*|*"connect:"*)
+      printf 'Docker: daemon not reachable' ;;
+    *)
+      printf 'Docker: %s' "${err%%$'\n'*}" ;;
+  esac
+}
+
+# locate_tool <location> <tool> -> absolute path of the tool, or empty + rc 1.
+# Host: the `command -v` builtin. Container: a LOGIN shell inside the container,
+# because a hand-installed CLI usually lives on a PATH set by the image's
+# profile (nvm, ~/.local/bin, pipx), which a bare non-login `docker exec` misses.
+# `$tool` is always a validated AI_TOOLS whitelist value, so it is safe to splice
+# into the `sh -lc` string.
+locate_tool() {
+  local location=$1 tool=$2 out
+  case "$location" in
+    container:*)
+      out=$(ai_run_limited 8 docker exec "${location#container:}" \
+        sh -lc "command -v $tool" 2>/dev/null) || return 1
+      ;;
+    *)
+      out=$(command -v "$tool" 2>/dev/null) || return 1
+      ;;
+  esac
+  [ -n "$out" ] || return 1
+  printf '%s' "$out"
+}
+
+# location_run <location> <cmd> [args...] -> run a command where the location
+# points. Used for the version probe: host runs it directly, a container runs it
+# under `docker exec`.
+location_run() {
+  local location=$1
+  shift
+  case "$location" in
+    container:*) ai_run_limited 8 docker exec "${location#container:}" "$@" ;;
+    *)           "$@" ;;
+  esac
+}
+
+# _map_fallback <name> <host_path> -> a plausible container path when no mount
+# matched. Same path if it exists in the container (common), else the image's
+# configured WorkingDir, else /.
+_map_fallback() {
+  local name=$1 host_path=$2 wd
+  if ai_run_limited 5 docker exec "$name" test -d "$host_path" >/dev/null 2>&1; then
+    printf '%s' "$host_path"; return 0
+  fi
+  wd=$(ai_run_limited 5 docker inspect \
+    --format '{{.Config.WorkingDir}}' "$name" 2>/dev/null)
+  [ -n "$wd" ] && { printf '%s' "$wd"; return 0; }
+  printf '/'
+}
+
+# map_host_path_to_container <name> <host_path> -> the path inside the container
+# that corresponds to host_path. Finds the bind/volume mount whose Source is the
+# longest prefix of host_path and rebases the remainder onto its Destination.
+# The resolved path is shown in the picker preview, so a wrong guess is visible
+# rather than a silent launch in the wrong directory.
+map_host_path_to_container() {
+  local name=$1 host_path=$2 mounts src dst best_src='' best_dst='' remainder
+  have jq || { _map_fallback "$name" "$host_path"; return; }
+  mounts=$(ai_run_limited 6 docker inspect \
+    --format '{{json .Mounts}}' "$name" 2>/dev/null) || mounts=''
+  if [ -n "$mounts" ]; then
+    while IFS='	' read -r src dst; do
+      [ -n "$src" ] || continue
+      case "$host_path" in
+        "$src")
+          best_src=$src; best_dst=$dst; break ;;
+        "$src"/*)
+          if [ "${#src}" -gt "${#best_src}" ]; then best_src=$src; best_dst=$dst; fi
+          ;;
+      esac
+    done <<EOF
+$(printf '%s' "$mounts" | jq -r '.[]? | [.Source, .Destination] | @tsv' 2>/dev/null)
+EOF
+  fi
+  if [ -n "$best_src" ]; then
+    remainder=${host_path#"$best_src"}
+    printf '%s%s' "$best_dst" "$remainder"
+    return 0
+  fi
+  _map_fallback "$name" "$host_path"
 }
