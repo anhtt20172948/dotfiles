@@ -9,22 +9,89 @@
 --   <C-Space> (trong AI pane) -> quay lại code (pane vẫn mở, session vẫn chạy)
 --   <C-w>p    (trong editor)  -> attach/focus AI pane (session gần nhất)
 --
--- !! ICON: CHỈ dùng codepoint <= U+FFFF (vùng PUA U+E000-U+F8FF) !!
--- Font chính là 'SFMono Nerd Font' (kitty.conf) - bản patch Nerd Fonts v2, cmap
--- chỉ tới U+FD46, KHÔNG có mặt phẳng 15. Mọi glyph MDI-v3 kiểu U+F0xxx (bản cũ
--- của file này dùng U+F06A9, U+F0109, U+F0349 - cố ý viết bằng codepoint để file
--- này luôn sạch glyph non-BMP) rơi xuống fallback JetBrainsMono NF -> khác
--- typeface, khác advance width, nhìn lệch hẳn so với chữ xung quanh.
--- Check trước khi thêm icon mới:
---   python3 -c "print(hex(ord('<glyph>')))"   -- phải <= 0xFFFF
+-- !! ICON: file này KHÔNG chứa glyph thô, tất cả dựng từ CODEPOINT !!
+-- Glyph PUA thô bị huỷ mỗi lần file đi qua một vòng copy/encode. Đã xảy ra 2 lần:
+-- U+F0D0 biến thành U+EE0D (codepoint không có trong font -> ô vuông), còn các
+-- icon khác rụng sạch thành dấu cách trắng. Source chỉ có ASCII thì không hỏng
+-- được nữa - xem M.icon_sets bên dưới.
 local M = {}
 
+-- Dựng chuỗi từ danh sách codepoint.
+local function c(...)
+	local out = {}
+	for _, cp in ipairs({ ... }) do
+		out[#out + 1] = vim.fn.nr2char(cp)
+	end
+	return table.concat(out)
+end
+
+-- Ba bộ icon, chọn bằng M.config.icon_style:
+--   nerd    - glyph Nerd Font. CHỈ dùng codepoint <= U+FFFF (PUA U+E000-U+F8FF):
+--             'SFMono Nerd Font' là patch Nerd Fonts v2, cmap chỉ tới U+FD46, nên
+--             mọi glyph MDI-v3 kiểu U+F0xxx rơi xuống fallback font khác ->
+--             khác typeface, khác advance width, nhìn lệch hẳn.
+--   unicode - Geometric Shapes + Arrows, có trong gần như mọi font monospace.
+--             Dùng khi terminal/SSH không có Nerd Font.
+--   ascii   - thuần ASCII, chạy được ở mọi nơi kể cả Linux console.
+-- Cả ba bộ đều đã kiểm nvim_strwidth == 1 cho từng glyph (ambiwidth=single) nên
+-- đổi bộ không làm lệch cột.
+M.icon_sets = {
+	nerd = {
+		claude = c(0xF0D0), -- magic
+		codex = c(0xF121), -- code
+		opencode = c(0xF489), -- terminal
+		live = c(0x25CF), -- ●
+		past = c(0xF1DA), -- history
+		new = c(0xF067), -- plus
+		browse = c(0xF002), -- search
+		branch = c(0xF418), -- git-branch
+		all_dirs = c(0xF07C), -- folder-open
+	},
+	unicode = {
+		claude = c(0x25C6), -- ◆
+		codex = c(0x25FC), -- ◼
+		opencode = c(0x25B2), -- ▲
+		live = c(0x25CF), -- ●
+		past = c(0x21BA), -- ↺
+		new = "+",
+		browse = c(0x00BB), -- »
+		branch = c(0x21B3), -- ↳
+		all_dirs = c(0x25A4), -- ▤
+	},
+	ascii = {
+		claude = "C",
+		codex = "X",
+		opencode = "O",
+		live = "*",
+		past = "~",
+		new = "+",
+		browse = "?",
+		branch = "@",
+		all_dirs = "/",
+	},
+}
+
+-- Bộ icon đang dùng. "auto" -> theo vim.g.have_nerd_font (chưa set thì coi như có).
+function M.icons()
+	local style = M.config.icon_style
+	if style == "auto" or style == nil then
+		style = vim.g.have_nerd_font == false and "unicode" or "nerd"
+	end
+	return M.icon_sets[style] or M.icon_sets.nerd
+end
+
+-- Icon của tool, tra theo tên tool. Không lưu glyph trong M.config.tools nữa.
+local function tool_icon(tool)
+	return M.icons()[tool.name] or ""
+end
+
 M.config = {
+	icon_style = "auto", -- "auto" | "nerd" | "unicode" | "ascii"
 	tools = {
 		{
 			name = "claude",
 			cmd = "claude",
-			icon = "  ", -- U+F0D0 magic
+			-- icon tra tu M.icons()[name], KHONG luu glyph o day (xem dau file).
 			resume = function(id)
 				return { "--resume", id }
 			end,
@@ -37,7 +104,7 @@ M.config = {
 		{
 			name = "codex",
 			cmd = "codex",
-			icon = " ", -- U+F121 code
+			-- icon tra tu M.icons()[name], KHONG luu glyph o day (xem dau file).
 			resume = function(id)
 				return { "resume", id }
 			end,
@@ -53,7 +120,7 @@ M.config = {
 			-- ~/.zshrc thêm ~/.opencode/bin vào PATH, nhưng nvim mở từ GUI/launchd
 			-- thì không có -> path làm fallback cho tool_cmd().
 			path = vim.fn.expand("~/.opencode/bin/opencode"),
-			icon = " ", -- U+F489 terminal
+			-- icon tra tu M.icons()[name], KHONG luu glyph o day (xem dau file).
 			resume = function(id)
 				return { "--session", id }
 			end,
@@ -223,7 +290,7 @@ local function new_session(tool, opts)
 		job = job,
 		cwd = cwd,
 		title = opts.title,
-		label = (tool.icon or "") .. id .. (opts.title and (" · " .. opts.title) or ""),
+		label = tool_icon(tool) .. " " .. id .. (opts.title and (" · " .. opts.title) or ""),
 	}
 	sessions[#sessions + 1] = session
 	-- set_term_keymaps ở đây -> mọi đường (new/resume/fork/browse) đều có <C-Space>.
@@ -244,7 +311,7 @@ local function attach(session)
 	if not session then
 		return
 	end
-	ensure_win(session.buf, session.label or ((session.tool.icon or "") .. session.id))
+	ensure_win(session.buf, session.label or (tool_icon(session.tool) .. " " .. session.id))
 	last_session = session.id
 	if M.config.start_insert then
 		vim.cmd("startinsert")
@@ -266,15 +333,43 @@ local function delete_entry(tool, e)
 end
 
 -- picker -----------------------------------------------------------------
--- Xem cảnh báo ICON ở đầu file trước khi đổi mấy glyph này.
-local KIND = {
-	live = { "● ", "SnacksPickerGitStatusStaged" }, -- U+25CF
-	past = { " ", "SnacksPickerTime" }, -- U+F1DA history
-	new = { " ", "SnacksPickerLabel" }, -- U+F067 plus
-	browse = { " ", "SnacksPickerSpecial" }, -- U+F002 search
+-- hl group của từng kind; glyph lấy từ M.icons() lúc render (không hardcode).
+local KIND_HL = {
+	live = "SnacksPickerGitStatusStaged",
+	past = "SnacksPickerTime",
+	new = "SnacksPickerLabel",
+	browse = "SnacksPickerSpecial",
 }
-local ICON_BRANCH = " " -- U+F418 git-branch
-local ICON_ALL_DIRS = " " -- U+F07C folder-open (badge {flags} của scope)
+
+-- Cột tool bên trái: "opencode" (8) + icon (1) + dấu cách (1) = 10, chừa 1 cột đệm.
+local TOOL_W = 11
+-- Phần đầu dòng trước title: icon kind (2 cột) + cột tool + 1 cột đệm.
+local LEAD_W = 2 + TOOL_W + 1
+
+-- Màu riêng cho từng tool. Dùng LINK tới nhóm ngữ nghĩa chứ không hardcode hex:
+-- đổi colorscheme là tự đúng theo theme mới.
+-- Đã đo dưới catppuccin mocha + color_overrides của repo: Constant/String/Keyword
+-- ra 3 màu khác hẳn nhau (peach / mint / mauve). CẨN THẬN khi đổi - rất nhiều
+-- nhóm trông có vẻ khác nhau nhưng lại trùng màu: GitBranch, Cmd, Directory,
+-- Function, Title đều ra #7aa2f8; Time, Label, Special đều ra #ff79c7; còn
+-- SnacksPickerBold thì không có fg nên không dùng làm màu được.
+local TOOL_HL = { claude = "AitermClaude", codex = "AitermCodex", opencode = "AitermOpencode" }
+
+-- Snacks.util.set_hl tự đăng ký augroup ColorScheme để set lại nên KHÔNG cần tự
+-- viết autocmd. Không truyền default = true (group `default` bị colorscheme ghi đè).
+-- Gọi lazy vì lúc require module này Snacks có thể chưa load.
+local hl_done = false
+local function ensure_hl()
+	if hl_done or not (_G.Snacks and Snacks.util) then
+		return
+	end
+	hl_done = true
+	Snacks.util.set_hl({
+		AitermClaude = "Constant", -- peach
+		AitermCodex = "String", -- mint
+		AitermOpencode = "Keyword", -- mauve
+	})
+end
 
 local function cmdline(tool, args)
 	local parts = { tool.cmd }
@@ -396,24 +491,34 @@ end
 --     right_align virt_text; không trừ là hai bên đè nhau.
 local function format_item(item, picker)
 	local ret = {}
-	local kind = KIND[item.kind] or KIND.past
+	local ic = M.icons()
 	local tool = item.tool
 
-	ret[#ret + 1] = { kind[1], kind[2], virtual = true }
+	-- icon dài 1 cột + 1 dấu cách -> luôn chiếm đúng 2 cột với cả 3 bộ icon.
+	ret[#ret + 1] = { (ic[item.kind] or ic.past) .. " ", KIND_HL[item.kind] or KIND_HL.past, virtual = true }
+
+	-- Cột tool CỐ ĐỊNH bên trái. Trước đây tool nằm trong meta dán lề phải nên rơi
+	-- vào toạ độ khác nhau ở từng dòng -> mắt phải dò ngang từng dòng mới biết tool.
+	-- Để là TEXT THẬT (không virtual): phần highlight match của snacks chạy trên
+	-- text đã render của cả dòng, nên gõ "codex" sẽ highlight luôn ở cột này.
+	ret[#ret + 1] = {
+		Snacks.picker.util.align(tool_icon(tool) .. " " .. tool.name, TOOL_W),
+		TOOL_HL[tool.name] or "SnacksPickerDimmed",
+	}
 
 	-- segs: metadata theo thứ tự hiển thị; `drop` càng lớn càng bị bỏ trước khi hẹp.
-	local segs = { { (tool.icon or "") .. tool.name, "SnacksPickerDimmed" } }
-	local title, title_hl = nil, "SnacksPickerFile"
+	-- KHÔNG còn tool ở đây nữa (đã có cột trái) -> nhường chỗ cho title.
+	local segs = {}
+	-- title dựng sẵn ở build_items (item.title là field thật để lọc `title:`).
+	local title, title_hl = item.title or "", "SnacksPickerFile"
 
 	if item.kind == "live" then
-		title = item.session.title or item.session.id
 		segs[#segs + 1] = { item.session.id, "SnacksPickerBold", drop = 2 }
 		segs[#segs + 1] = { "running", "SnacksPickerGitStatusStaged" }
 	elseif item.kind == "past" then
 		local e = item.entry
-		title = e.title or e.id
 		if e.branch then
-			segs[#segs + 1] = { ICON_BRANCH .. e.branch, "SnacksPickerGitBranch", drop = 2 }
+			segs[#segs + 1] = { ic.branch .. " " .. e.branch, "SnacksPickerGitBranch", drop = 2 }
 		end
 		if e.time and e.time > 0 then
 			segs[#segs + 1] = { Snacks.picker.util.reltime(e.time), "SnacksPickerTime", drop = 1 }
@@ -424,10 +529,10 @@ local function format_item(item, picker)
 			segs[#segs + 1] = { vim.fn.fnamemodify(e.cwd, ":~"), "SnacksPickerDir", drop = 3 }
 		end
 	elseif item.kind == "new" then
-		title = "New " .. tool.name .. " session"
+		-- cột trái đã ghi tên tool -> title không lặp lại ("New session").
 		title_hl = "SnacksPickerLabel"
 	else
-		title = table.concat(vim.list_extend({ tool.cmd }, tool.browse or {}), " ")
+		-- title chỉ là args; binary đã nằm ở cột tool -> đọc thành "claude  --resume".
 		title_hl = "SnacksPickerCode"
 		segs[#segs + 1] = { tool.browse_label or "own picker", "SnacksPickerSpecial", drop = 1 }
 	end
@@ -440,9 +545,8 @@ local function format_item(item, picker)
 		list_w = vim.api.nvim_win_get_width(lwin)
 	end
 
-	-- 3 = icon (2 cột) + 1 cột đệm giữa title và meta
-	local meta = fit_meta(segs, math.max(0, list_w - 3 - MIN_TITLE))
-	local avail = list_w - 3 - meta_width(meta)
+	local meta = fit_meta(segs, math.max(0, list_w - LEAD_W - MIN_TITLE))
+	local avail = list_w - LEAD_W - meta_width(meta)
 	if avail > 0 then
 		title = Snacks.picker.util.truncate(title, avail)
 	end
@@ -463,15 +567,19 @@ end
 --     (win.lua M:win_opts).
 --   * footer KHÔNG được template hoá (update_titles chỉ đụng title) -> tuple tĩnh.
 --   * win:update() re-apply self.opts nên footer dính qua các lần layout update.
+-- Ký hiệu phím dùng notation của vim (ASCII thuần): "⏎"/"⌥" không có ở mọi font
+-- và "⌥" còn là ký hiệu riêng của macOS, sang Linux/Windows đọc thành sai phím.
 local FOOTER = {
-	{ " ⏎ ", "SnacksPickerLabel" },
+	{ " <CR> ", "SnacksPickerLabel" },
 	{ "resume  ", "SnacksPickerDimmed" },
-	{ "^x ", "SnacksPickerLabel" },
+	{ "C-x ", "SnacksPickerLabel" },
 	{ "new  ", "SnacksPickerDimmed" },
-	{ "^o ", "SnacksPickerLabel" },
+	{ "C-o ", "SnacksPickerLabel" },
 	{ "fork  ", "SnacksPickerDimmed" },
-	{ "⌥a ", "SnacksPickerLabel" },
+	{ "M-a ", "SnacksPickerLabel" },
 	{ "scope  ", "SnacksPickerDimmed" },
+	{ "dd ", "SnacksPickerLabel" },
+	{ "delete  ", "SnacksPickerDimmed" },
 	{ "? ", "SnacksPickerLabel" },
 	{ "keys ", "SnacksPickerDimmed" },
 }
@@ -570,7 +678,19 @@ local function build_items(all_dirs)
 		end
 	end
 
+	-- item.title là field THẬT trên item, không phải chỉ để hiển thị: matcher lọc
+	-- `title:redis` bằng item[field] (matcher.lua M:match -> item[mods.field]),
+	-- chứ KHÔNG đọc text đã render. Không set ở đây thì `title:` luôn ra 0 kết quả.
 	for _, it in ipairs(items) do
+		if it.kind == "live" then
+			it.title = it.session.title or it.session.id
+		elseif it.kind == "past" then
+			it.title = it.entry.title or it.entry.id
+		elseif it.kind == "new" then
+			it.title = "New session"
+		else
+			it.title = table.concat(it.tool.browse or {}, " ")
+		end
 		it.preview = { text = preview_text(it), ft = "markdown" }
 	end
 	return items
@@ -619,6 +739,7 @@ function M.pick(opts)
 		vim.notify("aiterm: snacks.nvim picker required", vim.log.levels.ERROR)
 		return
 	end
+	ensure_hl()
 	local scope = (opts and opts.scope) or M.config.history.scope
 
 	-- Đóng picker TRƯỚC rồi mới mở terminal: tránh tranh chấp focus với pane AI.
@@ -635,7 +756,7 @@ function M.pick(opts)
 		-- Quan trọng: finder đọc opts.all_dirs (tham số đầu CHÍNH LÀ picker.opts)
 		-- nên chỉ có một đường đọc state -> hết cả lớp bug "title đổi mà list không".
 		all_dirs = scope == "all",
-		toggles = { all_dirs = { icon = ICON_ALL_DIRS, value = true } },
+		toggles = { all_dirs = { icon = M.icons().all_dirs, value = true } },
 		finder = function(popts)
 			return build_items(popts.all_dirs)
 		end,
@@ -763,16 +884,38 @@ function M.focus()
 	end
 end
 
--- Rời focus khỏi pane (pane vẫn mở). Thường dùng bằng <C-Space> trong terminal.
+-- Ẩn pane AI: ĐÓNG window nhưng KHÔNG đụng tới job.
+-- Buffer để bufhidden="hide" nên terminal chạy tiếp dưới nền; <C-w>p / <leader>aa
+-- attach lại đúng session đó (nó vẫn nằm trong `sessions`, is_alive vẫn true).
+-- Gọi được từ bất kỳ đâu, không cần đang focus trong pane.
 function M.hide()
+	if not win_valid() then
+		return
+	end
+	-- nvim_win_close lỗi "cannot close last window" nếu đây là window duy nhất.
+	if #vim.api.nvim_tabpage_list_wins(0) <= 1 then
+		notify("cannot hide: AI pane is the only window", "warn")
+		return
+	end
+	-- rời terminal-mode trước, nếu không con trỏ kẹt lại ở insert sau khi đóng.
+	if vim.api.nvim_get_current_win() == win and vim.fn.mode() == "t" then
+		vim.cmd("stopinsert")
+	end
+	pcall(vim.api.nvim_win_close, win, false)
+	win = nil
+end
+
+-- Rời focus khỏi pane nhưng GIỮ pane mở. Đây là hành vi của <C-Space> trong
+-- terminal-mode (map thẳng tới <C-w>p, không đi qua hàm này).
+function M.blur()
 	if win_valid() and vim.api.nvim_get_current_win() == win then
 		vim.cmd("wincmd p")
 	end
 end
 
--- Toggle: đang focus pane -> rời; nếu không -> focus/attach.
+-- Toggle: pane đang mở -> ẩn; chưa mở -> focus/attach.
 function M.toggle()
-	if win_valid() and vim.api.nvim_get_current_win() == win then
+	if win_valid() then
 		M.hide()
 	else
 		M.focus()

@@ -31,6 +31,15 @@ return {
 			mode = "n",
 		},
 		{
+			-- Ẩn pane AI (đóng window), session vẫn chạy nền -> <C-w>p mở lại.
+			"<leader>ah",
+			function()
+				require("customize.aiterm").hide()
+			end,
+			desc = "AI terminal: hide pane (keeps running)",
+			mode = "n",
+		},
+		{
 			-- Override <C-w>p mặc định: focus AI sidebar thay vì "previous window".
 			"<C-w>p",
 			function()
