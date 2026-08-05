@@ -69,8 +69,9 @@ return {
 					-- Enable multiline diagnostic messages
 					enabled = true,
 
-					-- Always show messages on all lines for multiline diagnostics
-					always_show = true,
+					-- Only expand multiline diagnostics on the cursor line.
+					-- `true` here painted every line's diagnostics at once (a wall of text + lag).
+					always_show = false,
 				},
 
 				-- Display all diagnostic messages on the cursor line

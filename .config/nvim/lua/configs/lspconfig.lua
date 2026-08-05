@@ -142,11 +142,15 @@ vim.lsp.config["*"] = {
 	capabilities = { textDocument = { semanticTokens = { multilineTokenSupport = true } } },
 	root_markers = { ".git" },
 }
-vim.diagnostic.config({ virtual_lines = true })
+-- NOTE: virtual_lines is intentionally OFF. tiny-inline-diagnostic renders
+-- diagnostics; enabling virtual_lines here double-rendered every diagnostic as a
+-- multi-line tree (heavy + laggy on files with many clang-tidy warnings).
 
--- Harper specific setup
-vim.lsp.config["harper"] = {
-	cmd = { "harper-ls", "--stdio" },
-	filetypes = { "markdown", "text", "tex", "typst" },
-}
-vim.lsp.enable("harper")
+-- Harper (grammar/spell) — restrict to prose filetypes ONLY.
+-- mason-lspconfig auto-enables it under the real name `harper_ls`, whose default
+-- filetypes include C/C++/Python/etc. That made Harper spell-check code comments
+-- (the "Did you mean to spell 's'" noise). Pin its filetypes to prose.
+vim.lsp.config("harper_ls", {
+	filetypes = { "markdown", "text", "tex", "typst", "gitcommit" },
+})
+vim.lsp.enable("harper_ls")
