@@ -13,6 +13,7 @@ return {
 		"fang2hou/blink-copilot",
 		"onsails/lspkind.nvim",
 		"rafamadriz/friendly-snippets",
+		"huijiro/blink-cmp-supermaven",
 	},
 	opts = function(_, opts)
 		-- I noticed that telescope was extremeley slow and taking too long to open,
@@ -33,7 +34,7 @@ return {
 		-- Merge custom sources with the existing ones from lazyvim
 		-- NOTE: by default lazyvim already includes the lazydev source, so not adding it here again
 		opts.sources = vim.tbl_deep_extend("force", opts.sources or {}, {
-			default = { "lsp", "path", "snippets", "buffer", "dadbod" },
+			default = { "supermaven", "lsp", "path", "snippets", "buffer", "dadbod" },
 			providers = {
 				copilot = {
 					name = "copilot",
@@ -52,6 +53,13 @@ return {
 							forward = true,
 						},
 					},
+				},
+				supermaven = {
+					name = "supermaven", -- compat name
+					kind = "Supermaven", -- for icon kind
+					score_offset = 101, -- the higher the number, the higher the priority
+					module = "blink-cmp-supermaven",
+					async = true,
 				},
 				lsp = {
 					name = "lsp",
