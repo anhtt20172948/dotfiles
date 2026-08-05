@@ -51,7 +51,18 @@ vim.lsp.config("pyright", {
 
 vim.lsp.enable("clangd")
 vim.lsp.config("clangd", {
-	cmd = { "clangd", "--background-index", "--clang-tidy", "--log=verbose", "--offset-encoding=utf-16" },
+	cmd = {
+		"clangd",
+		"--background-index",
+		"--clang-tidy",
+		"--completion-style=detailed",
+		"--header-insertion=iwyu",
+		"--function-arg-placeholders",
+		"--all-scopes-completion",
+		"--pch-storage=memory",
+		"-j=6",
+		"--offset-encoding=utf-16",
+	},
 	settings = {
 		clangd = {
 			InlayHints = {
@@ -64,6 +75,19 @@ vim.lsp.config("clangd", {
 		},
 	},
 	capabilities = capabilities,
+})
+
+-- clangd-specific keymap: jump between the source file and its header.
+vim.api.nvim_create_autocmd("LspAttach", {
+	callback = function(args)
+		local client = vim.lsp.get_client_by_id(args.data.client_id)
+		if client and client.name == "clangd" then
+			vim.keymap.set("n", "<leader>ch", "<cmd>LspClangdSwitchSourceHeader<cr>", {
+				buffer = args.buf,
+				desc = "Switch Source/Header (clangd)",
+			})
+		end
+	end,
 })
 
 vim.lsp.enable("ts_ls")

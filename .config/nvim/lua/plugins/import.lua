@@ -1,6 +1,7 @@
 return -- Lazy
 {
 	"piersolenski/import.nvim",
+	enabled = false,
 	dependencies = {
 		-- One of the following pickers is required:
 		"nvim-telescope/telescope.nvim",

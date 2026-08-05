@@ -32,8 +32,8 @@ return {
 			typescript = { "prettierd", "prettier", stop_after_first = true },
 			javascriptreact = { "prettierd", "prettier", stop_after_first = true },
 			yaml = { "yq" },
-			cpp = { "clangd" },
-			c = { "clangd" },
+			cpp = { "clang-format" },
+			c = { "clang-format" },
 			json = { "jq" },
 		},
 		-- Set default options

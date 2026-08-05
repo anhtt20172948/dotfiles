@@ -1,43 +1,18 @@
+-- Central overrides that don't belong to a single spec file.
+-- Every other enable/disable now lives inside the plugin's own spec file.
 return {
+	-- nvzone/menu is only declared here (it has no separate spec file).
 	{ "nvzone/menu", enabled = true },
-	{ "github/copilot.vim", enabled = true },
-	{ "nvim-treesitter/nvim-treesitter", enabled = true },
-	-- session management
-	{ "folke/persistence.nvim", enabled = false },
-	{ "rmagatti/auto-session", enabled = true },
-	{ "nvim-telescope/telescope.nvim", enabled = true },
-	{ "folke/noice.nvim", enabled = true },
-	{ "nvim-lualine/lualine.nvim", enabled = true },
-	{ "akinsho/bufferline.nvim", enabled = false },
-	-- file management
-	{ "nvim-tree/nvim-tree.lua", enabled = false },
-	{ "nvim-neo-tree/neo-tree.nvim", enabled = true },
 
-	{ "nvim-lua/plenary.nvim", enabled = true },
-	{ "ya2s/nvim-cursorline", enabled = true },
-	{ "rasulomaroff/reactive.nvim", enabled = false },
-	{ "jinh0/eyeliner.nvim", enabled = true },
-	{ "mbbill/undotree", enabled = false },
-	--- cmp
+	-- Retired completion / copilot stack: kept installed but OFF.
+	-- The active completion stack is blink.cmp + supermaven.
+	{ "github/copilot.vim", enabled = true },
 	{ "hrsh7th/nvim-cmp", enabled = false },
 	{ "hrsh7th/cmp-nvim-lsp", enabled = false },
 	{ "hrsh7th/cmp-buffer", enabled = false },
 	{ "hrsh7th/cmp-path", enabled = false },
 	{ "hrsh7th/cmp-cmdline", enabled = false },
 	{ "hrsh7th/cmp-nvim-lua", enabled = false },
-	{
-		"dmitmel/cmp-cmdline-history",
-		enabled = false,
-	},
+	{ "dmitmel/cmp-cmdline-history", enabled = false },
 	{ "zbirenbaum/copilot-cmp", enabled = false },
-	-- blink cmp
-	{ "saghen/blink.cmp", enabled = true },
-
-	{ "nvim-zh/colorful-winsep.nvim", enabled = false },
-	{ "m4xshen/hardtime.nvim", enabled = false },
-	{ "linux-cultist/venv-selector.nvim", enabled = false },
-	{ "thePrimeagen/harpoon", enabled = false, branch = "harpoon2" },
-	{ "piersolenski/import.nvim", enabled = false },
-	{ "hedyhli/outline.nvim", enabled = false },
-	{ "mikavilpas/yazi.nvim", enabled = true },
 }

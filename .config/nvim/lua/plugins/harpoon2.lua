@@ -27,12 +27,20 @@ return {
 		end
 
 		--Harpoon Nav Interface
-		vim.keymap.set("n", "<leader>a", function()
+		-- NOTE: <leader>a is the AI (supermaven) prefix, so harpoon add lives on <leader>H.
+		vim.keymap.set("n", "<leader>H", function()
 			harpoon:list():add()
 		end, { desc = "Harpoon add file" })
 		vim.keymap.set("n", "<C-e>", function()
 			harpoon.ui:toggle_quick_menu(harpoon:list())
-		end)
+		end, { desc = "Harpoon quick menu" })
+
+		-- Jump straight to marks 1-4
+		for i = 1, 4 do
+			vim.keymap.set("n", "<leader>" .. i, function()
+				harpoon:list():select(i)
+			end, { desc = "Harpoon to file " .. i })
+		end
 
 		-- Toggle previous & next buffers stored within Harpoon list
 		vim.keymap.set("n", "<C-S-P>", function()

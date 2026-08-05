@@ -1,6 +1,7 @@
 local total_icons = require("lib.icons")
 return {
 	"akinsho/bufferline.nvim",
+	enabled = false,
 	event = "VeryLazy",
 	keys = {
 		{ "<leader>bp", "<Cmd>BufferLineTogglePin<CR>", desc = "Toggle Pin" },
