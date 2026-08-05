@@ -46,9 +46,9 @@ return {
 				"markdownlint-cli2",
 				"shellcheck",
 				"typescript-language-server", -- ts_ls is enabled in lspconfig.lua
-				-- debuggers (also handled by mason-nvim-dap, listed here to pin them)
-				"debugpy",
-				"codelldb",
+				-- NOTE: debuggers (debugpy, codelldb) are installed by mason-nvim-dap.
+				-- Do NOT list them here too — both installing at once races and errors
+				-- with "Package is already installing".
 			},
 
 			run_on_start = true,
