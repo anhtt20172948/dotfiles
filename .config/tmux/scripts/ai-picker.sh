@@ -10,6 +10,12 @@ source "$LIB_DIR/ai-lib.sh"
 
 SCRIPT_PATH=${BASH_SOURCE[0]}
 
+# Where the tools run. Inherited from persistent-ai.sh through the environment,
+# and passed on into the fzf preview child. Defaults keep this script usable
+# stand-alone (host only).
+location=${AI_POPUP_LOCATION:-host}
+container=${AI_POPUP_CONTAINER:-}
+
 reset=$AI_RESET
 bold=$AI_BOLD
 lavender=$AI_LAVENDER
@@ -53,14 +59,14 @@ tool_menu_status() {
 }
 
 tool_version() {
-  local executable=$1 output
+  local exec_location=$1 executable=$2 output
 
   [[ -n "$executable" ]] || {
     printf 'not installed'
     return
   }
 
-  output=$("$executable" --version 2>/dev/null || true)
+  output=$(location_run "$exec_location" "$executable" --version 2>/dev/null || true)
   printf '%s' "${output%%$'\n'*}"
 }
 
@@ -317,13 +323,20 @@ print_opencode_stats() {
 
 preview_tool() {
   local tool=${1:-} name icon description executable version
+  local in_container=false container_path=''
 
   name=$(tool_name "$tool") || exit 1
   icon=$(tool_icon "$tool") || exit 1
   description=$(tool_description "$tool") || exit 1
 
-  executable=$(command -v "$tool" 2>/dev/null || true)
-  version=$(tool_version "$executable")
+  if [[ "$(location_kind "$location")" == container ]]; then
+    in_container=true
+    executable=$(locate_tool "$location" "$tool" || true)
+    container_path=$(map_host_path_to_container "$container" "$PWD")
+  else
+    executable=$(command -v "$tool" 2>/dev/null || true)
+  fi
+  version=$(tool_version "$location" "$executable")
 
   printf '\n  %s%s%s  %s%s%s\n' "$mauve$bold" "$icon" "$reset" "$bold" "$name" "$reset"
   printf '  %s%s%s\n' "$subtext" "$description" "$reset"
@@ -334,10 +347,20 @@ preview_tool() {
   else
     print_field 'Status' "${subtext}○ Not running — Enter to create${reset}"
   fi
+  if [[ "$in_container" == true ]]; then
+    print_field 'Location' "${green}container · ${container}${reset}"
+  else
+    print_field 'Location' 'host'
+  fi
   print_field 'Version' "$version"
-  print_field 'Executable' "${executable:-not found in PATH}"
-  print_field 'Directory' "$PWD"
-  print_field 'Launch' "$tool"
+  print_field 'Executable' "${executable:-not found}"
+  if [[ "$in_container" == true ]]; then
+    print_field 'Directory' "${container_path:-?}  ${subtext}(${PWD})${reset}"
+    print_field 'Launch' "docker exec ${container} ${tool}"
+  else
+    print_field 'Directory' "$PWD"
+    print_field 'Launch' "$tool"
+  fi
 
   print_section 'QUICK START'
   case "$tool" in
@@ -345,25 +368,37 @@ preview_tool() {
       printf '  %s/%-12s%s Show model, permissions and context usage\n' "$blue" 'status' "$reset"
       printf '  %s/%-12s%s Review the current working tree\n' "$blue" 'review' "$reset"
       printf '  %s%-13s%s Resume an earlier conversation\n' "$blue" 'codex resume' "$reset"
-      print_codex_usage
+      [[ "$in_container" == true ]] || print_codex_usage
       ;;
     opencode)
       printf '  %s/%-12s%s Open the command palette\n' "$blue" 'help' "$reset"
       printf '  %s/%-12s%s Start or switch sessions\n' "$blue" 'sessions' "$reset"
       printf '  %s%-13s%s Show token and cost statistics\n' "$blue" 'opencode stats' "$reset"
-      [[ -n "$executable" ]] && print_opencode_stats "$executable"
+      [[ "$in_container" == false && -n "$executable" ]] && print_opencode_stats "$executable"
       ;;
     claude)
       printf '  %s/%-12s%s View plan limits and current usage\n' "$blue" 'usage' "$reset"
       printf '  %s/%-12s%s Show session and account status\n' "$blue" 'status' "$reset"
       printf '  %s/%-12s%s Inspect available commands\n' "$blue" 'help' "$reset"
-      print_claude_usage
+      [[ "$in_container" == true ]] || print_claude_usage
       ;;
   esac
 
+  # Usage/history panes read host state; they do not apply to a container tool.
+  if [[ "$in_container" == true ]]; then
+    print_section 'NOTE'
+    printf '  %sLaunch + attach only. Resume, saved history and usage are\n' "$subtext"
+    printf '  host-only for now.%s\n' "$reset"
+  fi
+
   if [[ -z "$executable" ]]; then
-    printf '\n  %s⚠ %s is not installed or is missing from PATH.%s\n' \
-      "$red$bold" "$name" "$reset"
+    if [[ "$in_container" == true ]]; then
+      printf '\n  %s⚠ %s was not found inside container %s.%s\n' \
+        "$red$bold" "$name" "$container" "$reset"
+    else
+      printf '\n  %s⚠ %s is not installed or is missing from PATH.%s\n' \
+        "$red$bold" "$name" "$reset"
+    fi
   fi
 }
 

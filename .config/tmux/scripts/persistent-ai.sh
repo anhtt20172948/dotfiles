@@ -39,9 +39,11 @@ server_name=${AI_POPUP_SERVER_NAME:-$AI_SERVER_DEFAULT}
 server_config="$LIB_DIR/../ai-popup.conf"
 picker="$LIB_DIR/ai-picker.sh"
 session_picker="$LIB_DIR/ai-sessions.sh"
+location_picker="$LIB_DIR/ai-location.sh"
 [[ -r "$server_config" ]] || pause_with_error 'dedicated tmux config is missing'
 [[ -x "$picker" ]] || pause_with_error 'AI picker is missing or not executable'
 [[ -x "$session_picker" ]] || pause_with_error 'AI session picker is missing or not executable'
+[[ -x "$location_picker" ]] || pause_with_error 'AI location picker is missing or not executable'
 
 project_dir=$PWD
 project_name=${project_dir##*/}
@@ -84,8 +86,17 @@ prune_stale_sessions() {
 # `[codex]=0` dereferences an unbound `codex`). Inside display-popup that abort
 # was invisible — the popup simply closed again.
 # ------------------------------------------------------------
+# refresh_running [location-filter]
+#   empty          -> every location (used by --latest, which is deliberately
+#                     location-agnostic: it attaches the newest agent wherever
+#                     it runs)
+#   host           -> host sessions, plus legacy sessions with no location tag
+#   container:NAME -> that container's sessions only
+# Scoping the per-tool counts to the chosen location is what makes the tool
+# picker say "● running" only about agents that actually live where you picked.
 refresh_running() {
-  local s_name s_tool s_path s_last s_activity s_created score
+  local filter=${1:-}
+  local s_name s_tool s_path s_last s_activity s_created s_loc score
   local latest_score=-1 latest_created=-1
   local candidate count
 
@@ -95,9 +106,10 @@ refresh_running() {
   latest_name=''
   latest_tool=''
 
-  while IFS='|' read -r s_name s_tool s_path s_last s_activity s_created; do
+  while IFS='|' read -r s_name s_tool s_path s_last s_activity s_created s_loc; do
     [ "$s_path" = "$project_dir" ] || continue
     tool_is_valid "$s_tool" || continue
+    location_matches "$filter" "$s_loc" || continue
 
     case "$s_tool" in
       codex)    running_codex=$((running_codex + 1)) ;;
@@ -117,7 +129,7 @@ refresh_running() {
       latest_created=$s_created
     fi
   done < <(tmux -L "$server_name" list-sessions \
-    -F '#{session_name}|#{@ai_popup_tool}|#{@ai_popup_path}|#{@ai_popup_last_attached_at}|#{session_activity}|#{session_created}' \
+    -F '#{session_name}|#{@ai_popup_tool}|#{@ai_popup_path}|#{@ai_popup_last_attached_at}|#{session_activity}|#{session_created}|#{@ai_popup_location}' \
     2>/dev/null || true)
 
   running_tools=''
@@ -139,26 +151,67 @@ running_count_for() {
   esac
 }
 
-# Escape in the tool-specific submenu returns here; Escape in the main picker
-# closes the popup. Sets action/tool/value, or returns 1 when the user backed
-# all the way out.
+# Choose where the tools run. Sets location/container and location_interactive.
+# When no container is running the picker is skipped entirely and the host is
+# selected silently, so the pre-Docker single-keystroke path is unchanged.
+# Returns 1 only when the user closed the popup at the location picker.
+pick_location() {
+  local containers selection note=''
+  containers=$(list_containers)
+  # Only probe for an error when the list is empty, so the working path (docker
+  # up, containers present) never pays for the second call.
+  [ -z "$containers" ] && note=$(docker_note)
+  if [ -z "$containers" ] && [ -z "$note" ]; then
+    # Nothing to choose between: no docker, or docker is fine but idle. Skip the
+    # step entirely and keep the host path a single keystroke.
+    location=host
+    container=''
+    location_interactive=0
+    return 0
+  fi
+  location_interactive=1
+  selection=$(AI_POPUP_DOCKER_NOTE="$note" "$location_picker")
+  [ -n "$selection" ] || return 1
+  location=$selection
+  container=$(location_container "$location")
+  return 0
+}
+
+# Three-level picker: location -> tool -> session. Escape is always "back one
+# level": from the session list back to the tool picker, from the tool picker
+# back to the location picker (or closed, when the location picker was skipped),
+# and from the location picker the popup closes. Sets action/tool/value plus
+# location/container, or returns 1 when the user backed all the way out.
 pick_interactive() {
   local selection selected_tool
 
   while :; do
-    tool=$(AI_POPUP_RUNNING_TOOLS="$running_tools" \
-      AI_POPUP_RUNNING_COUNTS="$running_counts" "$picker" --select)
-    [ -n "$tool" ] || return 1
-    tool_is_valid "$tool" || pause_with_error 'invalid AI tool'
+    pick_location || return 1
+    refresh_running "$location"
 
-    selection=$(AI_POPUP_SERVER_NAME="$server_name" "$session_picker" --tool "$tool")
-    # An empty selection means Escape in the submenu: go back a level to the tool
-    # picker, so Escape is always "back" and only quits once you are already at
-    # the tool picker.
-    [ -n "$selection" ] || continue
-    IFS=$'\t' read -r action selected_tool value <<<"$selection"
-    [ "$selected_tool" = "$tool" ] || pause_with_error 'invalid AI session selection'
-    return 0
+    while :; do
+      tool=$(AI_POPUP_RUNNING_TOOLS="$running_tools" \
+        AI_POPUP_RUNNING_COUNTS="$running_counts" \
+        AI_POPUP_LOCATION="$location" \
+        AI_POPUP_CONTAINER="$container" "$picker" --select)
+      if [ -z "$tool" ]; then
+        # Escape at the tool picker: step back to the location picker when it was
+        # shown, otherwise (host-only, picker skipped) close the popup.
+        [ "$location_interactive" = 1 ] && break
+        return 1
+      fi
+      tool_is_valid "$tool" || pause_with_error 'invalid AI tool'
+
+      selection=$(AI_POPUP_SERVER_NAME="$server_name" \
+        AI_POPUP_LOCATION="$location" \
+        AI_POPUP_CONTAINER="$container" "$session_picker" --tool "$tool")
+      # An empty selection means Escape in the submenu: go back to the tool
+      # picker.
+      [ -n "$selection" ] || continue
+      IFS=$'\t' read -r action selected_tool value <<<"$selection"
+      [ "$selected_tool" = "$tool" ] || pause_with_error 'invalid AI session selection'
+      return 0
+    done
   done
 }
 
@@ -167,8 +220,14 @@ prune_stale_sessions
 action=''
 tool=''
 value=''
+location=host
+container=''
+location_interactive=0
 
 while :; do
+  # No filter: --latest is location-agnostic, so this global scan finds the
+  # newest agent wherever it lives. pick_interactive re-scans scoped to the
+  # location once one is chosen.
   refresh_running
 
   # --latest with nothing running falls through to the pickers below.
@@ -206,13 +265,29 @@ resume_id=''
 created_at=''
 session_kind=''
 session_label=''
+container_path=''
+
+# A short, tmux-safe location tag so host and container sessions for the same
+# project get distinct names (and so a container name with slashes or spaces
+# cannot break the session name). Host stays plain "host".
+if [[ "$(location_kind "$location")" == container ]]; then
+  loc_slug=$(printf '%s' "$container" | tr -cs '[:alnum:]_-' '-')
+  loc_slug=${loc_slug#-}; loc_slug=${loc_slug%-}
+  loc_slug="c-${loc_slug:0:14}"
+else
+  loc_slug=host
+fi
 
 case "$action" in
   new)
     created_at=$(date '+%s')
     session_kind=new
-    session_label="New ${tool} · $(date '+%Y-%m-%d %H:%M')"
-    session_name="ai-${tool}-new-${safe_name:0:12}-${created_at}-$$"
+    if [[ "$loc_slug" == host ]]; then
+      session_label="New ${tool} · $(date '+%Y-%m-%d %H:%M')"
+    else
+      session_label="New ${tool} @${container} · $(date '+%Y-%m-%d %H:%M')"
+    fi
+    session_name="ai-${tool}-new-${loc_slug}-${safe_name:0:12}-${created_at}-$$"
     ;;
   attach)
     session_name=$value
@@ -242,31 +317,46 @@ session_target="=${session_name}"
 
 if [[ "$action" != attach ]] \
     && ! tmux -L "$server_name" has-session -t "$session_target" 2>/dev/null; then
-  executable=$(command -v "$tool" 2>/dev/null || true)
-  [[ -n "$executable" ]] || pause_with_error "'$tool' not found in PATH"
-  [[ -x "$executable" ]] || pause_with_error "AI executable is not runnable: $executable"
+  if [[ "$(location_kind "$location")" == container ]]; then
+    # Container: discover the tool INSIDE the container and rebase the host
+    # project path onto its mount. resume is host-only in v1, so only the plain
+    # `new` launch is reachable here.
+    executable=$(locate_tool "$location" "$tool" || true)
+    [[ -n "$executable" ]] || \
+      pause_with_error "'$tool' not found in container '$container'"
+    container_path=$(map_host_path_to_container "$container" "$project_dir")
+    # -it: the session's pty is the tty docker attaches to; -w runs the agent in
+    # the mapped directory. %q on every interpolation keeps a hostile container
+    # name or path from breaking out of the command.
+    printf -v launch_command 'exec docker exec -it -w %q %q %q' \
+      "$container_path" "$container" "$executable"
+  else
+    executable=$(command -v "$tool" 2>/dev/null || true)
+    [[ -n "$executable" ]] || pause_with_error "'$tool' not found in PATH"
+    [[ -x "$executable" ]] || pause_with_error "AI executable is not runnable: $executable"
 
-  case "$action" in
-    resume)
-      case "$tool" in
-        codex)
-          printf -v launch_command 'exec %q resume -C %q %q' \
-            "$executable" "$project_dir" "$resume_id"
-          ;;
-        opencode)
-          printf -v launch_command 'exec %q --session %q %q' \
-            "$executable" "$resume_id" "$project_dir"
-          ;;
-        claude)
-          printf -v launch_command 'exec %q --resume %q' \
-            "$executable" "$resume_id"
-          ;;
-      esac
-      ;;
-    *)
-      printf -v launch_command 'exec %q' "$executable"
-      ;;
-  esac
+    case "$action" in
+      resume)
+        case "$tool" in
+          codex)
+            printf -v launch_command 'exec %q resume -C %q %q' \
+              "$executable" "$project_dir" "$resume_id"
+            ;;
+          opencode)
+            printf -v launch_command 'exec %q --session %q %q' \
+              "$executable" "$resume_id" "$project_dir"
+            ;;
+          claude)
+            printf -v launch_command 'exec %q --resume %q' \
+              "$executable" "$resume_id"
+            ;;
+        esac
+        ;;
+      *)
+        printf -v launch_command 'exec %q' "$executable"
+        ;;
+    esac
+  fi
 
   if ! tmux -L "$server_name" -f "$server_config" new-session -d \
     -s "$session_name" -n "$tool" -c "$project_dir" "$launch_command" 2>/dev/null; then
@@ -279,6 +369,16 @@ fi
 # per session would only imply the global one does not work.
 tmux -L "$server_name" set-option -t "$session_name" @ai_popup_path "$project_dir"
 tmux -L "$server_name" set-option -t "$session_name" @ai_popup_tool "$tool"
+# Only stamp the location when we created the session. On attach we reuse an
+# existing session whose location we did NOT re-derive (latest mode defaults
+# location to host), so writing it here would mislabel a container session.
+if [[ "$action" != attach ]]; then
+  tmux -L "$server_name" set-option -t "$session_name" @ai_popup_location "$location"
+  [[ -n "$container" ]] && tmux -L "$server_name" set-option \
+    -t "$session_name" @ai_popup_container "$container"
+  [[ -n "$container_path" ]] && tmux -L "$server_name" set-option \
+    -t "$session_name" @ai_popup_container_path "$container_path"
+fi
 [[ -n "$session_kind" ]] && tmux -L "$server_name" set-option \
   -t "$session_name" @ai_popup_kind "$session_kind"
 [[ -n "$created_at" ]] && tmux -L "$server_name" set-option \

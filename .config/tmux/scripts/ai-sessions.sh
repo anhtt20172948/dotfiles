@@ -17,6 +17,12 @@ yellow=$AI_YELLOW
 red=$AI_RED
 subtext=$AI_SUBTEXT
 
+# Where the tools run. Inherited from persistent-ai.sh via the environment and
+# passed through into the fzf preview child. A container location lists only New
+# + live-attach entries: resume and saved history are host-only in v1.
+location=${AI_POPUP_LOCATION:-host}
+container=${AI_POPUP_CONTAINER:-}
+
 # ------------------------------------------------------------
 # On-screen prompts. Every byte of these goes to stderr, and that is not a
 # style choice — it is required.
@@ -229,9 +235,10 @@ link_new_session() {
   local unlinked='' unlinked_created=0 unlinked_count=0
   local claimed=' ' cand_id cand_epoch _t pick='' pick_count=0
 
-  while IFS='|' read -r name row_tool row_path id created _label; do
+  while IFS='|' read -r name row_tool row_path id created _label row_loc; do
     [[ -n "$name" ]] || continue
     [[ "$row_tool" == "$tool" && "$row_path" == "$PWD" ]] || continue
+    location_matches "$location" "$row_loc" || continue
     if [[ -n "$id" ]]; then
       claimed="${claimed}${id} "
       continue
@@ -265,15 +272,16 @@ link_new_session() {
 
   # Re-read so the entry builders below see the link we just made.
   running_rows=$(tmux -L "$server_name" list-sessions \
-    -F '#{session_name}|#{@ai_popup_tool}|#{@ai_popup_path}|#{@ai_popup_session_id}|#{session_created}|#{@ai_popup_label}' \
+    -F '#{session_name}|#{@ai_popup_tool}|#{@ai_popup_path}|#{@ai_popup_session_id}|#{session_created}|#{@ai_popup_label}|#{@ai_popup_location}' \
     2>/dev/null || true)
   return 0
 }
 
 running_name_for_id() {
-  local wanted=$1 name row_tool row_path id _created _label
-  while IFS='|' read -r name row_tool row_path id _created _label; do
+  local wanted=$1 name row_tool row_path id _created _label row_loc
+  while IFS='|' read -r name row_tool row_path id _created _label row_loc; do
     [[ "$row_tool" == "$tool" && "$row_path" == "$PWD" && "$id" == "$wanted" ]] || continue
+    location_matches "$location" "$row_loc" || continue
     printf '%s' "$name"
     return
   done <<<"${running_rows:-}"
@@ -347,10 +355,17 @@ preview_session() {
   IFS='|' read -r icon name color <<<"$details"
   updated=$(ai_fmt_epoch "$epoch" '%Y-%m-%d %H:%M %Z')
 
+  local in_container=false
+  [[ "$(location_kind "$location")" == container ]] && in_container=true
+
   case "$action" in
     new)
       status="${green}${bold}＋ Create a new conversation${reset}"
-      command="$preview_tool"
+      if [[ "$in_container" == true ]]; then
+        command="docker exec ${container} ${preview_tool}"
+      else
+        command="$preview_tool"
+      fi
       ;;
     attach)
       status="${green}${bold}● Running — Enter to attach${reset}"
@@ -372,6 +387,11 @@ preview_session() {
   printf '%s%sSESSION%s\n' "$mauve" "$bold" "$reset"
   printf '%s\n' "${lavender}──────────────────────────────────────────${reset}"
   printf '  %s%-11s%s %s\n' "$subtext" 'Status' "$reset" "$status"
+  if [[ "$in_container" == true ]]; then
+    printf '  %s%-11s%s %scontainer · %s%s\n' "$subtext" 'Location' "$reset" "$green" "$container" "$reset"
+  else
+    printf '  %s%-11s%s %s\n' "$subtext" 'Location' "$reset" 'host'
+  fi
   if [[ "$action" != new ]]; then
     printf '  %s%-11s%s %s\n' "$subtext" 'Updated' "$reset" "$updated"
   fi
@@ -408,14 +428,21 @@ have fzf || pause_with_message 'fzf is required for the session picker.'
 server_name=${AI_POPUP_SERVER_NAME:-$AI_SERVER_DEFAULT}
 
 while :; do
-  case "$tool" in
-    codex) saved_rows=$(list_codex_sessions | sort -t $'\t' -k2,2nr) ;;
-    opencode) saved_rows=$(list_opencode_sessions | sort -t $'\t' -k2,2nr) ;;
-    claude) saved_rows=$(list_claude_sessions | sort -t $'\t' -k2,2nr) ;;
-  esac
+  # Saved history lives in the tool's host data dirs; for a container location it
+  # would be the wrong machine's history, so container sessions are New + attach
+  # only (resume/history are host-only in v1).
+  if [[ "$(location_kind "$location")" == container ]]; then
+    saved_rows=''
+  else
+    case "$tool" in
+      codex) saved_rows=$(list_codex_sessions | sort -t $'\t' -k2,2nr) ;;
+      opencode) saved_rows=$(list_opencode_sessions | sort -t $'\t' -k2,2nr) ;;
+      claude) saved_rows=$(list_claude_sessions | sort -t $'\t' -k2,2nr) ;;
+    esac
+  fi
 
   running_rows=$(tmux -L "$server_name" list-sessions \
-    -F '#{session_name}|#{@ai_popup_tool}|#{@ai_popup_path}|#{@ai_popup_session_id}|#{session_created}|#{@ai_popup_label}' \
+    -F '#{session_name}|#{@ai_popup_tool}|#{@ai_popup_path}|#{@ai_popup_session_id}|#{session_created}|#{@ai_popup_label}|#{@ai_popup_location}' \
     2>/dev/null || true)
 
   # Must run after both lists are loaded and before any entry is built: it is
@@ -427,8 +454,9 @@ while :; do
     "$tool" "$now" "$name" "$green" "$bold" "$reset" "$subtext" "$name" "$reset"
 
   # Live sessions without a corresponding saved row get their own attach entry.
-  while IFS='|' read -r session_name row_tool row_path session_id created label; do
+  while IFS='|' read -r session_name row_tool row_path session_id created label row_loc; do
     [[ "$row_tool" == "$tool" && "$row_path" == "$PWD" ]] || continue
+    location_matches "$location" "$row_loc" || continue
     [[ -n "$session_id" ]] && saved_has_id "$session_id" && continue
     [[ -n "$label" ]] || label="Live ${name} session"
     updated=$(ai_fmt_epoch "$created" '%m-%d %H:%M')
@@ -457,6 +485,14 @@ while :; do
     entries+=$'\n'"$entry"
   done <<<"$saved_rows"
 
+  if [[ "$(location_kind "$location")" == container ]]; then
+    border_label=" ${name} Sessions ·  ${container} "
+    header_loc="Container: ${container}  •  Project: ${PWD}"
+  else
+    border_label=" ${name} Sessions "
+    header_loc="Current project: ${PWD}"
+  fi
+
   printf -v preview_command 'bash %q --preview {1} {2} {3} {4} {5} {6}' "${BASH_SOURCE[0]}"
   fzf_output=$(printf '%s\n' "$entries" | fzf \
     --ansi \
@@ -469,10 +505,10 @@ while :; do
     --layout=reverse \
     --margin=1,2 \
     --border=rounded \
-    --border-label=" ${name} Sessions " \
+    --border-label="$border_label" \
     --info=inline-right \
     --header-first \
-    --header=$'Ctrl-j/k move  •  Enter select  •  Ctrl-x stop  •  Ctrl-d delete  •  Esc back\nCurrent project: '"$PWD" \
+    --header=$'Ctrl-j/k move  •  Enter select  •  Ctrl-x stop  •  Ctrl-d delete  •  Esc back\n'"$header_loc" \
     --prompt="${icon}  ${name} › " \
     --pointer='' \
     --preview-window='right,48%,wrap,border-left' \
