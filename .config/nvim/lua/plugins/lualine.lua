@@ -92,6 +92,9 @@ return {
 			icons_enabled = true,
 			options = {
 				theme = my_lualine_theme,
+				-- statusline riêng cho từng window -> tên file nằm dưới đúng buffer đó,
+				-- không dồn về mép trái/neo-tree. (Đổi true để dùng 1 bar chung.)
+				globalstatus = false,
 				-- theme = "catppuccin",
 				-- component_separators = { left = "", right = "" },
 				-- section_separators = { left = "", right = "" },

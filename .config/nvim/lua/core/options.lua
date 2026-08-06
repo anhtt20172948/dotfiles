@@ -64,8 +64,10 @@ vim.opt.visualbell = false
 vim.cmd("set t_vb=")
 vim.opt.tm = 500
 
--- Global status line (one bar for all splits; pairs well with lualine)
-vim.opt.laststatus = 3
+-- Statusline theo TỪNG window: mỗi split (neo-tree, buffer code...) có bar riêng ở
+-- đáy của nó -> tên file hiện ngay dưới buffer đang mở, không dồn về mép trái/neo-tree.
+-- (Đổi về 3 nếu muốn một bar chung cho toàn màn hình.)
+vim.opt.laststatus = 2
 
 -- set cusorline
 vim.opt.cursorline = true
