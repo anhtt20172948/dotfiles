@@ -19,7 +19,10 @@ return {
 				dependencies = { "mason-org/mason.nvim" },
 				opts = {
 					ensure_installed = { "codelldb", "python" },
-					automatic_installation = true,
+					-- false: ensure_installed đã là nguồn cài duy nhất. true sẽ chạy thêm
+					-- một lượt install() song song trên cùng codelldb/debugpy -> mason
+					-- assert "Package is already installing".
+					automatic_installation = false,
 					handlers = {}, -- use default handlers so codelldb is registered
 				},
 			},
