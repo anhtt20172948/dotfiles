@@ -101,12 +101,150 @@ local function newest(pattern)
 	return best
 end
 
+-- cwd matching -----------------------------------------------------------
+-- Trong container project bind-mount tại /app (có thể là symlink) nên
+-- fs_realpath(getcwd()) lệch với cwd mà tool đã GHI (thường là /app raw) ->
+-- filter theo mỗi realpath loại sạch. Match theo TẬP ứng viên: raw + bỏ trailing
+-- slash + realpath. Trên host realpath == path nên chỉ 1 phần tử -> y như cũ.
+local function cwd_candidates(cwd)
+	local out, seen = {}, {}
+	local function add(p)
+		if type(p) == "string" and p ~= "" and not seen[p] then
+			seen[p] = true
+			out[#out + 1] = p
+		end
+	end
+	add(cwd)
+	add((cwd or ""):gsub("/+$", "")) -- gsub trả 2 giá trị; ngoặc cắt còn 1 khi truyền
+	add(vim.uv.fs_realpath(cwd))
+	return out
+end
+
+-- "AND <col> IN ('c1','c2',...)" đã escape. cands rỗng -> chuỗi rỗng (không lọc).
+local function in_list(col, cands)
+	if not cands or #cands == 0 then
+		return ""
+	end
+	local parts = {}
+	for _, c in ipairs(cands) do
+		parts[#parts + 1] = q(c)
+	end
+	return ("AND %s IN (%s)"):format(col, table.concat(parts, ", "))
+end
+
+local function set_of(list)
+	local s = {}
+	for _, v in ipairs(list or {}) do
+		s[v] = true
+	end
+	return s
+end
+
+-- Cảnh báo 1 lần / phiên (vd thiếu sqlite3 cho opencode).
+local warned = {}
+local function notify_once(key, msg, level)
+	if warned[key] then
+		return
+	end
+	warned[key] = true
+	vim.notify(msg, vim.log.levels[(level or "warn"):upper()] or vim.log.levels.WARN, { title = "AI history" })
+end
+
+-- Decode 1 DÒNG json; nil nếu dòng bị cắt hoặc không phải object. (Dùng chung cho
+-- codex jsonl fallback lẫn claude parser bên dưới -> khai báo sớm.)
+local function decode(line)
+	local ok, o = pcall(vim.json.decode, line, { luanil = { object = true, array = true } })
+	return (ok and type(o) == "table") and o or nil
+end
+
+-- codex JSONL fallback (khi thiếu sqlite3) --------------------------------
+-- codex ghi transcript ở ~/.codex/sessions/YYYY/MM/DD/rollout-<iso>-<uuid>.jsonl.
+-- Dòng đầu là session_meta {payload:{id,cwd,timestamp}}; user_message đầu tiên
+-- {payload:{type:"user_message",message}} làm title. Chỉ đọc HEAD nên rẻ.
+local codex_jsonl_cache = {} -- path -> { mtime, info }
+
+local function codex_head_info(path, mtime)
+	local c = codex_jsonl_cache[path]
+	if c and c.mtime == mtime then
+		return c.info
+	end
+	local f = io.open(path, "rb")
+	if not f then
+		return nil
+	end
+	local head = f:read(32 * 1024) or ""
+	f:close()
+	local info, count = {}, 0
+	for line in head:gmatch("[^\n]+") do
+		count = count + 1
+		if not info.cwd and line:find('"session_meta"', 1, true) then
+			local o = decode(line)
+			local p = o and o.payload
+			if p then
+				info.id, info.cwd = p.id, p.cwd
+			end
+		elseif not info.title and line:find('"user_message"', 1, true) then
+			local o = decode(line)
+			local p = o and o.payload
+			if p and p.type == "user_message" and type(p.message) == "string" then
+				info.title = p.message
+			end
+		end
+		if (info.cwd and info.title) or count > 200 then
+			break
+		end
+	end
+	codex_jsonl_cache[path] = { mtime = mtime, info = info }
+	return info
+end
+
+local function codex_jsonl(cands, limit)
+	local root = vim.fn.expand("~/.codex/sessions")
+	if vim.fn.isdirectory(root) == 0 then
+		return {}
+	end
+	local files = {}
+	for _, p in ipairs(vim.fn.glob(root .. "/**/*.jsonl", false, true)) do
+		local st = vim.uv.fs_stat(p)
+		if st and st.type == "file" and st.size > 0 then
+			files[#files + 1] = { path = p, mtime = st.mtime.sec }
+		end
+	end
+	table.sort(files, function(a, b)
+		return a.mtime > b.mtime
+	end)
+
+	local match = cands and set_of(cands) or nil
+	local out = {}
+	for _, e in ipairs(files) do
+		if #out >= limit then
+			break
+		end
+		local i = codex_head_info(e.path, e.mtime)
+		if i and i.id and (not match or (i.cwd and match[i.cwd])) then
+			out[#out + 1] = {
+				tool = "codex",
+				id = i.id,
+				cwd = i.cwd,
+				title = oneline(i.title, M.config.title_width),
+				prompt = oneline(i.title, M.config.prompt_width),
+				time = e.mtime, -- mtime thay ISO->epoch: tránh lệch TZ, đủ để sort
+			}
+		end
+	end
+	return out
+end
+
 -- codex ------------------------------------------------------------------
-local function codex(cwd, limit)
+local function codex(cands, limit)
+	-- Thiếu sqlite3 (hay gặp trong container tối giản) -> đọc jsonl thuần Lua.
+	if not sqlite_bin() then
+		return codex_jsonl(cands, limit)
+	end
 	local db = newest(vim.fn.expand("~/.codex/state_*.sqlite"))
 	local sql = ([[SELECT id, cwd, title, first_user_message, git_branch, updated_at_ms
 		FROM threads WHERE archived = 0 %s ORDER BY updated_at_ms DESC LIMIT %d;]]):format(
-		cwd and ("AND cwd = " .. q(cwd)) or "",
+		in_list("cwd", cands),
 		limit
 	)
 	local out = {}
@@ -125,12 +263,17 @@ local function codex(cwd, limit)
 end
 
 -- opencode ---------------------------------------------------------------
-local function opencode(cwd, limit)
+local function opencode(cands, limit)
+	-- opencode CHỈ có store sqlite (không có bản jsonl) -> không có fallback.
+	if not sqlite_bin() then
+		notify_once("opencode_sqlite", "opencode history cần sqlite3 — cài `sqlite3` trong container để bật")
+		return {}
+	end
 	local db = vim.fn.expand("~/.local/share/opencode/opencode.db")
 	-- parent_id NOT NULL = session của subagent -> lọc ra.
 	local sql = ([[SELECT id, directory, title, time_updated FROM session
 		WHERE parent_id IS NULL AND time_archived IS NULL %s
-		ORDER BY time_updated DESC LIMIT %d;]]):format(cwd and ("AND directory = " .. q(cwd)) or "", limit)
+		ORDER BY time_updated DESC LIMIT %d;]]):format(in_list("directory", cands), limit)
 	local out = {}
 	for _, r in ipairs(sqlite_json(db, sql)) do
 		out[#out + 1] = {
@@ -146,11 +289,7 @@ end
 
 -- claude -----------------------------------------------------------------
 
--- Decode 1 DÒNG json; nil nếu dòng bị cắt hoặc không phải object.
-local function decode(line)
-	local ok, o = pcall(vim.json.decode, line, { luanil = { object = true, array = true } })
-	return (ok and type(o) == "table") and o or nil
-end
+-- (decode() được khai báo sớm ở phần cwd matching để codex jsonl fallback dùng chung.)
 
 -- Rẻ với file 5 MB: chỉ 2 lần read 64 KB, và chỉ json-decode những dòng NHỎ
 -- đã lọc trước bằng string.find (ai-title ~129 B, last-prompt ~292 B).
@@ -222,18 +361,29 @@ local function parse_jsonl(path, size)
 	return info
 end
 
-local function claude(cwd, limit)
+local function claude(cands, limit)
 	local root = vim.fn.expand("~/.claude/projects")
-	-- slug = cwd với mọi ký tự không alphanumeric -> "-"
+	-- slug = cwd với mọi ký tự không alphanumeric -> "-". Mỗi candidate cwd có thể
+	-- ra một slug khác (container /app vs realpath) -> glob TỪNG slug rồi gộp.
 	-- glob depth-1 nên subagents/*.jsonl và memory/ tự bị loại.
-	local pattern = cwd and (root .. "/" .. cwd:gsub("[^%w]", "-") .. "/*.jsonl") or (root .. "/*/*.jsonl")
-
-	local files = {}
-	for _, p in ipairs(vim.fn.glob(pattern, false, true)) do
-		local st = vim.uv.fs_stat(p)
-		if st and st.type == "file" and st.size > 0 then
-			files[#files + 1] = { path = p, mtime = st.mtime.sec, size = st.size }
+	local files, seen = {}, {}
+	local function collect(pattern)
+		for _, p in ipairs(vim.fn.glob(pattern, false, true)) do
+			if not seen[p] then
+				local st = vim.uv.fs_stat(p)
+				if st and st.type == "file" and st.size > 0 then
+					seen[p] = true
+					files[#files + 1] = { path = p, mtime = st.mtime.sec, size = st.size }
+				end
+			end
 		end
+	end
+	if cands then
+		for _, c in ipairs(cands) do
+			collect(root .. "/" .. c:gsub("[^%w]", "-") .. "/*.jsonl")
+		end
+	else
+		collect(root .. "/*/*.jsonl")
 	end
 	table.sort(files, function(a, b)
 		return a.mtime > b.mtime
@@ -254,7 +404,7 @@ local function claude(cwd, limit)
 			out[#out + 1] = {
 				tool = "claude",
 				id = vim.fn.fnamemodify(e.path, ":t:r"), -- session uuid = tên file
-				cwd = i2.cwd or cwd,
+				cwd = i2.cwd or (cands and cands[1]),
 				branch = i2.branch,
 				title = oneline(i2.title, M.config.title_width) or oneline(strip_tags(i2.first), M.config.title_width),
 				prompt = oneline(i2.prompt, M.config.prompt_width),
@@ -268,23 +418,30 @@ end
 
 -- public -----------------------------------------------------------------
 
--- codex/opencode lưu realpath -> resolve symlink để so sánh cwd không lệch.
+-- Dùng cho việc LAUNCH session mới (cd vào một dir thật). Giữ realpath như cũ.
 function M.project_cwd()
 	local cwd = vim.fn.getcwd()
 	return vim.uv.fs_realpath(cwd) or cwd
 end
 
+-- Dùng cho việc SCOPE/lọc history: trả cwd RAW của nvim. M.list tự dựng thêm
+-- realpath vào tập ứng viên -> khớp cả path mount (/app) lẫn realpath.
+function M.scope_cwd()
+	return vim.fn.getcwd()
+end
+
 --- Danh sách session cũ trên đĩa, mới nhất trước.
----@param cwd? string nil = mọi thư mục
+---@param cwd? string nil = mọi thư mục; nếu có -> match theo tập ứng viên (raw+realpath)
 ---@param limit? number ghi đè M.config.limit. Là giới hạn MỖI TOOL, không phải
 ---  tổng - caller muốn đúng N dòng thì tự cắt list trả về (dashboard làm vậy).
 function M.list(cwd, limit)
 	limit = limit or M.config.limit
+	local cands = cwd and cwd_candidates(cwd) or nil
 	local out = {}
 	local ok, err = pcall(function()
-		vim.list_extend(out, claude(cwd, limit))
-		vim.list_extend(out, codex(cwd, limit))
-		vim.list_extend(out, opencode(cwd, limit))
+		vim.list_extend(out, claude(cands, limit))
+		vim.list_extend(out, codex(cands, limit))
+		vim.list_extend(out, opencode(cands, limit))
 	end)
 	if not ok then
 		vim.notify("aiterm history: " .. tostring(err), vim.log.levels.WARN)
@@ -297,6 +454,76 @@ end
 
 function M.invalidate()
 	claude_cache = {}
+	codex_jsonl_cache = {}
+end
+
+-- Chẩn đoán: vì sao picker không thấy session (thường do cwd scoping hoặc thiếu
+-- sqlite3). Mở scratch buffer báo cáo HOME/cwd/candidates/binary + đếm scoped vs
+-- all-dirs cho từng tool + vài cwd mẫu đã ghi. Gắn với <leader>ad.
+function M.doctor()
+	local raw = vim.fn.getcwd()
+	local real = vim.uv.fs_realpath(raw)
+	local cands = cwd_candidates(raw)
+
+	local all = M.list(nil, 500)
+	local scoped = M.list(raw, 500)
+	local function counts(list)
+		local c = { claude = 0, codex = 0, opencode = 0 }
+		for _, e in ipairs(list) do
+			c[e.tool] = (c[e.tool] or 0) + 1
+		end
+		return c
+	end
+	local ca, cs = counts(all), counts(scoped)
+
+	-- vài cwd mẫu (all-dirs) để so với candidates -> thấy ngay path lệch chỗ nào.
+	local samples, seen = {}, {}
+	for _, e in ipairs(all) do
+		if e.cwd and not seen[e.cwd] and #samples < 8 then
+			seen[e.cwd] = true
+			samples[#samples + 1] = ("  [%s] %s"):format(e.tool, e.cwd)
+		end
+	end
+
+	local function yn(p)
+		return (p and p ~= "" and vim.uv.fs_stat(p)) and ("ok  " .. p) or ("MISSING  " .. tostring(p))
+	end
+
+	local lines = {
+		"# aiterm history doctor",
+		"",
+		"HOME        : " .. (vim.env.HOME or "?"),
+		"getcwd      : " .. raw,
+		"realpath    : " .. (real or "(nil)"),
+		"candidates  : " .. table.concat(cands, "   |   "),
+		"sqlite3     : " .. (sqlite_bin() or "(MISSING -> codex dùng jsonl fallback, opencode tắt)"),
+		"",
+		"## stores",
+		"claude proj : " .. yn(vim.fn.expand("~/.claude/projects")),
+		"codex sqlite: " .. yn(newest(vim.fn.expand("~/.codex/state_*.sqlite")) or ""),
+		"codex jsonl : " .. yn(vim.fn.expand("~/.codex/sessions")),
+		"opencode db : " .. yn(vim.fn.expand("~/.local/share/opencode/opencode.db")),
+		"",
+		"## counts (scoped cwd / all dirs)",
+		("claude      : %d / %d"):format(cs.claude, ca.claude),
+		("codex       : %d / %d"):format(cs.codex, ca.codex),
+		("opencode    : %d / %d"):format(cs.opencode, ca.opencode),
+		"",
+		"## sample recorded cwd (all dirs)",
+	}
+	vim.list_extend(lines, #samples > 0 and samples or { "  (none)" })
+	lines[#lines + 1] = ""
+	lines[#lines + 1] = "Gợi ý: nếu 'all dirs' > 0 mà 'scoped' = 0 -> cwd hiện tại không khớp cwd đã ghi"
+	lines[#lines + 1] = "ở trên. Mở nvim ĐÚNG thư mục dự án, hoặc dùng <A-a> trong picker để xem tất cả."
+
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	vim.bo[buf].filetype = "markdown"
+	vim.bo[buf].modifiable = false
+	vim.cmd("botright split")
+	local w = vim.api.nvim_get_current_win()
+	vim.api.nvim_win_set_buf(w, buf)
+	vim.api.nvim_win_set_height(w, math.min(#lines + 1, 22))
 end
 
 return M
