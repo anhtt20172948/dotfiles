@@ -89,6 +89,27 @@ return {
 			mode = "n",
 		},
 		{
+			-- Lệnh ECC CẤP REPO (/code-review, /build-fix, /quality-gate...). Tách khỏi
+			-- <leader>ai vì chúng chạy git diff / npx trên cả project, bỏ qua đoạn code
+			-- đang chọn -> gửi không kèm context file.
+			"<leader>aw",
+			function()
+				require("customize.aiterm").workflows()
+			end,
+			desc = "AI: ECC workflow (repo-wide)",
+			mode = "n",
+		},
+		{
+			-- Trạng thái ECC (skills/commands cho AI tool) + cài/cập nhật từng tool.
+			-- Tool chưa có ECC cũng hiện sẵn 1 dòng trong picker <leader>aa.
+			"<leader>aE",
+			function()
+				require("customize.aiterm").ecc()
+			end,
+			desc = "AI: ECC skills (install/update)",
+			mode = "n",
+		},
+		{
 			-- Chốt tool mặc định (auto-tạo khi chưa có session), lưu qua các lần mở nvim.
 			"<leader>aD",
 			function()

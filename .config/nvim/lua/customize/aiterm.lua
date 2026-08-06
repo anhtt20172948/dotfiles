@@ -45,6 +45,7 @@ M.icon_sets = {
 		new = c(0xF067), -- plus
 		browse = c(0xF002), -- search
 		install = c(0xF019), -- download
+		ecc = c(0xF1B2), -- cube (bộ skill/command của ECC)
 		branch = c(0xF418), -- git-branch
 		all_dirs = c(0xF07C), -- folder-open
 		-- icon từng field của preview (f_ = field)
@@ -68,6 +69,9 @@ M.icon_sets = {
 		tests = c(0xF0C3), -- flask
 		refactor = c(0xF021), -- refresh
 		docs = c(0xF02D), -- book
+		security = c(0xF132), -- shield
+		plan = c(0xF0AE), -- tasks
+		quality = c(0xF14A), -- check-square
 	},
 	-- Bộ "chạy mọi nơi": MỌI codepoint dưới đây đã kiểm có trong CẢ SFMono NF lẫn
 	-- JetBrainsMono NF. Cẩn thận khi đổi: nvim_strwidth trả 1 kể cả với glyph font
@@ -84,6 +88,7 @@ M.icon_sets = {
 		browse = c(0x00BB), -- »
 		-- KHÔNG dùng U+26A0 warning: đã kiểm là THIẾU trong SFMono NF.
 		install = c(0x2193), -- ↓
+		ecc = c(0x2318), -- ⌘
 		branch = "*", -- git hay đánh dấu nhánh hiện tại bằng *
 		all_dirs = c(0x00A4), -- ¤
 		-- Field trong preview đã có NHÃN CHỮ bên cạnh nên icon chỉ là dấu dẫn:
@@ -106,6 +111,9 @@ M.icon_sets = {
 		tests = c(0x2713), -- ✓
 		refactor = c(0x2192), -- →
 		docs = c(0x2261), -- ≡
+		security = c(0x2020), -- †
+		plan = c(0x00B6), -- ¶
+		quality = c(0x25A0), -- ■
 	},
 	ascii = {
 		claude = "C",
@@ -116,6 +124,7 @@ M.icon_sets = {
 		new = "+",
 		browse = "?",
 		install = "!",
+		ecc = "E",
 		branch = "*",
 		all_dirs = "/",
 		f_model = "-",
@@ -136,6 +145,9 @@ M.icon_sets = {
 		tests = "v",
 		refactor = "~",
 		docs = "=",
+		security = "S",
+		plan = "P",
+		quality = "Q",
 	},
 }
 
@@ -266,14 +278,66 @@ M.config = {
 	-- Preset cho picker M.actions(). `key` khớp icon trong M.icons() (hiện icon ở
 	-- menu + hint). `prompt` là câu lệnh cố định; `input` (nếu có) hỏi câu hỏi tự do
 	-- qua vim.fn.input rồi dùng thay cho prompt.
+	--
+	-- `skill` (tuỳ chọn) là SKILL của ECC khớp với việc đó. Lúc gửi sẽ dò trên đĩa
+	-- (aiterm_ecc.skills): có thì chèn thêm dòng "Follow the `x` skill.", không có thì
+	-- gửi đúng `prompt` như cũ. Message vẫn kèm @ref + khối code như thường.
+	--
+	-- Vì sao KHÔNG dùng command của ECC ở đây: command là quy trình CẤP REPO -
+	-- /code-review chạy `git diff --name-only HEAD`, /build-fix chạy `npx tsc --noEmit`,
+	-- /refactor-clean chạy `npx knip` - chúng bỏ qua hoàn toàn đoạn code đang chọn.
+	-- Chúng nằm ở M.workflows() (<leader>aw), nơi gửi không kèm context.
+	--
+	-- Vì sao chỉ 3 action có `skill`: đã đọc mô tả cả 207 skill, không có cái nào cho
+	-- "explain đoạn này" / "review đoạn này" / "viết docstring". code-tour là tạo file
+	-- .tour, plankton-code-quality là chạy formatter lúc ghi file, plan-canvas là mở
+	-- plan trong browser. Gán bừa chỉ làm prompt tệ đi.
 	actions = {
 		{ key = "explain", label = "Explain", prompt = "Explain what this code does, step by step." },
 		{ key = "ask", label = "Ask a question", input = "Ask about this code: " },
 		{ key = "fix", label = "Fix bugs", prompt = "Find and fix any bugs in this code. Explain the fix." },
-		{ key = "review", label = "Review", prompt = "Review this code for correctness, edge cases, and style issues." },
-		{ key = "tests", label = "Write tests", prompt = "Write tests for this code." },
-		{ key = "refactor", label = "Refactor", prompt = "Refactor this code to be clearer and more idiomatic, without changing its behavior." },
+		{
+			key = "review",
+			label = "Review",
+			prompt = "Review this code for correctness, edge cases, and style issues.",
+		},
+		{
+			key = "tests",
+			label = "Write tests",
+			prompt = "Write tests for this code.",
+			skill = "tdd-workflow",
+		},
+		{
+			key = "refactor",
+			label = "Refactor",
+			prompt = "Refactor this code to be clearer and more idiomatic, without changing its behavior.",
+		},
 		{ key = "docs", label = "Add docs", prompt = "Add documentation/docstrings to this code." },
+		{
+			key = "security",
+			label = "Security scan",
+			prompt = "Audit this code for security vulnerabilities. Report severity and a fix for each.",
+			skill = "security-review",
+		},
+		{
+			key = "plan",
+			label = "Plan",
+			prompt = "Write an implementation plan for a change to this code. Do not write code yet.",
+		},
+		{
+			key = "quality",
+			label = "Quality gate",
+			prompt = "Run the quality checks for this code: lint, types, tests. Report what fails.",
+			skill = "verification-loop",
+		},
+	},
+
+	-- Ngoại lệ khi gửi command ECC ở M.workflows(). Mặc định gửi trơn "/tên".
+	--   path - lệnh nhận đường dẫn (`/quality-gate [path|.]`) -> thêm "."
+	--   ask  - lệnh nhận mô tả tự do qua $ARGUMENTS -> hỏi vim.fn.input
+	workflow_args = {
+		path = { "quality-gate", "security-scan" },
+		ask = { plan = "Plan what? ", ["plan-prd"] = "PRD for: ", tdd = "TDD for: " },
 	},
 }
 
@@ -285,6 +349,24 @@ local last_session = nil -- id session attach gần nhất
 
 local function history()
 	return require("customize.aiterm_history")
+end
+
+-- ECC module là TUỲ CHỌN: thiếu/ lỗi thì nhớ lỗi và trả nil (không dò lại mỗi lần).
+-- Mọi caller đều suy biến thành "không có ECC" thay vì làm vỡ picker/doctor.
+local ecc_mod, ecc_err
+local function ecc()
+	if ecc_mod or ecc_err then
+		return ecc_mod
+	end
+	-- pcall trả (ok, kết quả) - gán thẳng vào (ecc_mod, ecc_err) là ecc_mod nhận đúng
+	-- cờ boolean `true`, rồi mọi caller đi index một boolean. Phải tách hai biến ra.
+	local ok, mod = pcall(require, "customize.aiterm_ecc")
+	if ok then
+		ecc_mod = mod
+	else
+		ecc_err = true
+	end
+	return ecc_mod
 end
 
 -- helpers ----------------------------------------------------------------
@@ -498,6 +580,58 @@ local function install_tool(tool)
 	}))
 end
 
+-- Cài/cập nhật ECC cho một tool. Rủi ro cao hơn install_tool: clone repo bên thứ ba,
+-- `npm install` chạy lifecycle script tuỳ ý, rồi installer GHI vào ~/.claude / ~/.codex
+-- (bản sync codex còn sửa AGENTS.md + config.toml, có backup dấu thời gian). Vì vậy
+-- hiện NGUYÊN danh sách lệnh, confirm mặc định No, chạy trong pane để đọc được output.
+local function install_ecc(tool)
+	if not tool then
+		return
+	end
+	local e = ecc()
+	if not e then
+		notify("ECC module unavailable - cannot install", "warn")
+		return
+	end
+	local steps, why = e.steps(tool.name)
+	if not steps then
+		notify(why or "ECC install not supported here", "warn")
+		return
+	end
+	local miss = e.missing_deps()
+	if #miss > 0 then
+		notify(("ECC needs %s on PATH - install %s first"):format(table.concat(miss, " + "), miss[1]), "warn")
+		return
+	end
+
+	local lines = { ("Install ECC for %s?"):format(tool.name), "" }
+	vim.list_extend(lines, steps)
+	lines[#lines + 1] = ""
+	lines[#lines + 1] = "This clones a third-party repo and runs its installer."
+	if tool.name == "opencode" then
+		-- Không đổi ngầm: profile cấu hình là minimal nhưng README của ECC chỉ ghi
+		-- --profile full cho target opencode.
+		lines[#lines + 1] = ("Note: opencode uses --profile full (config profile is %s)."):format(e.config.profile)
+	end
+	if vim.fn.confirm(table.concat(lines, "\n"), "&Yes\n&No", 2) ~= 1 then
+		return
+	end
+
+	attach(new_session(tool, {
+		cmd = { vim.o.shell, "-c", table.concat(steps, " && ") },
+		cwd = history().project_cwd(),
+		title = "ecc",
+		on_exit = function(code)
+			e.refresh() -- dò lại đĩa: dòng picker biến mất, action bắt đầu dùng /command
+			if code == 0 then
+				notify(("ECC installed for %s (%d commands)"):format(tool.name, e.count(tool.name)), "info")
+			else
+				notify(("ECC install failed (exit %d) - see the pane output"):format(code), "warn")
+			end
+		end,
+	}))
+end
+
 -- codex archive HOÀN TÁC được (codex unarchive); opencode session delete và xoá
 -- file jsonl của claude thì KHÔNG -> caller phải confirm trước khi gọi.
 local function delete_entry(tool, e)
@@ -520,6 +654,7 @@ local KIND_HL = {
 	new = "SnacksPickerLabel",
 	browse = "SnacksPickerSpecial",
 	install = "DiagnosticWarn", -- amber, khác hẳn mọi màu khác trong dòng
+	ecc = "SnacksPickerSpecial", -- không phải cảnh báo: tool vẫn chạy tốt khi thiếu ECC
 }
 
 -- Cột tool bên trái: "opencode" (8) + icon (1) + dấu cách (1) = 10, chừa 1 cột đệm.
@@ -640,6 +775,33 @@ local function preview_text(item)
 			"Downloads and runs a remote script.",
 			"Read the URL before continuing.",
 			"<CR> runs it in the AI pane - you will be asked to confirm first.",
+		}, "SnacksPickerDimmed")
+		return doc_done(d)
+	end
+
+	-- Cũng BẮT BUỘC early-return, cùng lý do với install: không có item.entry.
+	if item.kind == "ecc" then
+		local e = ecc()
+		if not e then
+			return doc_done(d)
+		end
+		doc_title(d, "ecc", "Install ECC for " .. tool.name, "SnacksPickerSpecial")
+		doc_row(d, "f_prompt", "what", "281 skills + 94 commands for AI coding")
+		doc_row(d, "f_cwd", "clone to", vim.fn.fnamemodify(e.dir(), ":~"))
+		doc_row(d, "f_cmd", "reads", vim.fn.fnamemodify(e.source_dirs(tool.name)[1] or "?", ":~"))
+		doc_section(d, "f_cmd", "Commands to run")
+		doc_block(d, e.steps(tool.name) or { "(unsupported target)" })
+		doc_section(d, "install", "Heads up")
+		doc_block(d, {
+			"Third-party repo: it is cloned, then npm install runs",
+			"its lifecycle scripts and the installer writes into",
+			"your ~/.claude / ~/.codex config.",
+			"<CR> runs it in the AI pane - you will confirm first.",
+		}, "SnacksPickerDimmed")
+		doc_section(d, "f_prompt", "After installing")
+		doc_block(d, {
+			"<leader>ai actions switch from hand-written prompts",
+			"to ECC commands (/code-review, /build-fix, ...).",
 		}, "SnacksPickerDimmed")
 		return doc_done(d)
 	end
@@ -813,6 +975,10 @@ local function format_item(item, picker)
 		-- phải có nhánh riêng: rơi vào else sẽ đọc tool.browse_label -> meta sai.
 		title_hl = "DiagnosticWarn"
 		segs[#segs + 1] = { "install", "DiagnosticWarn", drop = 1 }
+	elseif item.kind == "ecc" then
+		-- cũng phải có nhánh riêng, cùng lý do với install.
+		title_hl = "SnacksPickerSpecial"
+		segs[#segs + 1] = { "not installed", "SnacksPickerDimmed", drop = 1 }
 	else
 		-- title chỉ là args; binary đã nằm ở cột tool -> đọc thành "claude  --resume".
 		title_hl = "SnacksPickerCode"
@@ -866,11 +1032,24 @@ local FOOTER = {
 	{ "keys ", "SnacksPickerDimmed" },
 }
 
+-- Footer riêng cho M.workflows: bộ phím khác hẳn (không resume/fork/delete), mà dùng
+-- chung FOOTER thì quảng cáo phím không tồn tại. M-t là phím DUY NHẤT ở picker đó
+-- không đoán được từ nội dung, nên bắt buộc phải có mặt.
+local WF_FOOTER = {
+	{ " <CR> ", "SnacksPickerLabel" },
+	{ "run  ", "SnacksPickerDimmed" },
+	{ "M-t ", "SnacksPickerLabel" },
+	{ "tool  ", "SnacksPickerDimmed" },
+	{ "? ", "SnacksPickerLabel" },
+	{ "keys ", "SnacksPickerDimmed" },
+}
+
 -- Tự khai layout.layout thì snacks BỎ QUA toàn bộ preset resolution
 -- (config/init.lua: `if not (layout.layout and layout.layout[1])`), nghĩa là mất
 -- luôn fallback sang "vertical" khi terminal hẹp. Nên phải tự branch, dùng đúng
 -- ngưỡng 120 cột mà preset mặc định của snacks đang dùng.
-local function build_layout()
+---@param footer table[] key hints của chính picker gọi nó (xem FOOTER / WF_FOOTER)
+local function build_layout(footer)
 	if vim.o.columns < 120 then
 		return {
 			layout = {
@@ -881,7 +1060,7 @@ local function build_layout()
 				border = "rounded",
 				title = "{title} {flags}",
 				title_pos = "center",
-				footer = FOOTER,
+				footer = footer,
 				footer_pos = "center",
 				{ win = "input", height = 1, border = "bottom" },
 				{ win = "list", border = "none" },
@@ -900,7 +1079,7 @@ local function build_layout()
 				border = "rounded",
 				title = "{title} {flags}",
 				title_pos = "center",
-				footer = FOOTER,
+				footer = footer,
 				footer_pos = "center",
 				{ win = "input", height = 1, border = "bottom" },
 				{ win = "list", border = "none" },
@@ -974,6 +1153,17 @@ local function build_items(all_dirs)
 		end
 	end
 
+	-- Đã có binary nhưng chưa có command của ECC -> mời cài. Cài xong dò lại thấy có
+	-- command nên dòng này tự biến mất; đường cập nhật về sau là M.ecc() (<leader>aE).
+	for _, t in ipairs(M.config.tools) do
+		if not needs_install[t.name] then
+			local e = ecc()
+			if e and not e.installed(t.name) then
+				items[#items + 1] = { kind = "ecc", tool = t, text = "ecc " .. t.name }
+			end
+		end
+	end
+
 	-- item.title là field THẬT trên item, không phải chỉ để hiển thị: matcher lọc
 	-- `title:redis` bằng item[field] (matcher.lua M:match -> item[mods.field]),
 	-- chứ KHÔNG đọc text đã render. Không set ở đây thì `title:` luôn ra 0 kết quả.
@@ -987,6 +1177,8 @@ local function build_items(all_dirs)
 		elseif it.kind == "install" then
 			-- nhánh riêng: else phía dưới trả browse args -> sai cho install.
 			it.title = "not installed"
+		elseif it.kind == "ecc" then
+			it.title = "Add ECC skills & commands"
 		else
 			it.title = table.concat(it.tool.browse or {}, " ")
 		end
@@ -1035,7 +1227,35 @@ end
 
 -- Chẩn đoán vì sao picker không thấy session (cwd scoping / thiếu sqlite3...).
 function M.doctor()
-	history().doctor()
+	-- Mục ECC nối vào cùng buffer với history doctor. Có nó vì trạng thái "installer
+	-- chạy xong rồi mà tool vẫn không thấy command" (opencode dàn file ra ~/.opencode,
+	-- không phải chỗ nó đọc) nhìn y hệt "chưa cài" - không có cách nào tự phát hiện.
+	local e = ecc()
+	local lines
+	if e then
+		lines = { "## ECC (skills/commands cho AI tool)", "clone       : " .. e.dir() }
+		for _, t in ipairs(M.config.tools) do
+			local n = e.count(t.name)
+			-- commands = quy trình cấp repo (<leader>aw); skills = tài liệu áp lên đoạn
+			-- code đang chọn (<leader>ai). Hai con số này lệch nhau là bình thường.
+			local sk = vim.tbl_count(e.skills(t.name))
+			local dir = e.source_dirs(t.name)[1] or "?"
+			lines[#lines + 1] = ("%-12s: %3d commands  %3d skills  %s"):format(t.name, n, sk, dir)
+			local pinned, pn = e.anthropic_pins(t.name)
+			if pinned then
+				lines[#lines + 1] = ("%-12s  ! %d chỗ pin model anthropic/* trong %s"):format("", pn, pinned)
+				lines[#lines + 1] = ("%-12s    -> chạy lại <leader>aE để gỡ pin"):format("")
+			end
+		end
+		lines[#lines + 1] = "Gợi ý: 0 commands -> <leader>ai gửi prompt viết tay thay cho /command."
+		lines[#lines + 1] = "Cài/cập nhật bằng <leader>aE, hoặc dòng ECC trong picker <leader>aa."
+	else
+		lines = {
+			"## ECC (skills/commands cho AI tool)",
+			"module 'customize.aiterm_ecc' không tải được - bỏ qua mục này.",
+		}
+	end
+	history().doctor(lines)
 end
 
 --- Picker chính: live session + session cũ trên đĩa + tạo mới + fallback.
@@ -1068,7 +1288,7 @@ function M.pick(opts)
 		end,
 		format = format_item,
 		preview = "preview",
-		layout = build_layout(),
+		layout = build_layout(FOOTER),
 		confirm = function(picker, item)
 			if not item then
 				return
@@ -1080,6 +1300,8 @@ function M.pick(opts)
 					M.resume(item.entry)
 				elseif item.kind == "install" then
 					install_tool(item.tool)
+				elseif item.kind == "ecc" then
+					install_ecc(item.tool)
 				elseif item.kind == "browse" then
 					attach(new_session(item.tool, {
 						args = item.tool.browse,
@@ -1102,6 +1324,12 @@ function M.pick(opts)
 				if item.kind == "install" then
 					run(picker, function()
 						install_tool(item.tool)
+					end)
+					return
+				end
+				if item.kind == "ecc" then
+					run(picker, function()
+						install_ecc(item.tool)
 					end)
 					return
 				end
@@ -1335,21 +1563,28 @@ end
 --   3. session còn sống đầu tiên
 -- Trả nil nếu không có session nào sống. KHÔNG tự tạo: M.send cần biết "chưa có
 -- session" để nhúng prompt vào lệnh launch thay vì paste vào TUI đang boot.
-local function target_session()
+-- `tool` (tuỳ chọn) khoá kết quả về đúng tool đó. Cần cho M.workflows: lệnh ECC có
+-- tiền tố riêng từng tool (/ecc-code-review của codex), dán nhầm vào session opencode
+-- là gửi đi một dòng chữ vô nghĩa. Lọc phải áp cho CẢ BA nhánh - sót một nhánh là nó
+-- lặng lẽ trả về session sai tool.
+local function target_session(tool)
+	local function usable(s)
+		return is_alive(s) and (tool == nil or s.tool == tool)
+	end
 	if win_valid() then
 		local buf = vim.api.nvim_win_get_buf(win)
 		for _, s in ipairs(sessions) do
-			if s.buf == buf and is_alive(s) then
+			if s.buf == buf and usable(s) then
 				return s
 			end
 		end
 	end
 	local s = last_session and find(last_session)
-	if is_alive(s) then
+	if usable(s) then
 		return s
 	end
 	for _, cand in ipairs(sessions) do
-		if is_alive(cand) then
+		if usable(cand) then
 			return cand
 		end
 	end
@@ -1414,17 +1649,19 @@ end
 
 --- Gửi text vào session AI đang chạy (tạo mới nếu chưa có), tuỳ chọn submit luôn.
 ---@param text string
----@param opts? { submit?: boolean }
+---@param opts? { submit?: boolean, tool?: table }
 function M.send(text, opts)
 	opts = opts or {}
-	local session = target_session() -- CHỈ tìm session đang sống
+	-- opts.tool: khoá đích về đúng tool (M.workflows). Không truyền -> hành vi y hệt
+	-- trước: bất kỳ session nào đang sống.
+	local session = target_session(opts.tool) -- CHỈ tìm session đang sống
 
 	if not session then
 		-- ĐƯỜNG CHÍNH khi chưa có session: nhúng prompt thẳng vào lệnh launch.
 		-- Không paste => không có đua tranh với lúc TUI đang boot. Đây là chỗ từng
 		-- mất request: opencode boot chậm, paste rơi vào giữa lúc nó còn đang đàm
 		-- phán capability với terminal nên request bay mất và tiến trình thoát.
-		local tool = resolve_default_tool()
+		local tool = opts.tool or resolve_default_tool()
 		if tool.prompt_args and #text <= M.config.send.max_arg_bytes then
 			attach(new_session(tool, {
 				args = tool.prompt_args(text),
@@ -1537,18 +1774,46 @@ local function build_message(instruction, ctx)
 	return table.concat(l, "\n")
 end
 
+-- Tool message SẼ tới, giải y hệt M.send: session đang sống trước, không có thì tool
+-- mặc định. Phải khớp, vì tiền tố command của ECC khác nhau theo tool.
+local function target_tool()
+	local s = target_session()
+	return (s and s.tool) or resolve_default_tool()
+end
+
+-- Skill của ECC cho action này trên tool này, hoặc nil. Tra bảng ĐÃ DÒ TRÊN ĐĨA nên
+-- không bao giờ gọi tên một skill mà tool không có: nhắc tên không tồn tại chỉ khiến
+-- agent đi tìm rồi bịa ra nội dung.
+local function ecc_skill(action, tool)
+	if not (action.skill and tool) then
+		return nil
+	end
+	local e = ecc()
+	if not e then
+		return nil
+	end
+	return e.skills(tool.name)[action.skill] and action.skill or nil
+end
+
 -- Picker action (explain/ask/fix...). Gọi từ normal + visual (<leader>ai).
+-- Mọi thứ ở đây là CẤP SELECTION: message luôn kèm @ref + khối code của đoạn đang chọn.
+-- Lệnh cấp repo của ECC nằm ở M.workflows() - xem comment ở M.config.actions.
 function M.actions()
 	local ctx = capture_context() -- BẮT trước khi mở menu (menu thoát visual mode)
 	if not (ctx.file or ctx.code) then
 		notify("aiterm: no file or selection to send", "warn")
 		return
 	end
+	-- Giải MỘT LẦN trước khi mở menu: format_item chạy cho từng dòng, để trong đó thì
+	-- mỗi lần vẽ menu lại đi stat thư mục.
+	local tool = target_tool()
 	vim.ui.select(M.config.actions, {
 		prompt = "AI action:",
 		format_item = function(a)
 			local icon = a.key and M.icons()[a.key]
-			return (icon and icon .. "  " or "") .. a.label
+			-- Hiện skill sẽ được nhắc kèm -> nhìn là biết mục nào có ECC đỡ lưng.
+			local skill = ecc_skill(a, tool)
+			return (icon and icon .. "  " or "") .. a.label .. (skill and ("   " .. skill) or "")
 		end,
 	}, function(choice)
 		if not choice then
@@ -1560,8 +1825,184 @@ function M.actions()
 			if instr == "" then
 				return
 			end
+		else
+			-- Câu hỏi tự do (input) thì không gắn skill: người dùng tự quyết định hỏi gì.
+			local skill = ecc_skill(choice, tool)
+			if skill then
+				instr = instr .. ("\nFollow the `%s` skill."):format(skill)
+			end
 		end
 		M.send(build_message(instr, ctx), { submit = true })
+	end)
+end
+
+-- Lệnh ECC CẤP REPO (<leader>aw). Tách hẳn khỏi M.actions vì chúng bỏ qua context:
+-- template của /code-review mở đầu bằng `git diff --name-only HEAD`, /build-fix bằng
+-- `npx tsc --noEmit`, /refactor-clean bằng `npx knip` - gửi kèm @ref hay khối code chỉ
+-- là nhiễu. Dùng Snacks picker chứ không vim.ui.select: có cả trăm lệnh, cần fuzzy.
+function M.workflows()
+	if not (_G.Snacks and Snacks.picker) then
+		notify("aiterm: snacks.nvim picker required", "warn")
+		return
+	end
+	local e = ecc()
+	if not e then
+		notify("aiterm: ECC module unavailable", "warn")
+		return
+	end
+	-- Chỉ xoay qua tool ĐÃ CÓ lệnh ECC: cho xoay vào một danh sách rỗng thì <A-t> nhìn
+	-- như bị hỏng.
+	local tools = {}
+	for _, t in ipairs(M.config.tools) do
+		if #e.command_list(t.name) > 0 then
+			tools[#tools + 1] = t
+		end
+	end
+	if #tools == 0 then
+		notify("ECC not installed for any tool - use <leader>aE", "warn")
+		return
+	end
+	-- Bắt đầu từ tool sẽ nhận message nếu nó có ECC (session đang sống > tool mặc định).
+	local idx = 1
+	local cur = target_tool()
+	for i, t in ipairs(tools) do
+		if cur and t.name == cur.name then
+			idx = i
+		end
+	end
+	ensure_hl()
+
+	local path_args = {}
+	for _, n in ipairs(M.config.workflow_args.path) do
+		path_args[n] = true
+	end
+	local ask_args = M.config.workflow_args.ask
+	local ic = M.icons()
+	local function title_for(t)
+		return ("ECC workflows (%s)"):format(t.name)
+	end
+
+	Snacks.picker({
+		title = title_for(tools[idx]),
+		-- Tool nằm trong PICKER OPTS chứ không phải upvalue: finder đọc popts nên chỉ có
+		-- một đường đọc state. Bug "title đổi mà list không đổi" của scope lần trước sinh
+		-- ra đúng từ chỗ có hai đường.
+		wf_tool = tools[idx].name,
+		finder = function(popts)
+			local t = find_tool(popts.wf_tool) or tools[1]
+			local list = e.command_list(t.name)
+			-- Canh cột theo lệnh dài nhất CỦA CHÍNH TOOL NÀY: tiền tố codex là /ecc-*
+			-- nên dài hơn claude/opencode một quãng.
+			local w = 0
+			for _, cm in ipairs(list) do
+				w = math.max(w, #cm.invoke)
+			end
+			local items = {}
+			for _, cm in ipairs(list) do
+				items[#items + 1] = {
+					cmd = cm,
+					-- tool + pad gắn thẳng lên item: format/confirm khỏi đọc upvalue đã cũ
+					-- sau khi đổi tool.
+					tool = t,
+					pad = string.rep(" ", w - #cm.invoke + 2),
+					-- desc vào text để gõ "dead code" cũng ra được /refactor-clean.
+					text = cm.name .. " " .. cm.desc,
+					-- file = đường dẫn thật -> dùng luôn preview file của snacks, khỏi tự
+					-- dựng doc và khỏi đọc cả trăm file markdown lúc mở picker.
+					file = cm.path,
+				}
+			end
+			return items
+		end,
+		format = function(item)
+			local cm = item.cmd
+			return {
+				{ ic.f_cmd .. " ", TOOL_HL[item.tool.name] or "SnacksPickerSpecial" },
+				{ cm.invoke, "SnacksPickerLabel" },
+				{ item.pad },
+				{ cm.desc, "SnacksPickerDimmed" },
+			}
+		end,
+		preview = "file",
+		-- Cùng layout với picker session (kèm fallback dọc khi terminal hẹp), nhưng
+		-- footer riêng: M-t là phím duy nhất ở đây không đoán được từ nội dung.
+		layout = build_layout(WF_FOOTER),
+		actions = {
+			-- <A-t>: xoay tool. Đổi opts + title rồi find() - find() tự gọi update_titles
+			-- và update_titles đọc picker.title, nên hai thứ luôn đổi cùng một nhịp.
+			aiterm_wf_tool = function(picker)
+				if #tools < 2 then
+					notify(("only %s has ECC commands"):format(tools[1].name), "info")
+					return
+				end
+				idx = idx % #tools + 1
+				picker.opts.wf_tool = tools[idx].name
+				picker.title = title_for(tools[idx])
+				picker:find({ refresh = true })
+			end,
+		},
+		win = {
+			input = {
+				keys = {
+					["<a-t>"] = { "aiterm_wf_tool", mode = { "i", "n" }, desc = "switch tool" },
+					["<a-?>"] = { "toggle_help_input", mode = { "i", "n" }, desc = "show keys" },
+				},
+			},
+			list = {
+				keys = {
+					["<a-t>"] = { "aiterm_wf_tool", desc = "switch tool" },
+					["<a-?>"] = { "toggle_help_list", desc = "show keys" },
+				},
+			},
+		},
+		confirm = function(picker, item)
+			if not item then
+				return
+			end
+			local cm = item.cmd
+			local msg = cm.invoke
+			if path_args[cm.name] then
+				msg = msg .. " ." -- lệnh nhận [path]; "." = cả project
+			elseif ask_args[cm.name] then
+				local answer = vim.fn.input(ask_args[cm.name])
+				if answer == "" then
+					return -- huỷ input thì KHÔNG gửi lệnh cụt
+				end
+				msg = msg .. " " .. answer
+			end
+			picker:close()
+			vim.schedule(function()
+				-- tool LẤY TỪ ITEM, không phải target_tool(): sau <A-t> thì tool đang hiện
+				-- khác tool mặc định, mà /ecc-* của codex dán vào session opencode là vô nghĩa.
+				M.send(msg, { submit = true, tool = item.tool })
+			end)
+		end,
+	})
+end
+
+-- Trạng thái ECC từng tool + cài/cập nhật. Dòng "ecc" trong picker biến mất sau khi
+-- cài xong, nên đây là đường để cập nhật (git pull) về sau. <leader>aE.
+function M.ecc()
+	local e = ecc()
+	if not e then
+		notify("ECC module unavailable", "warn")
+		return
+	end
+	local items = {}
+	for _, t in ipairs(M.config.tools) do
+		items[#items + 1] = { tool = t, installed = e.installed(t.name), count = e.count(t.name) }
+	end
+	vim.ui.select(items, {
+		prompt = "ECC:",
+		format_item = function(it)
+			local icon = M.icons()[it.tool.name] or " "
+			local state = it.installed and ("update  (%d commands)"):format(it.count) or "install"
+			return ("%s  %-9s %s"):format(icon, it.tool.name, state)
+		end,
+	}, function(choice)
+		if choice then
+			install_ecc(choice.tool)
+		end
 	end)
 end
 

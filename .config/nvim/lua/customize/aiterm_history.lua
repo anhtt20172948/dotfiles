@@ -527,7 +527,11 @@ end
 -- Chẩn đoán: vì sao picker không thấy session (thường do cwd scoping hoặc thiếu
 -- sqlite3). Mở scratch buffer báo cáo HOME/cwd/candidates/binary + đếm scoped vs
 -- all-dirs cho từng tool + vài cwd mẫu đã ghi. Gắn với <leader>ad.
-function M.doctor()
+-- extra: dòng phụ do caller cung cấp, nối vào cuối cùng một buffer (xem aiterm.M.doctor
+-- gắn mục ECC vào đây). Nhận LIST DÒNG chứ không require module khác: file này thuần
+-- data về history, không biết gì về ECC.
+---@param extra? string[]
+function M.doctor(extra)
 	local raw = vim.fn.getcwd()
 	local real = vim.uv.fs_realpath(raw)
 	local cands = cwd_candidates(raw)
@@ -582,6 +586,10 @@ function M.doctor()
 	lines[#lines + 1] = ""
 	lines[#lines + 1] = "Gợi ý: nếu 'all dirs' > 0 mà 'scoped' = 0 -> cwd hiện tại không khớp cwd đã ghi"
 	lines[#lines + 1] = "ở trên. Mở nvim ĐÚNG thư mục dự án, hoặc dùng <A-a> trong picker để xem tất cả."
+	if extra and #extra > 0 then
+		lines[#lines + 1] = ""
+		vim.list_extend(lines, extra)
+	end
 
 	local buf = vim.api.nvim_create_buf(false, true)
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
