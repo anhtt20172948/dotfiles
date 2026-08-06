@@ -27,7 +27,11 @@ return {
 			"mason-org/mason.nvim",
 		},
 		opts = {
+			-- Tools Mason keeps installed for language servers, formatters, and linters.
+			-- Some packages are intentionally excluded because they are managed elsewhere
+			-- in this config or installed manually.
 			ensure_installed = {
+				-- Shell and web stack LSPs.
 				"bash-language-server",
 				"css-lsp",
 				"dockerfile-language-server",
@@ -36,19 +40,21 @@ return {
 				"json-lsp",
 				"lua-language-server",
 				"pyright",
-				-- "clangd", -- clangd is manually install
-				-- "clang-format", --clang-format is manually install
-				-- "ruff", -- ruff manually installed by mason-tool-installer.
-				-- "isort",-- isort manually installed by mason-tool-installer.
+				-- C/C++ and Python tools are managed separately.
+				-- "clangd", -- installed manually
+				-- "clang-format", -- installed manually
+				-- "ruff", -- installed by mason-tool-installer elsewhere
+				-- "isort", -- installed by mason-tool-installer elsewhere
+				-- Documentation and formatting tools.
 				"harper-ls",
 				"prettier",
 				"stylua",
+				-- Linters and language tooling.
 				"markdownlint-cli2",
 				"shellcheck",
 				"typescript-language-server", -- ts_ls is enabled in lspconfig.lua
-				-- NOTE: debuggers (debugpy, codelldb) are installed by mason-nvim-dap.
-				-- Do NOT list them here too — both installing at once races and errors
-				-- with "Package is already installing".
+				-- Debuggers are installed by mason-nvim-dap.
+				-- Keep them out of this list to avoid concurrent install races.
 			},
 
 			run_on_start = true,
