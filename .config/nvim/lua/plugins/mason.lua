@@ -36,8 +36,8 @@ return {
 				"json-lsp",
 				"lua-language-server",
 				"pyright",
-				-- "clangd", -- clangd is installed by mason-nvim-dap.
-				"clang-format",
+				-- "clangd", -- clangd is manually install
+				-- "clang-format", --clang-format is manually install
 				-- "ruff", -- ruff manually installed by mason-tool-installer.
 				-- "isort",-- isort manually installed by mason-tool-installer.
 				"harper-ls",
