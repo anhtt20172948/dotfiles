@@ -40,6 +40,15 @@ return {
 			mode = "n",
 		},
 		{
+			-- Chẩn đoán history (cwd scoping / thiếu sqlite3, hữu ích trong container).
+			"<leader>ad",
+			function()
+				require("customize.aiterm").doctor()
+			end,
+			desc = "AI terminal: history doctor",
+			mode = "n",
+		},
+		{
 			-- Override <C-w>p mặc định: focus AI sidebar thay vì "previous window".
 			"<C-w>p",
 			function()

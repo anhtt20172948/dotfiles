@@ -720,7 +720,9 @@ local function build_items(all_dirs)
 	-- thức luôn trả cwd -> scope "all dirs" không bao giờ có tác dụng. Dùng if.
 	local scope_cwd
 	if not all_dirs then
-		scope_cwd = history().project_cwd()
+		-- scope_cwd() trả cwd RAW; history tự thêm realpath vào tập ứng viên nên
+		-- khớp cả path mount (vd /app trong container) lẫn realpath.
+		scope_cwd = history().scope_cwd()
 	end
 
 	for _, e in ipairs(history().list(scope_cwd)) do
@@ -810,11 +812,16 @@ end
 
 -- Resume session mới nhất của cwd, không qua picker. Chưa có gì -> mở picker.
 function M.resume_last()
-	local e = history().list(history().project_cwd(), 1)[1]
+	local e = history().list(history().scope_cwd(), 1)[1]
 	if not e then
 		return M.pick()
 	end
 	M.resume(e)
+end
+
+-- Chẩn đoán vì sao picker không thấy session (cwd scoping / thiếu sqlite3...).
+function M.doctor()
+	history().doctor()
 end
 
 --- Picker chính: live session + session cũ trên đĩa + tạo mới + fallback.
