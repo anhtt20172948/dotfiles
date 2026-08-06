@@ -23,7 +23,10 @@ return {
 		opts = {
 			-- ⚠️ This will only work if Telescope.nvim is installed
 			-- The following are already the default values, no need to provide them if these are already the settings you want.
-			auto_restore_last_session = true,
+			-- false: chỉ restore session của ĐÚNG cwd nếu có; thư mục chưa có session
+			-- thì để trống (true sẽ fallback nạp session cuối cùng -> mở dir nào cũng ra
+			-- session của dir khác).
+			auto_restore_last_session = false,
 			show_auto_restore_notif = true, -- Whether to show a notification when auto-restoring
 			lsp_stop_on_restore = true, -- Should language servers be stopped when restoring a session. Can also be a function that will be called if set. Not called on autorestore from startup
 			session_lens = {
