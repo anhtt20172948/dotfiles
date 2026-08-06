@@ -47,6 +47,18 @@ M.icon_sets = {
 		install = c(0xF019), -- download
 		branch = c(0xF418), -- git-branch
 		all_dirs = c(0xF07C), -- folder-open
+		-- icon từng field của preview (f_ = field)
+		f_model = c(0xF2DB), -- microchip
+		f_tokens = c(0xF1C0), -- database
+		f_cost = c(0xF155), -- dollar
+		f_updated = c(0xF017), -- clock
+		f_created = c(0xF073), -- calendar
+		f_version = c(0xF02B), -- tag
+		f_agent = c(0xF007), -- user
+		f_id = c(0xF292), -- hashtag
+		f_cwd = c(0xF07B), -- folder
+		f_prompt = c(0xF075), -- comment
+		f_cmd = c(0xF120), -- terminal
 		-- action icon (dùng ở inlay hint + menu <leader>ai). Toàn Font-Awesome cổ
 		-- điển U+F0xx (<= U+F0C3) nên chắc chắn nằm trong cmap SFMono NF v2.
 		explain = c(0xF05A), -- info-circle
@@ -57,18 +69,43 @@ M.icon_sets = {
 		refactor = c(0xF021), -- refresh
 		docs = c(0xF02D), -- book
 	},
+	-- Bộ "chạy mọi nơi": MỌI codepoint dưới đây đã kiểm có trong CẢ SFMono NF lẫn
+	-- JetBrainsMono NF. Cẩn thận khi đổi: nvim_strwidth trả 1 kể cả với glyph font
+	-- KHÔNG có (nó chỉ tra bảng width của Unicode, không tra cmap) nên đo strwidth
+	-- KHÔNG đủ để kết luận. Bản trước có 5 icon thiếu font đúng vì lý do này:
+	-- ◆ U+25C6, ◼ U+25FC, ↺ U+21BA, ↳ U+21B3, ▤ U+25A4 đều KHÔNG có trong SFMono.
 	unicode = {
-		claude = c(0x25C6), -- ◆
-		codex = c(0x25FC), -- ◼
+		claude = c(0x25CE), -- ◎
+		codex = c(0x25A1), -- □
 		opencode = c(0x25B2), -- ▲
 		live = c(0x25CF), -- ●
-		past = c(0x21BA), -- ↺
+		past = c(0x2022), -- •
 		new = "+",
 		browse = c(0x00BB), -- »
 		-- KHÔNG dùng U+26A0 warning: đã kiểm là THIẾU trong SFMono NF.
 		install = c(0x2193), -- ↓
-		branch = c(0x21B3), -- ↳
-		all_dirs = c(0x25A4), -- ▤
+		branch = "*", -- git hay đánh dấu nhánh hiện tại bằng *
+		all_dirs = c(0x00A4), -- ¤
+		-- Field trong preview đã có NHÃN CHỮ bên cạnh nên icon chỉ là dấu dẫn:
+		-- dùng chung một ký tự trung tính, hơn là bịa 11 ký hiệu khó đoán.
+		f_model = c(0x00B7), -- ·
+		f_tokens = c(0x00B7),
+		f_cost = c(0x00B7),
+		f_updated = c(0x00B7),
+		f_created = c(0x00B7),
+		f_version = c(0x00B7),
+		f_agent = c(0x00B7),
+		f_id = c(0x00B7),
+		f_cwd = c(0x00B7),
+		f_prompt = c(0x00B7),
+		f_cmd = c(0x203A), -- ›
+		explain = c(0x00A7), -- §
+		ask = "?",
+		fix = c(0x00B1), -- ±
+		review = c(0x25CB), -- ○
+		tests = c(0x2713), -- ✓
+		refactor = c(0x2192), -- →
+		docs = c(0x2261), -- ≡
 	},
 	ascii = {
 		claude = "C",
@@ -79,8 +116,26 @@ M.icon_sets = {
 		new = "+",
 		browse = "?",
 		install = "!",
-		branch = "@",
+		branch = "*",
 		all_dirs = "/",
+		f_model = "-",
+		f_tokens = "-",
+		f_cost = "-",
+		f_updated = "-",
+		f_created = "-",
+		f_version = "-",
+		f_agent = "-",
+		f_id = "-",
+		f_cwd = "-",
+		f_prompt = "-",
+		f_cmd = ">",
+		explain = "i",
+		ask = "?",
+		fix = "!",
+		review = "o",
+		tests = "v",
+		refactor = "~",
+		docs = "=",
 	},
 }
 
@@ -500,76 +555,161 @@ end
 local function cmdline(tool, args)
 	local parts = { tool.cmd }
 	vim.list_extend(parts, args or {})
-	return "`" .. table.concat(parts, " ") .. "`"
+	return table.concat(parts, " ")
+end
+
+-- 22017 -> "22,017"
+local function commafy(n)
+	local s = tostring(math.floor(tonumber(n) or 0))
+	local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+	return (out:gsub("^,", ""))
+end
+
+-- Bảng dựng preview: mỗi dòng là "<icon> <nhãn canh cột> <giá trị>", kèm extmark
+-- tô màu icon + nhãn. snacks nhận item.preview.extmarks (picker/preview.lua) với
+-- row 1-indexed, col 0-indexed tính theo BYTE.
+local LABEL_W = 9
+
+local function new_doc()
+	return { lines = {}, marks = {} }
+end
+
+local function doc_raw(d, text)
+	d.lines[#d.lines + 1] = text or ""
+end
+
+-- Bỏ qua hẳn dòng nếu value rỗng -> tool nào không có field thì không hiện, không
+-- bịa "n/a". col tính bằng #s (byte) chứ không phải strwidth: icon là multibyte.
+local function doc_row(d, icon, label, value, icon_hl)
+	if value == nil or value == "" then
+		return
+	end
+	local ic = M.icons()[icon] or " "
+	local pad = string.rep(" ", math.max(1, LABEL_W - vim.api.nvim_strwidth(label)))
+	local line = (" %s %s%s%s"):format(ic, label, pad, value)
+	d.lines[#d.lines + 1] = line
+	local row = #d.lines
+	d.marks[#d.marks + 1] = { row = row, col = 1, end_col = 1 + #ic, hl_group = icon_hl or "SnacksPickerSpecial" }
+	d.marks[#d.marks + 1] = { row = row, col = 2 + #ic, end_col = 2 + #ic + #label, hl_group = "SnacksPickerDimmed" }
+end
+
+local function doc_title(d, icon, text, icon_hl)
+	local ic = M.icons()[icon] or " "
+	d.lines[#d.lines + 1] = (" %s %s"):format(ic, text)
+	local row = #d.lines
+	d.marks[#d.marks + 1] = { row = row, col = 1, end_col = 1 + #ic, hl_group = icon_hl or "SnacksPickerSpecial" }
+	d.marks[#d.marks + 1] = { row = row, col = 2 + #ic, end_col = #d.lines[row], hl_group = "SnacksPickerBold" }
+end
+
+local function doc_section(d, icon, text)
+	doc_raw(d, "")
+	local ic = M.icons()[icon] or " "
+	d.lines[#d.lines + 1] = (" %s %s"):format(ic, text)
+	local row = #d.lines
+	d.marks[#d.marks + 1] = { row = row, col = 0, end_col = #d.lines[row], hl_group = "SnacksPickerLabel" }
+end
+
+-- Khối chữ thụt lề (prompt, mô tả). Nhận list dòng hoặc string.
+local function doc_block(d, text, hl)
+	local lines = type(text) == "table" and text or vim.split(tostring(text), "\n", { plain = true })
+	for _, s in ipairs(lines) do
+		d.lines[#d.lines + 1] = "    " .. s
+		d.marks[#d.marks + 1] =
+			{ row = #d.lines, col = 0, end_col = #d.lines[#d.lines], hl_group = hl or "SnacksPickerCode" }
+	end
+end
+
+local function doc_done(d)
+	return { text = table.concat(d.lines, "\n"), extmarks = d.marks }
 end
 
 -- Preview build ngay trong finder (dữ liệu đã có sẵn trong RAM từ discovery)
 -- -> không đọc lại file jsonl 5 MB khi di chuyển con trỏ.
 local function preview_text(item)
-	local l = {}
-	local function add(k, v)
-		if v and v ~= "" then
-			l[#l + 1] = ("**%s:** %s"):format(k, v)
-		end
-	end
+	local d = new_doc()
+	local tool = item.tool
+	local thl = TOOL_HL[tool.name]
 
-	-- BẮT BUỘC early-return: nhánh fallthrough cuối hàm đọc item.entry (nil với
-	-- install) -> lỗi ngay trong finder, picker không mở nổi.
+	-- BẮT BUỘC early-return cho install: nhánh past ở cuối hàm đọc item.entry
+	-- (nil với install) -> lỗi ngay trong finder, picker không mở nổi.
 	if item.kind == "install" then
-		l[#l + 1] = "# Install " .. item.tool.name
-		l[#l + 1] = ""
-		add("command", "`" .. tostring(item.tool.install) .. "`")
-		l[#l + 1] = ""
-		l[#l + 1] = "Downloads and runs a remote script. Read the URL before continuing."
-		l[#l + 1] = "Press <CR> to run it in the AI pane - you will be asked to confirm first."
-		return table.concat(l, "\n")
+		doc_title(d, "install", "Install " .. tool.name, "DiagnosticWarn")
+		doc_row(d, "f_cmd", "command", tool.install, "DiagnosticWarn")
+		doc_section(d, "install", "Heads up")
+		doc_block(d, {
+			"Downloads and runs a remote script.",
+			"Read the URL before continuing.",
+			"<CR> runs it in the AI pane - you will be asked to confirm first.",
+		}, "SnacksPickerDimmed")
+		return doc_done(d)
 	end
 
 	if item.kind == "new" then
-		l[#l + 1] = "# New " .. item.tool.name
-		add("cwd", vim.fn.fnamemodify(history().project_cwd(), ":~"))
-		l[#l + 1] = ""
-		l[#l + 1] = cmdline(item.tool)
-		return table.concat(l, "\n")
+		doc_title(d, tool.name, "New " .. tool.name .. " session", thl)
+		doc_row(d, "f_cwd", "cwd", vim.fn.fnamemodify(history().project_cwd(), ":~"))
+		doc_section(d, "f_cmd", "Command")
+		doc_block(d, cmdline(tool))
+		return doc_done(d)
 	end
 
 	if item.kind == "browse" then
-		l[#l + 1] = "# " .. item.tool.name .. ": " .. (item.tool.browse_label or "own picker")
-		l[#l + 1] = ""
-		l[#l + 1] = "Fallback when discovery finds nothing — schema changed, another machine's DB, etc."
-		l[#l + 1] = ""
-		l[#l + 1] = cmdline(item.tool, item.tool.browse)
-		return table.concat(l, "\n")
+		doc_title(d, "browse", tool.name .. " · " .. (tool.browse_label or "own picker"), thl)
+		doc_section(d, "f_prompt", "What this is")
+		doc_block(d, {
+			"Fallback when discovery finds nothing —",
+			"schema changed, another machine's DB, etc.",
+		}, "SnacksPickerDimmed")
+		doc_section(d, "f_cmd", "Command")
+		doc_block(d, cmdline(tool, tool.browse))
+		return doc_done(d)
 	end
 
 	if item.kind == "live" then
-		l[#l + 1] = "# " .. item.session.id .. " (running)"
-		add("title", item.session.title)
-		add("cwd", item.cwd and vim.fn.fnamemodify(item.cwd, ":~"))
-		add("job", tostring(item.session.job))
-		return table.concat(l, "\n")
+		local s = item.session
+		doc_title(d, "live", s.title or s.id, "SnacksPickerGitStatusStaged")
+		doc_row(d, tool.name, "tool", tool.name, thl)
+		doc_row(d, "f_id", "session", s.id)
+		doc_row(d, "f_cwd", "cwd", item.cwd and vim.fn.fnamemodify(item.cwd, ":~"))
+		doc_row(d, "f_agent", "job", tostring(s.job))
+		doc_row(d, "f_updated", "state", "running")
+		return doc_done(d)
 	end
 
 	local e = item.entry
-	l[#l + 1] = "# " .. (e.title or e.id)
-	add("tool", e.tool)
-	add("id", e.id)
-	add("cwd", e.cwd and vim.fn.fnamemodify(e.cwd, ":~"))
-	add("branch", e.branch)
+	doc_title(d, tool.name, e.title or e.id, thl)
+
+	local tool_line = e.tool .. (e.version and (" " .. e.version) or "")
+	doc_row(d, tool.name, "tool", tool_line, thl)
+	doc_row(d, "f_model", "model", e.model and (e.model .. (e.effort and (" (" .. e.effort .. ")") or "")))
+	doc_row(d, "f_agent", "agent", e.agent)
+	doc_row(d, "f_tokens", "tokens", e.tokens and commafy(e.tokens))
+	doc_row(d, "f_cost", "cost", e.cost and ("$%.4f"):format(e.cost))
+	doc_row(d, "branch", "branch", e.branch and (e.branch .. (e.sha and (" · " .. e.sha) or "")))
+	doc_row(d, "f_cwd", "cwd", e.cwd and vim.fn.fnamemodify(e.cwd, ":~"))
 	if e.time and e.time > 0 then
-		add("updated", os.date("%Y-:::::::::::::::::::::::::kjkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk%m-%d %H:%M", e.time) .. " (" .. Snacks.picker.util.reltime(e.time) .. ")")
+		doc_row(
+			d,
+			"f_updated",
+			"updated",
+			Snacks.picker.util.reltime(e.time) .. " · " .. os.date("%Y-%m-%d %H:%M", e.time)
+		)
 	end
-	if e.prompt then
-		l[#l + 1] = ""
-		l[#l + 1] = "## Last prompt"
-		l[#l + 1] = ""
-		l[#l + 1] = "```"
-		vim.list_extend(l, vim.split(e.prompt, "\n", { plain = true }))
-		l[#l + 1] = "```"
+	if e.created and e.created > 0 then
+		doc_row(d, "f_created", "created", Snacks.picker.util.reltime(e.created))
 	end
-	l[#l + 1] = ""
-	l[#l + 1] = cmdline(item.tool, item.tool.resume(e.id))
-	return table.concat(l, "\n")
+	doc_row(d, "f_id", "id", e.id)
+
+	-- prompt_lines GIỮ NGUYÊN xuống dòng (aiterm_history). e.prompt là bản gộp 1
+	-- dòng cho matcher -> chỉ dùng làm fallback khi thiếu prompt_lines.
+	local prompt = e.prompt_lines or (e.prompt and { e.prompt })
+	if prompt then
+		doc_section(d, "f_prompt", "Last prompt")
+		doc_block(d, prompt)
+	end
+
+	doc_section(d, "f_cmd", "Resume")
+	doc_block(d, cmdline(tool, tool.resume(e.id)))
+	return doc_done(d)
 end
 
 -- Bề rộng hiển thị của một list {text, hl}.
@@ -850,7 +990,9 @@ local function build_items(all_dirs)
 		else
 			it.title = table.concat(it.tool.browse or {}, " ")
 		end
-		it.preview = { text = preview_text(it), ft = "markdown" }
+		-- preview_text trả sẵn { text, extmarks }. KHÔNG đặt ft: bố cục là bảng canh
+		-- cột, để markdown vào thì dòng thụt lề bị hiểu thành code block.
+		it.preview = preview_text(it)
 	end
 	return items
 end

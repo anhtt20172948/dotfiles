@@ -12,7 +12,9 @@ M.config = {
 	head = 64 * 1024, -- bytes đọc từ ĐẦU file jsonl -> cwd / gitBranch / prompt đầu
 	tail = 64 * 1024, -- bytes đọc từ CUỐI file jsonl -> ai-title / last-prompt cuối
 	title_width = 60,
-	prompt_width = 400,
+	prompt_width = 400, -- prompt gộp 1 dòng, dùng cho item.text của matcher
+	prompt_lines = 12, -- số dòng đầu giữ lại cho preview (giữ nguyên xuống dòng)
+	prompt_line_width = 120, -- cắt mỗi dòng của preview ở đây
 }
 
 -- cache claude: path -> { mtime, info }; invalidate bằng mtime
@@ -34,6 +36,33 @@ local function oneline(s, width)
 		s = vim.fn.strcharpart(s, 0, width - 1) .. "…"
 	end
 	return s
+end
+
+-- N dòng ĐẦU, GIỮ NGUYÊN xuống dòng, mỗi dòng cắt theo ký tự. Khác oneline():
+-- oneline gộp hết thành 1 dòng nên prompt kèm code block biến thành một cục chữ
+-- dính nhau, đọc không nổi trong preview. Trả nil nếu rỗng; thêm "…" nếu bị cắt.
+local function head_lines(s, max_lines, width)
+	if type(s) ~= "string" or s:match("^%s*$") then
+		return nil
+	end
+	max_lines, width = max_lines or M.config.prompt_lines, width or M.config.prompt_line_width
+	local out = {}
+	for line in (s .. "\n"):gmatch("([^\n]*)\n") do
+		if #out >= max_lines then
+			out[#out + 1] = "…"
+			break
+		end
+		line = line:gsub("%s+$", "")
+		if vim.api.nvim_strwidth(line) > width then
+			line = vim.fn.strcharpart(line, 0, width - 1) .. "…"
+		end
+		out[#out + 1] = line
+	end
+	-- bỏ dòng trống ở cuối
+	while #out > 0 and out[#out] == "" do
+		table.remove(out)
+	end
+	return #out > 0 and out or nil
 end
 
 -- claude nhồi <ide_selection>/<system-reminder> vào prompt đầu -> bỏ đi khi làm title.
@@ -228,6 +257,7 @@ local function codex_jsonl(cands, limit)
 				cwd = i.cwd,
 				title = oneline(i.title, M.config.title_width),
 				prompt = oneline(i.title, M.config.prompt_width),
+				prompt_lines = head_lines(i.title),
 				time = e.mtime, -- mtime thay ISO->epoch: tránh lệch TZ, đủ để sort
 			}
 		end
@@ -242,11 +272,10 @@ local function codex(cands, limit)
 		return codex_jsonl(cands, limit)
 	end
 	local db = newest(vim.fn.expand("~/.codex/state_*.sqlite"))
-	local sql = ([[SELECT id, cwd, title, first_user_message, git_branch, updated_at_ms
-		FROM threads WHERE archived = 0 %s ORDER BY updated_at_ms DESC LIMIT %d;]]):format(
-		in_list("cwd", cands),
-		limit
-	)
+	-- Thêm cột cho preview: chỉ nới SELECT có sẵn nên không tốn thêm query nào.
+	local sql = ([[SELECT id, cwd, title, first_user_message, git_branch, updated_at_ms,
+		model, reasoning_effort, tokens_used, cli_version, created_at_ms, git_sha
+		FROM threads WHERE archived = 0 %s ORDER BY updated_at_ms DESC LIMIT %d;]]):format(in_list("cwd", cands), limit)
 	local out = {}
 	for _, r in ipairs(sqlite_json(db, sql)) do
 		out[#out + 1] = {
@@ -256,7 +285,14 @@ local function codex(cands, limit)
 			branch = r.git_branch,
 			title = oneline(r.title, M.config.title_width) or oneline(r.first_user_message, M.config.title_width),
 			prompt = oneline(r.first_user_message, M.config.prompt_width),
+			prompt_lines = head_lines(r.first_user_message),
 			time = math.floor((r.updated_at_ms or 0) / 1000),
+			created = r.created_at_ms and math.floor(r.created_at_ms / 1000) or nil,
+			model = r.model,
+			effort = r.reasoning_effort,
+			tokens = r.tokens_used,
+			version = r.cli_version,
+			sha = r.git_sha and r.git_sha:sub(1, 7) or nil,
 		}
 	end
 	return out
@@ -271,17 +307,32 @@ local function opencode(cands, limit)
 	end
 	local db = vim.fn.expand("~/.local/share/opencode/opencode.db")
 	-- parent_id NOT NULL = session của subagent -> lọc ra.
-	local sql = ([[SELECT id, directory, title, time_updated FROM session
+	local sql = ([[SELECT id, directory, title, time_updated, time_created,
+		model, agent, version, cost, tokens_input, tokens_output, tokens_reasoning
+		FROM session
 		WHERE parent_id IS NULL AND time_archived IS NULL %s
 		ORDER BY time_updated DESC LIMIT %d;]]):format(in_list("directory", cands), limit)
 	local out = {}
 	for _, r in ipairs(sqlite_json(db, sql)) do
+		-- model là JSON: {"id":"big-pickle","providerID":"opencode"}. Hỏng thì bỏ field.
+		local model
+		if type(r.model) == "string" and r.model ~= "" then
+			local ok, m = pcall(vim.json.decode, r.model)
+			model = ok and type(m) == "table" and m.id or nil
+		end
+		local tok = (r.tokens_input or 0) + (r.tokens_output or 0) + (r.tokens_reasoning or 0)
 		out[#out + 1] = {
 			tool = "opencode",
 			id = r.id,
 			cwd = r.directory,
 			title = oneline(r.title, M.config.title_width),
 			time = math.floor((r.time_updated or 0) / 1000),
+			created = r.time_created and math.floor(r.time_created / 1000) or nil,
+			model = model,
+			agent = r.agent,
+			version = r.version,
+			tokens = tok > 0 and tok or nil,
+			cost = (r.cost and r.cost > 0) and r.cost or nil,
 		}
 	end
 	return out
@@ -306,14 +357,27 @@ local function parse_jsonl(path, size)
 	-- cwd nằm SAU `message` trong dòng đó -> vị trí trôi theo độ dài prompt, cần 64 KB.
 	local head = f:read(math.min(M.config.head, size)) or ""
 	for line in head:gmatch("[^\n]+") do
-		if line:find('"cwd":"', 1, true) then
+		if not info.cwd and line:find('"cwd":"', 1, true) then
 			local o = decode(line)
 			if o and o.cwd then
-				info.cwd, info.branch = o.cwd, o.gitBranch
+				info.cwd, info.branch, info.version = o.cwd, o.gitBranch, o.version
 				local c = o.message and o.message.content
 				info.first = type(c) == "string" and c or (type(c) == "table" and c[1] and c[1].text or nil)
-				break
 			end
+		end
+		-- model nằm ở dòng assistant (message.model). Lấy trong chunk head đang
+		-- đọc sẵn -> không tốn thêm IO. KHÔNG cộng token cho claude: phải quét cả
+		-- file mới ra số đúng, lấy dòng cuối thì sai lệch -> thà không hiện.
+		if not info.model and line:find('"assistant"', 1, true) then
+			local o = decode(line)
+			local m = o and o.message
+			if type(m) == "table" and type(m.model) == "string" then
+				info.model = m.model
+				info.version = info.version or o.version
+			end
+		end
+		if info.cwd and info.model then
+			break
 		end
 	end
 
@@ -408,7 +472,10 @@ local function claude(cands, limit)
 				branch = i2.branch,
 				title = oneline(i2.title, M.config.title_width) or oneline(strip_tags(i2.first), M.config.title_width),
 				prompt = oneline(i2.prompt, M.config.prompt_width),
+				prompt_lines = head_lines(i2.prompt),
 				time = e.mtime,
+				model = i2.model,
+				version = i2.version,
 				jsonl = e.path, -- dùng cho action delete
 			}
 		end
