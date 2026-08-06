@@ -47,13 +47,21 @@ return {
 				},
 			},
 		},
-		config = function()
-			vim.o.sessionoptions = "blank,buffers,curdir,folds,help,tabpages,winsize,winpos,terminal,localoptions"
+		config = function(_, opts)
+			-- BỎ "terminal": mksession ghi buffer terminal của pane AI -> lúc restore
+			-- chạy `setlocal buftype=terminal` (E474) làm hỏng cả session + tắt auto-save.
+			vim.o.sessionoptions = "blank,buffers,curdir,folds,help,tabpages,winsize,winpos,localoptions"
 			vim.keymap.set("n", "<leader>P", require("auto-session.session-lens").search_session)
-			require("auto-session").setup({
-				pre_save_cmds = { "Neotree close" },
-				post_restore_cmds = { "Neotree filesystem show" },
-			})
+			-- Dùng lại khối `opts` của spec (trước đây bị bỏ quên vì setup gọi thiếu),
+			-- rồi bổ sung pre/post cmds. Đóng pane AI trước khi lưu, giống pattern Neotree.
+			opts.pre_save_cmds = {
+				"Neotree close",
+				function()
+					require("customize.aiterm").close_for_session()
+				end,
+			}
+			opts.post_restore_cmds = { "Neotree filesystem show" }
+			require("auto-session").setup(opts)
 		end,
 	},
 }

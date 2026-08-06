@@ -1007,6 +1007,23 @@ function M.hide()
 	win = nil
 end
 
+-- Đóng pane AI trước khi auto-session lưu: tránh mksession ghi buffer terminal ->
+-- setlocal buftype=terminal (E474) làm hỏng restore. Job chết theo nvim khi thoát
+-- nên không cần giữ. Đảm bảo không phải window cuối để nvim_win_close không lỗi.
+function M.close_for_session()
+	if not win_valid() then
+		return
+	end
+	if #vim.api.nvim_tabpage_list_wins(0) <= 1 then
+		vim.cmd("new") -- chừa 1 window trống để đóng được pane
+	end
+	if vim.api.nvim_get_current_win() == win and vim.fn.mode() == "t" then
+		vim.cmd("stopinsert")
+	end
+	pcall(vim.api.nvim_win_close, win, true)
+	win = nil
+end
+
 -- Rời focus khỏi pane nhưng GIỮ pane mở. Đây là hành vi của <C-Space> trong
 -- terminal-mode (map thẳng tới <C-w>p, không đi qua hàm này).
 function M.blur()
