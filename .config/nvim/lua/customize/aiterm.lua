@@ -116,6 +116,11 @@ M.config = {
 			fork = function(id)
 				return { "--resume", id, "--fork-session" }
 			end,
+			-- prompt truyền NGAY lúc launch -> M.send không phải paste vào TUI đang
+			-- boot (xem M.send). claude: positional, vẫn giữ chế độ tương tác.
+			prompt_args = function(text)
+				return { text }
+			end,
 			browse = { "--resume" }, -- picker tương tác của chính claude
 			browse_label = "claude's own picker",
 		},
@@ -130,6 +135,9 @@ M.config = {
 			end,
 			fork = function(id)
 				return { "fork", id }
+			end,
+			prompt_args = function(text) -- codex: positional [PROMPT]
+				return { text }
 			end,
 			browse = { "resume" },
 			browse_label = "codex's own picker",
@@ -148,6 +156,9 @@ M.config = {
 			end,
 			fork = function(id)
 				return { "--session", id, "--fork" }
+			end,
+			prompt_args = function(text) -- opencode: qua flag, không phải positional
+				return { "--prompt", text }
 			end,
 			-- opencode KHÔNG có CLI picker (chỉ `session list|delete`) -> fallback là --continue
 			browse = { "--continue" },
@@ -169,7 +180,16 @@ M.config = {
 	--                   claude) kịp xử lý bracketed-paste trước khi Enter submit.
 	send = {
 		default_tools = { "codex", "opencode", "claude" },
-		ready = { min_ms = 250, quiet_ms = 400, max_ms = 10000, interval_ms = 120 },
+		-- Trên ngưỡng này thì message không nhét vào argv được nữa -> quay về đường
+		-- tạo-session-rồi-paste. ARG_MAX của macOS là 1048576; chọn 344 dòng code
+		-- mới ~15KB nên hiếm khi chạm.
+		max_arg_bytes = 100000,
+		-- CHỈ dùng cho đường DỰ PHÒNG (paste vào session đang boot). Đường chính là
+		-- tool.prompt_args: nhúng prompt vào lệnh launch nên không có đua tranh.
+		-- Đừng tưởng đây là cơ chế chính rồi đi tinh chỉnh số: heuristic quiescence
+		-- về bản chất không phân biệt được "TUI xong rồi" với "đang lặng giữa lúc
+		-- boot" - đó chính là lỗi làm mất request với opencode.
+		ready = { min_ms = 800, quiet_ms = 1200, max_ms = 10000, interval_ms = 120 },
 		submit_delay = 120,
 	},
 
@@ -1171,31 +1191,27 @@ end
 --   1. session đang hiển thị trong pane AI (nếu pane đang focus)
 --   2. last_session nếu còn sống
 --   3. session còn sống đầu tiên
---   4. tạo mới bằng resolve_default_tool() -> trả kèm fresh=true để hoãn lần gửi đầu.
--- Trả về: session, fresh(boolean). session=nil nếu tạo mới thất bại.
+-- Trả nil nếu không có session nào sống. KHÔNG tự tạo: M.send cần biết "chưa có
+-- session" để nhúng prompt vào lệnh launch thay vì paste vào TUI đang boot.
 local function target_session()
 	if win_valid() then
 		local buf = vim.api.nvim_win_get_buf(win)
 		for _, s in ipairs(sessions) do
 			if s.buf == buf and is_alive(s) then
-				return s, false
+				return s
 			end
 		end
 	end
 	local s = last_session and find(last_session)
 	if is_alive(s) then
-		return s, false
+		return s
 	end
 	for _, cand in ipairs(sessions) do
 		if is_alive(cand) then
-			return cand, false
+			return cand
 		end
 	end
-	local created = new_session(resolve_default_tool(), { cwd = history().project_cwd() })
-	if created then
-		created.ready = false -- session vừa tạo: M.send phải chờ CLI boot xong (when_ready)
-	end
-	return created, true
+	return nil -- CHỈ tìm, không tạo: M.send tự quyết cách tạo (xem M.send).
 end
 
 -- Chữ ký nội dung terminal để phát hiện "đã vẽ xong rồi im" (quiescence): số dòng
@@ -1259,10 +1275,31 @@ end
 ---@param opts? { submit?: boolean }
 function M.send(text, opts)
 	opts = opts or {}
-	local session = target_session() -- (fresh flag không cần: dựa vào session.ready)
+	local session = target_session() -- CHỈ tìm session đang sống
+
 	if not session then
-		return -- new_session đã notify lý do (binary not found ...)
+		-- ĐƯỜNG CHÍNH khi chưa có session: nhúng prompt thẳng vào lệnh launch.
+		-- Không paste => không có đua tranh với lúc TUI đang boot. Đây là chỗ từng
+		-- mất request: opencode boot chậm, paste rơi vào giữa lúc nó còn đang đàm
+		-- phán capability với terminal nên request bay mất và tiến trình thoát.
+		local tool = resolve_default_tool()
+		if tool.prompt_args and #text <= M.config.send.max_arg_bytes then
+			attach(new_session(tool, {
+				args = tool.prompt_args(text),
+				cwd = history().project_cwd(),
+				title = "ask",
+			}))
+			return
+		end
+		-- Tool không hỗ trợ prompt lúc launch, hoặc message quá to cho argv
+		-- -> quay về đường cũ: tạo, chờ boot, rồi paste.
+		session = new_session(tool, { cwd = history().project_cwd() })
+		if not session then
+			return -- new_session đã notify lý do (binary not found ...)
+		end
+		session.ready = false
 	end
+
 	attach(session) -- mở + focus pane; job nhận input bất kể focus nên không đua.
 	local function deliver()
 		if not is_alive(session) then
