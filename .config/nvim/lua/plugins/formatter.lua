@@ -23,7 +23,9 @@ return {
 			-- python = { "black" },
 			python = function(bufnr)
 				if require("conform").get_formatter_info("ruff_format", bufnr).available then
-					return { "isort", "ruff_format" }
+					-- ruff lo luôn phần isort qua ruff_organize_imports (ruff check --select I --fix)
+					-- -> không cần binary isort riêng. Organize imports trước, rồi format.
+					return { "ruff_organize_imports", "ruff_format" }
 				else
 					return { "isort", "black" }
 				end
