@@ -89,6 +89,17 @@ return {
 			mode = "n",
 		},
 		{
+			-- Duyệt SKILL của tool (ECC + skill gốc + skill tự viết) rồi áp lên code đang
+			-- chọn. Skill là tài liệu hướng dẫn nên hợp với selection, khác hẳn command
+			-- cấp repo ở <leader>aw.
+			"<leader>aS",
+			function()
+				require("customize.aiterm").skill_pick()
+			end,
+			desc = "AI: use a skill",
+			mode = { "n", "x" },
+		},
+		{
 			-- Lệnh ECC CẤP REPO (/code-review, /build-fix, /quality-gate...). Tách khỏi
 			-- <leader>ai vì chúng chạy git diff / npx trên cả project, bỏ qua đoạn code
 			-- đang chọn -> gửi không kèm context file.

@@ -760,6 +760,43 @@ end
 
 -- Preview build ngay trong finder (dữ liệu đã có sẵn trong RAM từ discovery)
 -- -> không đọc lại file jsonl 5 MB khi di chuyển con trỏ.
+-- Nhãn + màu + động từ theo trạng thái ECC. "current" thì <CR> là CÀI LẠI chứ không
+-- phải cập nhật; nói đúng để không mất vài phút chạy lại quy trình mà tưởng đang có
+-- việc cần làm.
+local ECC_STATE = {
+	current = { "up to date", "SnacksPickerGitStatusStaged", "reinstall" },
+	outdated = { "OUTDATED", "DiagnosticWarn", "update" },
+	missing = { "not installed", "SnacksPickerDimmed", "install" },
+	unknown = { "unknown", "SnacksPickerDimmed", "reinstall" },
+}
+
+-- Preview cho M.ecc. Nhận clone/remote qua tham số thay vì tự đọc: finder gọi nó nhiều
+-- lần, mà clone_info() có spawn git - đọc lại mỗi dòng là phí.
+local function ecc_preview(item, e, clone, remote)
+	local d = new_doc()
+	local s = ECC_STATE[item.state] or ECC_STATE.unknown
+	local i = item.info
+	doc_title(d, "ecc", ("ECC · %s"):format(item.tool.name), TOOL_HL[item.tool.name])
+	doc_row(d, "f_updated", "status", s[1], s[2])
+	doc_row(d, "f_version", "version", i and i.version)
+	doc_row(d, "f_id", "commit", i and i.short)
+	doc_row(d, "f_agent", "profile", i and i.profile)
+	doc_row(d, "f_created", "since", i and i.at)
+	doc_row(d, "f_cmd", "commands", tostring(item.cmds))
+	doc_row(d, "f_prompt", "skills", tostring(item.skills))
+	doc_row(d, "f_cwd", "reads", vim.fn.fnamemodify(e.source_dirs(item.tool.name)[1] or "?", ":~"))
+	doc_section(d, "f_version", "Clone")
+	doc_block(d, {
+		clone and ("%s · %s (%s)"):format(clone.version or "?", clone.short or "?", clone.branch or "?")
+			or "not cloned yet",
+		vim.fn.fnamemodify(e.dir(), ":~"),
+		remote and ("origin: " .. remote) or "origin: press <A-u> to ask GitHub",
+	}, "SnacksPickerDimmed")
+	doc_section(d, "f_cmd", ("Commands to run (%s)"):format(s[3]))
+	doc_block(d, e.steps(item.tool.name) or { "(unsupported target)" })
+	return doc_done(d)
+end
+
 local function preview_text(item)
 	local d = new_doc()
 	local tool = item.tool
@@ -1040,6 +1077,25 @@ local WF_FOOTER = {
 	{ "run  ", "SnacksPickerDimmed" },
 	{ "M-t ", "SnacksPickerLabel" },
 	{ "tool  ", "SnacksPickerDimmed" },
+	{ "? ", "SnacksPickerLabel" },
+	{ "keys ", "SnacksPickerDimmed" },
+}
+
+local SKILL_FOOTER = {
+	{ " <CR> ", "SnacksPickerLabel" },
+	{ "use  ", "SnacksPickerDimmed" },
+	{ "M-t ", "SnacksPickerLabel" },
+	{ "tool  ", "SnacksPickerDimmed" },
+	{ "? ", "SnacksPickerLabel" },
+	{ "keys ", "SnacksPickerDimmed" },
+}
+
+-- Footer của M.ecc. M-u là phím DUY NHẤT đi mạng trong cả plugin nên phải hiện rõ.
+local ECC_FOOTER = {
+	{ " <CR> ", "SnacksPickerLabel" },
+	{ "run  ", "SnacksPickerDimmed" },
+	{ "M-u ", "SnacksPickerLabel" },
+	{ "github  ", "SnacksPickerDimmed" },
 	{ "? ", "SnacksPickerLabel" },
 	{ "keys ", "SnacksPickerDimmed" },
 }
@@ -1980,6 +2036,153 @@ function M.workflows()
 	})
 end
 
+-- Picker skill (<leader>as). KHÁC M.workflows: command là quy trình cấp repo (chạy
+-- git diff / npx), còn skill là TÀI LIỆU HƯỚNG DẪN nên áp được lên đoạn code đang chọn
+-- -> message dựng theo ngữ cảnh y như <leader>ai.
+-- Hiện ĐỦ mọi skill, phân nhóm theo nguồn: ecc (ECC cài) / builtin (skill gốc của tool,
+-- ví dụ 6 cái .system của codex) / user (bạn tự viết).
+local SKILL_ORIGIN = {
+	ecc = { "ECC", nil }, -- nil -> lấy màu theo tool
+	builtin = { "built-in", "SnacksPickerSpecial" },
+	user = { "user", "SnacksPickerLabel" },
+}
+
+function M.skill_pick()
+	if not (_G.Snacks and Snacks.picker) then
+		notify("aiterm: snacks.nvim picker required", "warn")
+		return
+	end
+	local e = ecc()
+	if not e then
+		notify("aiterm: ECC module unavailable", "warn")
+		return
+	end
+	-- Chỉ xoay qua tool CÓ skill: xoay vào danh sách rỗng thì <A-t> nhìn như bị hỏng.
+	local tools = {}
+	for _, t in ipairs(M.config.tools) do
+		if #e.skill_list(t.name) > 0 then
+			tools[#tools + 1] = t
+		end
+	end
+	if #tools == 0 then
+		notify("no skills found for any tool - use <leader>aE", "warn")
+		return
+	end
+	local idx = 1
+	local cur = target_tool()
+	for i, t in ipairs(tools) do
+		if cur and t.name == cur.name then
+			idx = i
+		end
+	end
+	-- BẮT context TRƯỚC khi mở picker: mở picker là đổi buffer/window, capture_context
+	-- lúc confirm sẽ đọc nhầm chính cửa sổ picker.
+	local ctx = capture_context()
+	ensure_hl()
+
+	local function title_for(t)
+		local g = { ecc = 0, builtin = 0, user = 0 }
+		for _, s in ipairs(e.skill_list(t.name)) do
+			g[s.origin] = (g[s.origin] or 0) + 1
+		end
+		local parts = {}
+		for _, k in ipairs({ "ecc", "builtin", "user" }) do
+			if g[k] > 0 then
+				parts[#parts + 1] = ("%d %s"):format(g[k], SKILL_ORIGIN[k][1])
+			end
+		end
+		return ("Skills (%s)  %s"):format(t.name, table.concat(parts, " · "))
+	end
+
+	Snacks.picker({
+		title = title_for(tools[idx]),
+		sk_tool = tools[idx].name,
+		finder = function(popts)
+			local t = find_tool(popts.sk_tool) or tools[1]
+			local list = e.skill_list(t.name)
+			local w = 0
+			for _, s in ipairs(list) do
+				w = math.max(w, #s.name)
+			end
+			local items = {}
+			for _, s in ipairs(list) do
+				items[#items + 1] = {
+					skill = s,
+					tool = t,
+					pad = string.rep(" ", w - #s.name + 2),
+					-- origin nằm trong text -> gõ "ecc" hay "builtin" là lọc theo nhóm.
+					text = s.origin .. " " .. s.name .. " " .. s.desc,
+					file = s.path, -- preview thẳng SKILL.md, khỏi tự dựng doc
+				}
+			end
+			return items
+		end,
+		format = function(item)
+			local o = SKILL_ORIGIN[item.skill.origin] or SKILL_ORIGIN.user
+			return {
+				{ ("%-9s "):format(o[1]), o[2] or TOOL_HL[item.tool.name] or "SnacksPickerSpecial" },
+				{ item.skill.name, "SnacksPickerLabel" },
+				{ item.pad },
+				{ item.skill.desc, "SnacksPickerDimmed" },
+			}
+		end,
+		preview = "file",
+		layout = build_layout(SKILL_FOOTER),
+		actions = {
+			aiterm_skill_tool = function(picker)
+				if #tools < 2 then
+					notify(("only %s has skills"):format(tools[1].name), "info")
+					return
+				end
+				idx = idx % #tools + 1
+				picker.opts.sk_tool = tools[idx].name
+				picker.title = title_for(tools[idx])
+				picker:find({ refresh = true })
+			end,
+		},
+		win = {
+			input = {
+				keys = {
+					["<a-t>"] = { "aiterm_skill_tool", mode = { "i", "n" }, desc = "switch tool" },
+					["<a-?>"] = { "toggle_help_input", mode = { "i", "n" }, desc = "show keys" },
+				},
+			},
+			list = {
+				keys = {
+					["<a-t>"] = { "aiterm_skill_tool", desc = "switch tool" },
+					["<a-?>"] = { "toggle_help_list", desc = "show keys" },
+				},
+			},
+		},
+		confirm = function(picker, item)
+			if not item then
+				return
+			end
+			local s = item.skill
+			local instr = ("Use the `%s` skill."):format(s.name)
+			if s.hint then
+				-- Skill khai argument-hint nghĩa là nó CẦN tham số (tdd-workflow cần
+				-- đường dẫn plan). Huỷ input thì không gửi, đừng gửi lệnh cụt.
+				local answer = vim.fn.input(("%s %s: "):format(s.name, s.hint))
+				if answer == "" then
+					return
+				end
+				instr = instr .. " " .. answer
+			end
+			picker:close()
+			vim.schedule(function()
+				-- Không có context thì gửi thẳng instr: build_message luôn chèn một dòng
+				-- trống sau instruction (để tách với @ref), không có @ref thì dòng trống
+				-- đó thành rác đuôi. M.actions không gặp ca này vì nó chặn từ đầu khi
+				-- thiếu cả file lẫn code.
+				local msg = (ctx.file or ctx.code) and build_message(instr, ctx) or instr
+				-- tool LẤY TỪ ITEM: <A-t> cho phép chọn tool khác session đang mở.
+				M.send(msg, { submit = true, tool = item.tool })
+			end)
+		end,
+	})
+end
+
 -- Trạng thái ECC từng tool + cài/cập nhật. Dòng "ecc" trong picker biến mất sau khi
 -- cài xong, nên đây là đường để cập nhật (git pull) về sau. <leader>aE.
 function M.ecc()
@@ -1988,22 +2191,108 @@ function M.ecc()
 		notify("ECC module unavailable", "warn")
 		return
 	end
-	local items = {}
-	for _, t in ipairs(M.config.tools) do
-		items[#items + 1] = { tool = t, installed = e.installed(t.name), count = e.count(t.name) }
+	if not (_G.Snacks and Snacks.picker) then
+		notify("aiterm: snacks.nvim picker required", "warn")
+		return
 	end
-	vim.ui.select(items, {
-		prompt = "ECC:",
-		format_item = function(it)
-			local icon = M.icons()[it.tool.name] or " "
-			local state = it.installed and ("update  (%d commands)"):format(it.count) or "install"
-			return ("%s  %-9s %s"):format(icon, it.tool.name, state)
-		end,
-	}, function(choice)
-		if choice then
-			install_ecc(choice.tool)
+	ensure_hl()
+
+	local clone = e.clone_info()
+	-- Kết quả <A-u> giữ ở đây để find() vẽ lại vẫn còn. nil = chưa hỏi GitHub lần nào;
+	-- KHÔNG hỏi lúc mở picker: ls-remote đo được ~1s, chặn chừng đó là thấy rõ.
+	local remote, remote_err
+	local function title()
+		if not clone then
+			return "ECC  (chưa clone)"
 		end
-	end)
+		local t = ("ECC  %s"):format(clone.version or "?")
+		if clone.short then
+			t = t .. " · " .. clone.short
+		end
+		if remote_err then
+			return t .. "  (github: " .. remote_err .. ")"
+		elseif remote then
+			-- ASCII trong literal: file này đã ba lần bị ký tự lạ lọt vào, nên gate glyph
+			-- giữ ở 0 cho dòng mới. Mũi tên/dấu ba chấm không đáng để phá lệ.
+			return t .. (remote == clone.short and "  = origin" or ("  <- origin " .. remote))
+		end
+		return t
+	end
+	Snacks.picker({
+		title = title(),
+		finder = function()
+			local items = {}
+			for _, t in ipairs(M.config.tools) do
+				local st = e.status(t.name)
+				local it = {
+					tool = t,
+					state = st,
+					info = e.installed_info(t.name),
+					cmds = e.count(t.name),
+					skills = vim.tbl_count(e.skills(t.name)),
+					text = t.name .. " " .. st,
+				}
+				it.preview = ecc_preview(it, e, clone, remote)
+				items[#items + 1] = it
+			end
+			return items
+		end,
+		format = function(item)
+			local s = ECC_STATE[item.state] or ECC_STATE.unknown
+			local ver = item.info and item.info.version or "-"
+			if item.info and item.info.short then
+				ver = ver .. " · " .. item.info.short
+			end
+			return {
+				{ (M.icons()[item.tool.name] or " ") .. " ", TOOL_HL[item.tool.name] or "SnacksPickerSpecial" },
+				{ ("%-9s "):format(item.tool.name), "SnacksPickerLabel" },
+				{ ("%-14s"):format(s[1]), s[2] },
+				{ ("%-18s"):format(ver), "SnacksPickerDimmed" },
+				{ ("%4d cmd  %4d skills"):format(item.cmds, item.skills), "SnacksPickerDimmed" },
+			}
+		end,
+		-- item.preview = { text, extmarks } dựng sẵn trong finder, đúng khuôn đã dùng ở
+		-- M.pick: khỏi phải đụng API preview-function của snacks.
+		preview = "preview",
+		layout = build_layout(ECC_FOOTER),
+		actions = {
+			-- <A-u>: lần DUY NHẤT plugin đi mạng, và chỉ khi bạn bấm. ls-remote chỉ hỏi
+			-- HEAD của origin, không tải gì về.
+			aiterm_ecc_remote = function(picker)
+				notify("asking GitHub...", "info")
+				e.remote_head(function(sha, err)
+					remote, remote_err = sha, err
+					if not picker.closed then
+						picker.title = title()
+						picker:find({ refresh = true })
+					end
+				end)
+			end,
+		},
+		win = {
+			input = {
+				keys = {
+					["<a-u>"] = { "aiterm_ecc_remote", mode = { "i", "n" }, desc = "check github" },
+					["<a-?>"] = { "toggle_help_input", mode = { "i", "n" }, desc = "show keys" },
+				},
+			},
+			list = {
+				keys = {
+					["<a-u>"] = { "aiterm_ecc_remote", desc = "check github" },
+					["<a-?>"] = { "toggle_help_list", desc = "show keys" },
+				},
+			},
+		},
+		confirm = function(picker, item)
+			if not item then
+				return
+			end
+			picker:close()
+			vim.schedule(function()
+				install_ecc(item.tool)
+			end)
+		end,
+	})
 end
 
 -- inline hints (inlay kiểu code-lens) ------------------------------------

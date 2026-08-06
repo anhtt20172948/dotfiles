@@ -34,6 +34,17 @@ local HEAD_LINES = 10
 local cache = {}
 local skill_cache = {}
 local desc_cache = {}
+local owned_cache = {}
+
+local function read_json(path)
+	local ok, data = pcall(vim.fn.readfile, path)
+	if not ok or not data or #data == 0 then
+		return nil
+	end
+	local decoded
+	ok, decoded = pcall(vim.json.decode, table.concat(data, "\n"))
+	return ok and type(decoded) == "table" and decoded or nil
+end
 
 -- helpers ----------------------------------------------------------------
 
@@ -131,33 +142,114 @@ function M.commands(tool)
 	return cmds
 end
 
--- Skill của ECC (thư mục con có SKILL.md). KHÁC command: skill là tài liệu hướng dẫn
--- nên áp được lên một đoạn code, còn command là quy trình cấp repo (xem M.command_list).
--- codex đọc skill từ ~/.agents/skills - bản sync KHÔNG đổ skill ra đó, nên codex thường
--- rỗng và caller tự rơi về prompt trơn.
+-- Thư mục skill mà TOOL THẬT SỰ ĐỌC. KHÁC command: skill là tài liệu hướng dẫn nên áp
+-- được lên một đoạn code, còn command là quy trình cấp repo (xem M.command_list).
+--   codex: $CODEX_HOME/skills, mặc định ~/.codex/skills - nguồn là chính skill
+--   `skill-creator` của codex ("default to $CODEX_HOME/skills ... so the skill is
+--   auto-discovered"). KHÔNG dò ~/.agents/skills như README của ECC nói: thư mục đó
+--   codex không đọc, liệt kê thứ tool không thấy chính là kiểu "quảng cáo lệnh không
+--   tồn tại" mà cả plugin này đang tránh. Skill gốc của codex nằm sâu một tầng trong
+--   .system/ nên phải quét riêng.
+local function skill_dirs(tool)
+	if tool == "claude" then
+		return { home(".claude/skills") }
+	elseif tool == "opencode" then
+		return { home(".opencode/skills") }
+	elseif tool == "codex" then
+		return { home(".codex/skills"), home(".codex/skills/.system") }
+	end
+	return {}
+end
+
+-- File ECC đã ghi ra cho tool này, lấy từ install-state. Đây là dấu vết CHUẨN để biết
+-- skill nào của ECC: frontmatter `metadata.origin: ECC` KHÔNG đủ - riêng claude có
+-- 13/44 skill thiếu tag đó mà vẫn là của ECC (ecc-guide, santa-method, repo-scan...).
 ---@return table<string, true>
-function M.skills(tool)
-	local dir = ({
-		claude = home(".claude/skills"),
-		opencode = home(".opencode/skills"),
-		codex = home(".agents/skills"),
-	})[tool]
-	local st = dir and vim.uv.fs_stat(dir)
-	local sig = dir .. ":" .. (st and st.mtime.sec or 0)
-	local c = skill_cache[tool]
+function M.ecc_owned(tool)
+	local path = tool == "claude" and home(".claude/ecc/install-state.json")
+		or tool == "opencode" and home(".opencode/ecc-install-state.json")
+	local st = path and vim.uv.fs_stat(path)
+	local sig = tostring(path) .. ":" .. (st and st.mtime.sec or 0)
+	local c = owned_cache[tool]
 	if c and c.sig == sig then
 		return c.set
 	end
 	local set = {}
-	if st then
-		for name, kind in vim.fs.dir(dir) do
-			if kind == "directory" and vim.uv.fs_stat(dir .. "/" .. name .. "/SKILL.md") then
-				set[name] = true
+	local d = st and read_json(path)
+	for _, op in ipairs(d and type(d.operations) == "table" and d.operations or {}) do
+		if type(op) == "table" and type(op.destinationPath) == "string" then
+			set[op.destinationPath] = true
+		end
+	end
+	owned_cache[tool] = { sig = sig, set = set }
+	return set
+end
+
+local ORIGIN_ORDER = { ecc = 1, builtin = 2, user = 3 }
+
+-- Skill của tool, kèm mô tả + nguồn. Sắp theo NHÓM rồi tên.
+---@return { name: string, desc: string, hint: string|nil, path: string, origin: string }[]
+function M.skill_list(tool)
+	local dirs = skill_dirs(tool)
+	local sig = signature(vim.tbl_map(function(d)
+		return { dir = d }
+	end, dirs))
+	local c = skill_cache[tool]
+	if c and c.sig == sig then
+		return c.list
+	end
+
+	local owned = M.ecc_owned(tool)
+	local list, seen = {}, {}
+	for _, dir in ipairs(dirs) do
+		if vim.uv.fs_stat(dir) then
+			for name, kind in vim.fs.dir(dir) do
+				local path = dir .. "/" .. name .. "/SKILL.md"
+				if kind == "directory" and not seen[name] and vim.uv.fs_stat(path) then
+					seen[name] = true
+					local desc, hint, tagged = "", nil, false
+					local ok, lines = pcall(vim.fn.readfile, path, "", HEAD_LINES)
+					for _, l in ipairs(ok and lines or {}) do
+						desc = desc ~= "" and desc or (l:match("^description:%s*(.+)$") or "")
+						hint = hint or l:match("^argument%-hint:%s*(.+)$")
+						tagged = tagged or l:find("origin: ECC", 1, true) ~= nil
+					end
+					desc = desc:gsub('^"(.*)"$', "%1"):gsub("^'(.*)'$", "%1")
+					-- Thứ tự xác định nguồn: .system là skill gốc của tool -> install-state
+					-- (chuẩn nhất) -> frontmatter (dự phòng cho codex, vốn không có
+					-- install-state) -> còn lại là bạn tự viết.
+					local origin = "user"
+					if dir:find("/.system", 1, true) then
+						origin = "builtin"
+					elseif owned[path] or tagged then
+						origin = "ecc"
+					end
+					list[#list + 1] = { name = name, desc = desc, hint = hint, path = path, origin = origin }
+				end
 			end
 		end
 	end
-	skill_cache[tool] = { sig = sig, set = set }
-	return set
+	table.sort(list, function(a, b)
+		if a.origin ~= b.origin then
+			return (ORIGIN_ORDER[a.origin] or 9) < (ORIGIN_ORDER[b.origin] or 9)
+		end
+		return a.name < b.name
+	end)
+
+	local set = {}
+	for _, s in ipairs(list) do
+		set[s.name] = true
+	end
+	skill_cache[tool] = { sig = sig, list = list, set = set }
+	return list
+end
+
+-- Set tên skill. Giữ chữ ký cũ cho <leader>ai + doctor; dựng từ skill_list để chỉ có
+-- MỘT đường dò.
+---@return table<string, true>
+function M.skills(tool)
+	M.skill_list(tool)
+	return skill_cache[tool].set
 end
 
 -- Danh sách command kèm mô tả, cho picker M.workflows(). Mô tả lấy từ frontmatter
@@ -213,7 +305,137 @@ end
 function M.refresh()
 	cache = {}
 	skill_cache = {}
+	owned_cache = {}
 	desc_cache = {}
+end
+
+-- version / commit ------------------------------------------------------
+-- Để trả lời "tool đã cài có khớp clone không" mà KHÔNG cần mạng. Mọi dữ liệu đều nằm
+-- sẵn trên đĩa; chỉ M.remote_head mới đi mạng và nó phải do người dùng chủ động gọi.
+
+local function short(sha)
+	return type(sha) == "string" and #sha >= 7 and sha:sub(1, 7) or nil
+end
+
+-- Clone dùng chung đang ở đâu. nil = chưa clone bao giờ.
+---@return { version: string|nil, commit: string|nil, short: string|nil, branch: string|nil }|nil
+function M.clone_info()
+	local dir = M.dir()
+	if not vim.uv.fs_stat(dir) then
+		return nil
+	end
+	local info = {}
+	local ok, lines = pcall(vim.fn.readfile, dir .. "/VERSION", "", 1)
+	if ok and lines and lines[1] then
+		info.version = vim.trim(lines[1])
+	end
+	-- Thiếu git thì chỉ mất phần commit, vẫn so được bằng version.
+	if vim.fn.executable("git") == 1 then
+		local function git(...)
+			local r = vim.system({ "git", "-C", dir, ... }, { text = true }):wait(2000)
+			return r.code == 0 and vim.trim(r.stdout or "") or nil
+		end
+		info.commit = git("rev-parse", "HEAD")
+		info.short = short(info.commit)
+		info.branch = git("rev-parse", "--abbrev-ref", "HEAD")
+	end
+	return info
+end
+
+-- ECC đã cài cho tool này ở phiên bản nào.
+-- claude/opencode: installer ghi install-state.json có cả version lẫn commit.
+-- codex: bản sync KHÔNG ghi state -> chỉ moi được version từ khối <!-- BEGIN ECC -->
+-- trong ~/.codex/AGENTS.md, không có commit.
+---@return { version: string|nil, commit: string|nil, short: string|nil, profile: string|nil, at: string|nil }|nil
+function M.installed_info(tool)
+	if tool == "codex" then
+		local agents = home(".codex/AGENTS.md")
+		local ok, lines = pcall(vim.fn.readfile, agents, "", 40)
+		if not ok or not lines then
+			return nil
+		end
+		local inside = false
+		for _, l in ipairs(lines) do
+			if l:find("BEGIN ECC", 1, true) then
+				inside = true
+			elseif l:find("END ECC", 1, true) then
+				break
+			elseif inside then
+				local v = l:match("^%*%*Version:%*%*%s*(%S+)")
+				if v then
+					local st = vim.uv.fs_stat(home(".codex/prompts/ecc-prompts-manifest.txt"))
+					return { version = v, at = st and os.date("%Y-%m-%d", st.mtime.sec) or nil }
+				end
+			end
+		end
+		return nil
+	end
+
+	local path = tool == "claude" and home(".claude/ecc/install-state.json")
+		or tool == "opencode" and home(".opencode/ecc-install-state.json")
+	local d = path and read_json(path)
+	if not d then
+		return nil
+	end
+	local src = type(d.source) == "table" and d.source or {}
+	return {
+		version = src.repoVersion,
+		commit = src.repoCommit,
+		short = short(src.repoCommit),
+		profile = type(d.request) == "table" and d.request.profile or nil,
+		at = type(d.installedAt) == "string" and d.installedAt:sub(1, 10) or nil,
+	}
+end
+
+-- "missing" chưa cài | "current" khớp clone | "outdated" lệch | "unknown" không đủ dữ liệu.
+-- So COMMIT trước vì đó là thứ chắc chắn; version chỉ đổi mỗi lần release nên hai commit
+-- khác nhau vẫn có thể cùng version. Thiếu dữ kiện thì trả "unknown" chứ TUYỆT ĐỐI không
+-- đoán thành "current": báo "up to date" sai còn tệ hơn nói không biết.
+---@return "missing"|"current"|"outdated"|"unknown"
+function M.status(tool)
+	if not M.installed(tool) then
+		return "missing"
+	end
+	local inst, clone = M.installed_info(tool), M.clone_info()
+	if not (inst and clone) then
+		return "unknown"
+	end
+	if inst.commit and clone.commit then
+		return inst.commit == clone.commit and "current" or "outdated"
+	end
+	if inst.version and clone.version then
+		return inst.version == clone.version and "current" or "outdated"
+	end
+	return "unknown"
+end
+
+-- HEAD của origin, KHÔNG fetch (ls-remote chỉ hỏi, không tải). Bất đồng bộ vì đã đo mất
+-- ~1s - chặn UI chừng đó là thấy rõ. cb nhận short sha hoặc nil.
+---@param cb fun(short: string|nil, err: string|nil)
+function M.remote_head(cb)
+	local dir = M.dir()
+	if vim.fn.executable("git") ~= 1 or not vim.uv.fs_stat(dir) then
+		cb(nil, "no git clone")
+		return
+	end
+	vim.system({ "git", "-C", dir, "ls-remote", "origin", "HEAD" }, { text = true }, function(r)
+		local sha = r.code == 0 and (r.stdout or ""):match("^(%x+)") or nil
+		-- KHÔNG viết `sha and nil or err`: `sha and nil` ra nil (falsy) nên nhánh or
+		-- luôn sập về err -> lấy được sha rồi mà vẫn báo lỗi. Đúng cái bẫy and/or đã
+		-- ghi ở build_items ("all_dirs and nil or cwd"). Dùng if tường minh.
+		local err
+		if not sha then
+			-- Luôn có nội dung: git hỏng mà stderr rỗng thì ít nhất còn exit code, chứ
+			-- hiện "(github: )" trống trơn thì không lần ra được gì.
+			err = vim.trim(r.stderr or "")
+			if err == "" then
+				err = ("exit %d"):format(r.code or -1)
+			end
+		end
+		vim.schedule(function()
+			cb(short(sha), err)
+		end)
+	end)
 end
 
 -- Binary cần có trước khi cài. Trả danh sách THIẾU (rỗng = đủ).
