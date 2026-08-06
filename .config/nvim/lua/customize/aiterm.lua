@@ -47,6 +47,15 @@ M.icon_sets = {
 		install = c(0xF019), -- download
 		branch = c(0xF418), -- git-branch
 		all_dirs = c(0xF07C), -- folder-open
+		-- action icon (dùng ở inlay hint + menu <leader>ai). Toàn Font-Awesome cổ
+		-- điển U+F0xx (<= U+F0C3) nên chắc chắn nằm trong cmap SFMono NF v2.
+		explain = c(0xF05A), -- info-circle
+		ask = c(0xF059), -- question-circle
+		fix = c(0xF0AD), -- wrench
+		review = c(0xF06E), -- eye
+		tests = c(0xF0C3), -- flask
+		refactor = c(0xF021), -- refresh
+		docs = c(0xF02D), -- book
 	},
 	unicode = {
 		claude = c(0x25C6), -- ◆
@@ -148,6 +157,49 @@ M.config = {
 	win = { width = 0.4 }, -- tỉ lệ rộng của vsplit
 	start_insert = true,
 	history = { scope = "cwd" }, -- scope mặc định của picker: "cwd" | "all"
+
+	-- Gửi context (file/selection + instruction) vào session đang chạy. Xem M.actions().
+	--   default_tools - CHUỖI ưu tiên khi CHƯA có session sống: chọn tool ĐÃ CÀI đầu
+	--                   tiên. Ghi đè phiên/lâu dài qua M.set_default_tool (<leader>aD).
+	--   ready         - phát hiện session vừa tạo "sẵn sàng" (terminal vẽ xong + im)
+	--                   trước lần gửi đầu, thay cho delay cố định (hay miss request).
+	--                   min_ms sàn boot, quiet_ms im bao lâu thì coi là xong, max_ms
+	--                   trần fallback, interval_ms nhịp poll.
+	--   submit_delay  - ms giữa lúc dán xong và lúc gửi <CR>; cho TUI (Ink/React của
+	--                   claude) kịp xử lý bracketed-paste trước khi Enter submit.
+	send = {
+		default_tools = { "codex", "opencode", "claude" },
+		ready = { min_ms = 250, quiet_ms = 400, max_ms = 10000, interval_ms = 120 },
+		submit_delay = 120,
+	},
+
+	-- Node treesitter coi là "khối code" để lấy làm context ở normal mode. Khớp
+	-- theo SUBSTRING type nên phủ nhiều ngôn ngữ mà không cần query riêng từng ngôn
+	-- ngữ (function_declaration, method_definition, class_specifier, struct_specifier...).
+	ts_node_types = { "function", "method", "class", "struct", "constructor", "impl" },
+
+	-- Inlay hint trên code buffer (kiểu code-lens của CodeCompanion): 1 dòng ảo phía
+	-- trên function/class ĐANG chứa con trỏ. Badge = icon+tên tool mặc định (tô màu
+	-- theo tool) + vài action có icon + phím tắt mờ. actions là danh sách action.key
+	-- muốn quảng cáo; icon tra M.icons() nên tự xuống chữ ở style unicode/ascii.
+	hints = {
+		enabled = true,
+		actions = { "explain", "fix", "tests" },
+		key = "<leader>ai",
+	},
+
+	-- Preset cho picker M.actions(). `key` khớp icon trong M.icons() (hiện icon ở
+	-- menu + hint). `prompt` là câu lệnh cố định; `input` (nếu có) hỏi câu hỏi tự do
+	-- qua vim.fn.input rồi dùng thay cho prompt.
+	actions = {
+		{ key = "explain", label = "Explain", prompt = "Explain what this code does, step by step." },
+		{ key = "ask", label = "Ask a question", input = "Ask about this code: " },
+		{ key = "fix", label = "Fix bugs", prompt = "Find and fix any bugs in this code. Explain the fix." },
+		{ key = "review", label = "Review", prompt = "Review this code for correctness, edge cases, and style issues." },
+		{ key = "tests", label = "Write tests", prompt = "Write tests for this code." },
+		{ key = "refactor", label = "Refactor", prompt = "Refactor this code to be clearer and more idiomatic, without changing its behavior." },
+		{ key = "docs", label = "Add docs", prompt = "Add documentation/docstrings to this code." },
+	},
 }
 
 -- state ------------------------------------------------------------------
@@ -485,7 +537,7 @@ local function preview_text(item)
 	add("cwd", e.cwd and vim.fn.fnamemodify(e.cwd, ":~"))
 	add("branch", e.branch)
 	if e.time and e.time > 0 then
-		add("updated", os.date("%Y-%m-%d %H:%M", e.time) .. " (" .. Snacks.picker.util.reltime(e.time) .. ")")
+		add("updated", os.date("%Y-:::::::::::::::::::::::::kjkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk%m-%d %H:%M", e.time) .. " (" .. Snacks.picker.util.reltime(e.time) .. ")")
 	end
 	if e.prompt then
 		l[#l + 1] = ""
@@ -1040,5 +1092,411 @@ function M.toggle()
 		M.focus()
 	end
 end
+
+-- code interaction (ask / explain ... kiểu CodeCompanion) ------------------
+-- Không cần plugin LLM: aiterm chạy CLI trong PTY nên "tương tác source code" =
+-- dựng message (file/selection + instruction) rồi CHANSEND vào job của session.
+
+-- default tool (chuỗi fallback + override lưu qua các lần khởi động) ------
+-- default_override: tên tool người dùng chốt (qua M.set_default_tool / <leader>aD),
+-- đọc lại từ state file lúc require. Ưu tiên hơn M.config.send.default_tools.
+local default_override
+local refresh_hints -- forward-declare: định nghĩa ở mục inline hints bên dưới
+
+local function state_file()
+	return vim.fs.joinpath(vim.fn.stdpath("state"), "aiterm-default-tool")
+end
+
+-- Tool để auto-tạo session: override (nếu hợp lệ) trước, rồi tool ĐÃ CÀI đầu tiên
+-- trong default_tools; không cái nào cài -> tool hợp lệ đầu (new_session sẽ gợi ý cài).
+local function resolve_default_tool()
+	local order, first = {}, nil
+	if default_override then
+		order[#order + 1] = default_override
+	end
+	vim.list_extend(order, M.config.send.default_tools or {})
+	for _, name in ipairs(order) do
+		local t = find_tool(name)
+		if t then
+			first = first or t
+			if tool_cmd(t) then
+				return t
+			end
+		end
+	end
+	return first or M.config.tools[1]
+end
+
+-- Đọc lựa chọn đã lưu (pcall-safe: file thiếu/rác -> không override).
+local function load_default()
+	local ok, lines = pcall(vim.fn.readfile, state_file())
+	local name = ok and lines[1] and vim.trim(lines[1]) or ""
+	if name ~= "" and find_tool(name) then
+		default_override = name
+	end
+end
+
+--- Chốt tool mặc định (auto-tạo) và LƯU qua các lần khởi động.
+---@param name string
+function M.set_default_tool(name)
+	if not find_tool(name) then
+		notify("aiterm: unknown tool " .. tostring(name), "warn")
+		return
+	end
+	default_override = name
+	pcall(vim.fn.writefile, { name }, state_file())
+	notify("AI default tool: " .. name, "info")
+end
+
+--- Menu chọn tool mặc định (<leader>aD), có icon + đánh dấu (current).
+function M.pick_default()
+	local ic, names = M.icons(), {}
+	for _, t in ipairs(M.config.tools) do
+		names[#names + 1] = t.name
+	end
+	vim.ui.select(names, {
+		prompt = "Default AI tool:",
+		format_item = function(n)
+			return (ic[n] and ic[n] .. " " or "") .. n .. (default_override == n and "  (current)" or "")
+		end,
+	}, function(choice)
+		if choice then
+			M.set_default_tool(choice)
+			refresh_hints() -- badge phản ánh ngay tool vừa chọn
+		end
+	end)
+end
+
+-- Session còn sống mà thao tác gửi sẽ nhắm tới. Ưu tiên:
+--   1. session đang hiển thị trong pane AI (nếu pane đang focus)
+--   2. last_session nếu còn sống
+--   3. session còn sống đầu tiên
+--   4. tạo mới bằng resolve_default_tool() -> trả kèm fresh=true để hoãn lần gửi đầu.
+-- Trả về: session, fresh(boolean). session=nil nếu tạo mới thất bại.
+local function target_session()
+	if win_valid() then
+		local buf = vim.api.nvim_win_get_buf(win)
+		for _, s in ipairs(sessions) do
+			if s.buf == buf and is_alive(s) then
+				return s, false
+			end
+		end
+	end
+	local s = last_session and find(last_session)
+	if is_alive(s) then
+		return s, false
+	end
+	for _, cand in ipairs(sessions) do
+		if is_alive(cand) then
+			return cand, false
+		end
+	end
+	local created = new_session(resolve_default_tool(), { cwd = history().project_cwd() })
+	if created then
+		created.ready = false -- session vừa tạo: M.send phải chờ CLI boot xong (when_ready)
+	end
+	return created, true
+end
+
+-- Chữ ký nội dung terminal để phát hiện "đã vẽ xong rồi im" (quiescence): số dòng
+-- + vài dòng cuối. Đủ nhạy để thấy CLI in gì đó, đủ rẻ để poll mỗi ~120ms.
+local function term_signature(buf)
+	if not vim.api.nvim_buf_is_valid(buf) then
+		return nil
+	end
+	local n = vim.api.nvim_buf_line_count(buf)
+	return n .. "\0" .. table.concat(vim.api.nvim_buf_get_lines(buf, math.max(0, n - 3), n, false), "\n")
+end
+
+-- Chờ session "sẵn sàng" rồi gọi cb. Sẵn sàng = ĐÃ thấy terminal đổi khác lúc mới
+-- mở (CLI in gì đó -> đã boot) VÀ nội dung im quiet_ms, sau khi qua min_ms; hết
+-- max_ms thì flush luôn. Thay cho delay cố định cũ (gửi sớm -> mất/lộn xộn request).
+local function when_ready(session, cb)
+	local r = M.config.send.ready
+	local start = vim.uv.now()
+	local initial = term_signature(session.buf)
+	local last, stable_since, seen_change = initial, nil, false
+	local timer = vim.uv.new_timer()
+	local function stop()
+		if timer and not timer:is_closing() then
+			timer:stop()
+			timer:close()
+		end
+	end
+	timer:start(
+		r.interval_ms,
+		r.interval_ms,
+		vim.schedule_wrap(function()
+			if not is_alive(session) then
+				stop()
+				return
+			end
+			local now = vim.uv.now()
+			local sig = term_signature(session.buf)
+			if sig ~= last then
+				last, stable_since = sig, now
+				if sig ~= initial then
+					seen_change = true
+				end
+			end
+			local quiet = seen_change and stable_since and (now - stable_since) >= r.quiet_ms
+			if (now - start) >= r.max_ms or ((now - start) >= r.min_ms and quiet) then
+				stop()
+				cb()
+			end
+		end)
+	)
+end
+
+-- Bracketed paste: TUI coi cả block (kể cả xuống dòng) là MỘT lần dán, không
+-- submit từng dòng. \27[200~ ... \27[201~ là mã chuẩn của bracketed-paste.
+local function chan_paste(job, text)
+	vim.fn.chansend(job, "\27[200~" .. text .. "\27[201~")
+end
+
+--- Gửi text vào session AI đang chạy (tạo mới nếu chưa có), tuỳ chọn submit luôn.
+---@param text string
+---@param opts? { submit?: boolean }
+function M.send(text, opts)
+	opts = opts or {}
+	local session = target_session() -- (fresh flag không cần: dựa vào session.ready)
+	if not session then
+		return -- new_session đã notify lý do (binary not found ...)
+	end
+	attach(session) -- mở + focus pane; job nhận input bất kể focus nên không đua.
+	local function deliver()
+		if not is_alive(session) then
+			return
+		end
+		chan_paste(session.job, text)
+		if opts.submit then
+			-- Enter tách khỏi paste một nhịp: Ink của claude cần kịp xử lý paste.
+			vim.defer_fn(function()
+				if is_alive(session) then
+					vim.fn.chansend(session.job, "\r")
+				end
+			end, M.config.send.submit_delay)
+		end
+	end
+	-- session vừa tạo (ready=false): CLI chưa boot xong -> gửi sớm là mất/lộn xộn
+	-- (bracketed-paste chưa bật). Chờ terminal vẽ xong + im rồi mới gửi; flip ready
+	-- để lần gửi sau tới cùng session là tức thì. Session cũ (ready=nil) gửi ngay.
+	if session.ready == false then
+		notify(("waiting for %s to start…"):format(session.tool.name), "info")
+		when_ready(session, function()
+			session.ready = true
+			deliver()
+		end)
+	else
+		deliver()
+	end
+end
+
+-- Node treesitter bao con trỏ ở window hiện tại, đi ngược lên tới type khớp
+-- M.config.ts_node_types. nil nếu buffer không có parser hoặc con trỏ ở top-level.
+local function enclosing_node()
+	local ok, node = pcall(vim.treesitter.get_node) -- mặc định con trỏ + curbuf
+	if not ok or not node then
+		return nil
+	end
+	while node do
+		local t = node:type()
+		for _, pat in ipairs(M.config.ts_node_types) do
+			if t:find(pat, 1, true) then
+				return node
+			end
+		end
+		node = node:parent()
+	end
+	return nil
+end
+
+-- Bắt context TẠI THỜI ĐIỂM gọi (phải còn trong visual mode để đọc selection).
+-- Keymap bằng Lua function giữ nguyên visual mode nên getpos('v')/getpos('.') đọc
+-- được vùng chọn. Buffer scratch/không tên -> bỏ @ref, chỉ giữ code (nếu có).
+local function capture_context()
+	local file = vim.fn.expand("%:.") -- tương đối với cwd; "" nếu chưa đặt tên
+	if file == "" then
+		file = nil
+	end
+	local lang = vim.bo.filetype
+	local mode = vim.fn.mode()
+	if mode:match("[vV\22]") then -- v / V / <C-v> (\22 = <C-v>)
+		local a, b = vim.fn.getpos("v"), vim.fn.getpos(".")
+		local region = vim.fn.getregion(a, b, { type = mode })
+		return {
+			file = file,
+			lang = lang,
+			code = table.concat(region, "\n"),
+			l1 = math.min(a[2], b[2]),
+			l2 = math.max(a[2], b[2]),
+		}
+	end
+	-- normal mode: thử lấy function/class dưới con trỏ qua treesitter (act-on-scope
+	-- kiểu CodeCompanion); ở top-level / không parser -> fallback @ref cả file.
+	local node = enclosing_node()
+	if node then
+		local sr, _, er = node:range() -- row 0-indexed, er tính cả dòng cuối của node
+		local lines = vim.api.nvim_buf_get_lines(0, sr, er + 1, false)
+		return { file = file, lang = lang, code = table.concat(lines, "\n"), l1 = sr + 1, l2 = er + 1 }
+	end
+	return { file = file, lang = lang }
+end
+
+-- Message hybrid: @ref (agent tự đọc cả file) + fenced block ghim đúng dòng đã chọn.
+local function build_message(instruction, ctx)
+	local l = { instruction, "" }
+	if ctx.file then
+		l[#l + 1] = ctx.l1 and ("@%s (lines %d-%d)"):format(ctx.file, ctx.l1, ctx.l2)
+			or ("@%s"):format(ctx.file)
+	end
+	if ctx.code then
+		l[#l + 1] = "```" .. (ctx.lang or "")
+		vim.list_extend(l, vim.split(ctx.code, "\n", { plain = true }))
+		l[#l + 1] = "```"
+	end
+	return table.concat(l, "\n")
+end
+
+-- Picker action (explain/ask/fix...). Gọi từ normal + visual (<leader>ai).
+function M.actions()
+	local ctx = capture_context() -- BẮT trước khi mở menu (menu thoát visual mode)
+	if not (ctx.file or ctx.code) then
+		notify("aiterm: no file or selection to send", "warn")
+		return
+	end
+	vim.ui.select(M.config.actions, {
+		prompt = "AI action:",
+		format_item = function(a)
+			local icon = a.key and M.icons()[a.key]
+			return (icon and icon .. "  " or "") .. a.label
+		end,
+	}, function(choice)
+		if not choice then
+			return
+		end
+		local instr = choice.prompt
+		if choice.input then
+			instr = vim.fn.input(choice.input)
+			if instr == "" then
+				return
+			end
+		end
+		M.send(build_message(instr, ctx), { submit = true })
+	end)
+end
+
+-- inline hints (inlay kiểu code-lens) ------------------------------------
+-- 1 dòng ảo phía trên function/class ĐANG chứa con trỏ, quảng cáo <leader>ai.
+-- Terminal virt_text KHÔNG click được -> hint chỉ là gợi ý trực quan, kích hoạt
+-- vẫn qua <leader>ai (tác động lên đúng node dưới con trỏ, xem capture_context).
+local hint_ns = vim.api.nvim_create_namespace("aiterm_hints")
+local hints_on -- nil tới lần đọc đầu -> lấy từ M.config.hints.enabled
+local hint_state = {} -- buf -> start-row của node đã vẽ (bỏ vẽ lại khi chưa đổi node)
+
+local function hints_enabled()
+	if hints_on == nil then
+		hints_on = M.config.hints.enabled
+	end
+	return hints_on
+end
+
+-- Buffer file thường (buftype rỗng) và có parser treesitter.
+local function hintable_buf(buf)
+	if not vim.api.nvim_buf_is_valid(buf) or vim.bo[buf].buftype ~= "" then
+		return false
+	end
+	local ok, parser = pcall(vim.treesitter.get_parser, buf)
+	return ok and parser ~= nil
+end
+
+local function clear_hints(buf)
+	pcall(vim.api.nvim_buf_clear_namespace, buf, hint_ns, 0, -1)
+	hint_state[buf] = nil
+end
+
+-- Vẽ lại hint cho buf. Chỉ vẽ khi buf là window hiện tại (hint theo con trỏ).
+refresh_hints = function(buf) -- gán vào local đã forward-declare ở mục default tool
+	buf = buf or vim.api.nvim_get_current_buf()
+	if not (hints_enabled() and hintable_buf(buf) and buf == vim.api.nvim_get_current_buf()) then
+		clear_hints(buf)
+		return
+	end
+	local node = enclosing_node()
+	local sr = node and select(1, node:range()) or nil
+	if sr == hint_state[buf] then -- cùng node -> không nhấp nháy
+		return
+	end
+	pcall(vim.api.nvim_buf_clear_namespace, buf, hint_ns, 0, -1)
+	hint_state[buf] = sr
+	if not sr then
+		return
+	end
+	-- căn theo indent dòng đầu node cho dòng ảo thẳng với code.
+	local first = vim.api.nvim_buf_get_lines(buf, sr, sr + 1, false)[1] or ""
+	local indent = first:match("^%s*") or ""
+
+	-- Badge: icon+tên tool mặc định (tô màu theo tool) + action có icon + phím mờ.
+	local tool = resolve_default_tool()
+	local ic = M.icons()
+	local thl = TOOL_HL[tool.name] or "Special"
+	local vt = {
+		{ indent, "Normal" },
+		{ tool_icon(tool) .. " ", thl },
+		{ tool.name .. "   ", thl },
+	}
+	for i, akey in ipairs(M.config.hints.actions or {}) do
+		if i > 1 then
+			vt[#vt + 1] = { " · ", "NonText" }
+		end
+		if ic[akey] then
+			vt[#vt + 1] = { ic[akey] .. " ", thl }
+		end
+		vt[#vt + 1] = { akey, "Comment" }
+	end
+	if M.config.hints.key then
+		vt[#vt + 1] = { "   " .. M.config.hints.key, "NonText" }
+	end
+
+	pcall(vim.api.nvim_buf_set_extmark, buf, hint_ns, sr, 0, {
+		virt_lines = { vt },
+		virt_lines_above = true,
+		hl_mode = "combine",
+	})
+end
+
+-- Đăng ký autocmd refresh (idempotent). Gọi từ bootstrap VeryLazy và toggle.
+local hints_group
+function M.setup_hints()
+	ensure_hl() -- đăng ký AitermClaude/Codex/Opencode để badge có màu tool (Snacks đã load ở VeryLazy)
+	if not hints_enabled() or hints_group then
+		return
+	end
+	hints_group = vim.api.nvim_create_augroup("AitermHints", { clear = true })
+	vim.api.nvim_create_autocmd({ "CursorMoved", "CursorHold", "BufEnter", "TextChanged", "InsertLeave" }, {
+		group = hints_group,
+		callback = function(args)
+			refresh_hints(args.buf)
+		end,
+	})
+	refresh_hints()
+end
+
+-- Bật/tắt hint. Tắt -> xoá hết extmark ở mọi buffer.
+function M.toggle_hints()
+	hints_on = not hints_enabled()
+	if hints_on then
+		M.setup_hints()
+		refresh_hints()
+	else
+		for _, b in ipairs(vim.api.nvim_list_bufs()) do
+			clear_hints(b)
+		end
+	end
+	notify("AI code hints " .. (hints_on and "on" or "off"), "info")
+end
+
+-- Đọc default tool đã lưu ngay khi require (độc lập với việc hint bật hay tắt).
+load_default()
 
 return M

@@ -2,6 +2,17 @@
 -- Merge vào spec snacks (cùng name -> lazy tự gộp; snacks lazy=false nên keymap
 -- đăng ký ngay). Logic ở lua/customize/aiterm.lua, discovery session cũ trên đĩa
 -- ở lua/customize/aiterm_history.lua.
+
+-- Bootstrap inlay hints "bật sẵn" mà KHÔNG require module sớm: đăng ký 1 autocmd
+-- lúc lazy import file này (startup), rồi tới VeryLazy mới require + setup_hints.
+vim.api.nvim_create_autocmd("User", {
+	pattern = "VeryLazy",
+	once = true,
+	callback = function()
+		require("customize.aiterm").setup_hints()
+	end,
+})
+
 return {
 	"folke/snacks.nvim",
 	keys = {
@@ -55,6 +66,35 @@ return {
 				require("customize.aiterm").focus()
 			end,
 			desc = "AI terminal: focus",
+			mode = "n",
+		},
+		{
+			-- Gửi file/selection tới session AI đang chạy: menu explain/ask/fix/...
+			-- (kiểu CodeCompanion). Visual = @ref + fenced selection; normal = @ref +
+			-- function/class dưới con trỏ (treesitter), top-level = @ref cả file.
+			"<leader>ai",
+			function()
+				require("customize.aiterm").actions()
+			end,
+			desc = "AI: code actions (explain/ask/fix)",
+			mode = { "n", "x" },
+		},
+		{
+			-- Bật/tắt inlay hint (dòng ảo phía trên function/class dưới con trỏ).
+			"<leader>at",
+			function()
+				require("customize.aiterm").toggle_hints()
+			end,
+			desc = "AI: toggle code hints",
+			mode = "n",
+		},
+		{
+			-- Chốt tool mặc định (auto-tạo khi chưa có session), lưu qua các lần mở nvim.
+			"<leader>aD",
+			function()
+				require("customize.aiterm").pick_default()
+			end,
+			desc = "AI: set default tool",
 			mode = "n",
 		},
 	},
