@@ -12,11 +12,9 @@ return {
 				enabled = true,
 			},
 			explorer = {
+				---@type snacks.explorer.Config
 				enabled = false,
-				---@class snacks.explorer.Config
-				{
-					replace_netrw = true, -- Replace netrw with the snacks explorer
-				},
+				replace_netrw = true, -- Replace netrw with the snacks explorer
 			},
 			git = {
 				enabled = true,
@@ -315,9 +313,6 @@ return {
 							end
 							local items = {}
 							for i, e in ipairs(h.list(h.project_cwd(), 3)) do
-								if i > 3 then
-									break
-								end
 								-- Cắt title cho khớp bề rộng các mục keys ở trên,
 								-- nếu không dòng dài sẽ đẩy lệch cột phím tắt.
 								-- strcharpart chứ không sub: tránh cắt giữa UTF-8.
@@ -842,7 +837,9 @@ return {
 					_G.bt = function()
 						Snacks.debug.backtrace()
 					end
-					vim.print = _G.dd -- Override print to use snacks for `:=` command
+					if _G.Snacks and Snacks.debug then
+						vim.print = _G.dd -- Override print to use snacks for `:=` command
+					end
 
 					-- Create some toggle mappings
 					Snacks.toggle
