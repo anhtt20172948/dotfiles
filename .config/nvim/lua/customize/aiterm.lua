@@ -72,6 +72,7 @@ M.icon_sets = {
 		security = c(0xF132), -- shield
 		plan = c(0xF0AE), -- tasks
 		quality = c(0xF14A), -- check-square
+		star = c(0xF005), -- fa-star (favorites/pin)
 	},
 	-- Bộ "chạy mọi nơi": MỌI codepoint dưới đây đã kiểm có trong CẢ SFMono NF lẫn
 	-- JetBrainsMono NF. Cẩn thận khi đổi: nvim_strwidth trả 1 kể cả với glyph font
@@ -114,6 +115,7 @@ M.icon_sets = {
 		security = c(0x2020), -- †
 		plan = c(0x00B6), -- ¶
 		quality = c(0x25A0), -- ■
+		star = c(0x2605), -- ★ (width-1 dưới ambiwidth=single)
 	},
 	ascii = {
 		claude = "C",
@@ -148,6 +150,7 @@ M.icon_sets = {
 		security = "S",
 		plan = "P",
 		quality = "Q",
+		star = "*",
 	},
 }
 
@@ -258,6 +261,12 @@ M.config = {
 		-- boot" - đó chính là lỗi làm mất request với opencode.
 		ready = { min_ms = 800, quiet_ms = 1200, max_ms = 10000, interval_ms = 120 },
 		submit_delay = 120,
+		-- Tool nào CHẠY được /slash command của ECC natively. codex 0.146 KHÔNG bung
+		-- ~/.codex/prompts/*.md thành /command (đã đo: "Unrecognized command"; chính
+		-- CODEX-NAVIGATION-GUIDE của ECC cũng ghi "may not execute slash commands
+		-- natively ... read the command file"). false -> M.workflows() DÁN NỘI DUNG
+		-- file lệnh thay cho /token. Tool không có trong bảng coi như native.
+		slash_native = { claude = true, opencode = true, codex = false },
 	},
 
 	-- Node treesitter coi là "khối code" để lấy làm context ở normal mode. Khớp
@@ -1075,6 +1084,10 @@ local FOOTER = {
 local WF_FOOTER = {
 	{ " <CR> ", "SnacksPickerLabel" },
 	{ "run  ", "SnacksPickerDimmed" },
+	{ "M-f ", "SnacksPickerLabel" },
+	{ "pin  ", "SnacksPickerDimmed" },
+	{ "M-a ", "SnacksPickerLabel" },
+	{ "all  ", "SnacksPickerDimmed" },
 	{ "M-t ", "SnacksPickerLabel" },
 	{ "tool  ", "SnacksPickerDimmed" },
 	{ "? ", "SnacksPickerLabel" },
@@ -1084,6 +1097,10 @@ local WF_FOOTER = {
 local SKILL_FOOTER = {
 	{ " <CR> ", "SnacksPickerLabel" },
 	{ "use  ", "SnacksPickerDimmed" },
+	{ "M-f ", "SnacksPickerLabel" },
+	{ "pin  ", "SnacksPickerDimmed" },
+	{ "M-a ", "SnacksPickerLabel" },
+	{ "all  ", "SnacksPickerDimmed" },
 	{ "M-t ", "SnacksPickerLabel" },
 	{ "tool  ", "SnacksPickerDimmed" },
 	{ "? ", "SnacksPickerLabel" },
@@ -1582,6 +1599,35 @@ local function load_default()
 	end
 end
 
+-- favorites (pin) cho picker skill/command --------------------------------
+-- Ghim theo TÊN, tách theo kind ("skills"/"commands"). Lưu qua các lần mở nvim, cùng
+-- khuôn state file như default tool. Picker mặc định chỉ hiện mục đã ghim (xem M.skill_pick).
+local fav = { skills = {}, commands = {} } -- kind -> { name -> true }
+local function fav_file()
+	return vim.fs.joinpath(vim.fn.stdpath("state"), "aiterm-favorites.json")
+end
+local function load_favorites()
+	local ok, lines = pcall(vim.fn.readfile, fav_file())
+	if not ok or not lines or #lines == 0 then
+		return
+	end
+	local ok2, d = pcall(vim.json.decode, table.concat(lines, "\n"))
+	if ok2 and type(d) == "table" then
+		fav.skills = type(d.skills) == "table" and d.skills or {}
+		fav.commands = type(d.commands) == "table" and d.commands or {}
+	end
+end
+local function is_fav(kind, name)
+	return fav[kind][name] == true
+end
+local function toggle_fav(kind, name)
+	fav[kind][name] = (not fav[kind][name]) or nil
+	pcall(vim.fn.writefile, { vim.json.encode(fav) }, fav_file())
+end
+local function fav_count(kind)
+	return vim.tbl_count(fav[kind])
+end
+
 --- Chốt tool mặc định (auto-tạo) và LƯU qua các lần khởi động.
 ---@param name string
 function M.set_default_tool(name)
@@ -1896,6 +1942,32 @@ end
 -- template của /code-review mở đầu bằng `git diff --name-only HEAD`, /build-fix bằng
 -- `npx tsc --noEmit`, /refactor-clean bằng `npx knip` - gửi kèm @ref hay khối code chỉ
 -- là nhiễu. Dùng Snacks picker chứ không vim.ui.select: có cả trăm lệnh, cần fuzzy.
+-- Tool có chạy được /slash command natively không (mặc định: có, trừ khi bảng ghi false).
+local function slash_native(tool)
+	return M.config.send.slash_native[tool.name] ~= false
+end
+
+-- Nội dung file lệnh ECC (đúng cái /command sẽ bung ra), dùng cho tool KHÔNG chạy
+-- slash natively (codex). Thay $ARGUMENTS bằng arg; không có placeholder mà có arg
+-- thì nối "Input: arg". nil nếu đọc file lỗi -> caller quay về gửi /token.
+local function command_body(cm, arg)
+	local ok, lines = pcall(vim.fn.readfile, cm.path)
+	if not ok or not lines or #lines == 0 then
+		return nil
+	end
+	local body = table.concat(lines, "\n")
+	if body:find("$ARGUMENTS", 1, true) then
+		-- %$ escape $ trong pattern; escape % trong chuỗi thay thế (gsub coi % là đặc biệt).
+		-- Gán repl vào local TRƯỚC: (...):gsub trả (chuỗi, count); truyền thẳng vào gsub
+		-- ngoài thì count=0 rơi vào tham số n -> gsub thay 0 lần. Local cắt còn 1 giá trị.
+		local repl = (arg or ""):gsub("%%", "%%%%")
+		body = body:gsub("%$ARGUMENTS", repl)
+	elseif arg and arg ~= "" then
+		body = body .. "\n\nInput: " .. arg
+	end
+	return body
+end
+
 function M.workflows()
 	if not (_G.Snacks and Snacks.picker) then
 		notify("aiterm: snacks.nvim picker required", "warn")
@@ -1906,11 +1978,13 @@ function M.workflows()
 		notify("aiterm: ECC module unavailable", "warn")
 		return
 	end
+	-- cwd để kèm command CỤC BỘ repo (scope=project). Dùng project_cwd (realpath thật).
+	local cwd = history().project_cwd()
 	-- Chỉ xoay qua tool ĐÃ CÓ lệnh ECC: cho xoay vào một danh sách rỗng thì <A-t> nhìn
 	-- như bị hỏng.
 	local tools = {}
 	for _, t in ipairs(M.config.tools) do
-		if #e.command_list(t.name) > 0 then
+		if #e.command_list(t.name, cwd) > 0 then
 			tools[#tools + 1] = t
 		end
 	end
@@ -1934,35 +2008,66 @@ function M.workflows()
 	end
 	local ask_args = M.config.workflow_args.ask
 	local ic = M.icons()
-	local function title_for(t)
-		return ("ECC workflows (%s)"):format(t.name)
+	-- Lệnh hiện trong chế độ pinned: đã ghim HOẶC là lệnh của repo (project luôn hiện).
+	local function shown_in_pinned(cm)
+		return is_fav("commands", cm.name) or cm.scope == "project"
+	end
+	local function title_for(t, pinned)
+		local n_show, n_all = 0, 0
+		for _, cm in ipairs(e.command_list(t.name, cwd)) do
+			n_all = n_all + 1
+			if shown_in_pinned(cm) then
+				n_show = n_show + 1
+			end
+		end
+		local mode = pinned and (ic.star .. " %d pinned"):format(n_show) or ("all %d"):format(n_all)
+		return ("ECC workflows (%s) · %s"):format(t.name, mode)
 	end
 
 	Snacks.picker({
-		title = title_for(tools[idx]),
+		title = title_for(tools[idx], fav_count("commands") > 0),
 		-- Tool nằm trong PICKER OPTS chứ không phải upvalue: finder đọc popts nên chỉ có
 		-- một đường đọc state. Bug "title đổi mà list không đổi" của scope lần trước sinh
 		-- ra đúng từ chỗ có hai đường.
 		wf_tool = tools[idx].name,
+		-- Mặc định chỉ hiện lệnh đã ghim; chưa ghim gì -> hiện tất cả (tránh list rỗng).
+		pinned = fav_count("commands") > 0,
 		finder = function(popts)
 			local t = find_tool(popts.wf_tool) or tools[1]
-			local list = e.command_list(t.name)
+			local list = e.command_list(t.name, cwd)
+			-- pinned: lọc còn ghim + project. all: giữ hết, project/ghim lên đầu.
+			local shown = {}
+			for _, cm in ipairs(list) do
+				if not popts.pinned or shown_in_pinned(cm) then
+					shown[#shown + 1] = cm
+				end
+			end
+			if not popts.pinned then
+				table.sort(shown, function(a, b)
+					local ra = a.scope == "project" and 0 or (is_fav("commands", a.name) and 1 or 2)
+					local rb = b.scope == "project" and 0 or (is_fav("commands", b.name) and 1 or 2)
+					if ra ~= rb then
+						return ra < rb
+					end
+					return a.name < b.name
+				end)
+			end
 			-- Canh cột theo lệnh dài nhất CỦA CHÍNH TOOL NÀY: tiền tố codex là /ecc-*
 			-- nên dài hơn claude/opencode một quãng.
 			local w = 0
-			for _, cm in ipairs(list) do
+			for _, cm in ipairs(shown) do
 				w = math.max(w, #cm.invoke)
 			end
 			local items = {}
-			for _, cm in ipairs(list) do
+			for _, cm in ipairs(shown) do
 				items[#items + 1] = {
 					cmd = cm,
 					-- tool + pad gắn thẳng lên item: format/confirm khỏi đọc upvalue đã cũ
 					-- sau khi đổi tool.
 					tool = t,
 					pad = string.rep(" ", w - #cm.invoke + 2),
-					-- desc vào text để gõ "dead code" cũng ra được /refactor-clean.
-					text = cm.name .. " " .. cm.desc,
+					-- desc + "fav" vào text để gõ "dead code"/"fav" cũng lọc được.
+					text = (is_fav("commands", cm.name) and "fav " or "") .. cm.name .. " " .. cm.desc,
 					-- file = đường dẫn thật -> dùng luôn preview file của snacks, khỏi tự
 					-- dựng doc và khỏi đọc cả trăm file markdown lúc mở picker.
 					file = cm.path,
@@ -1972,12 +2077,23 @@ function M.workflows()
 		end,
 		format = function(item)
 			local cm = item.cmd
-			return {
+			local star = is_fav("commands", cm.name) and ic.star or " "
+			local row = {
+				{ star .. " ", "SnacksPickerSpecial" },
 				{ ic.f_cmd .. " ", TOOL_HL[item.tool.name] or "SnacksPickerSpecial" },
 				{ cm.invoke, "SnacksPickerLabel" },
 				{ item.pad },
 				{ cm.desc, "SnacksPickerDimmed" },
 			}
+			if cm.scope == "project" then
+				row[#row + 1] = { "  project", "SnacksPickerGitBranch" }
+			end
+			-- Tool không chạy slash natively: /ecc-* sẽ gửi dưới dạng NỘI DUNG file, không
+			-- phải slash command -> báo rõ để cái /ecc-… hiện ra không gây hiểu lầm.
+			if not slash_native(item.tool) then
+				row[#row + 1] = { "  " .. ic.f_prompt .. " prompt", "SnacksPickerDimmed" }
+			end
+			return row
 		end,
 		preview = "file",
 		-- Cùng layout với picker session (kèm fallback dọc khi terminal hẹp), nhưng
@@ -1993,7 +2109,22 @@ function M.workflows()
 				end
 				idx = idx % #tools + 1
 				picker.opts.wf_tool = tools[idx].name
-				picker.title = title_for(tools[idx])
+				picker.title = title_for(tools[idx], picker.opts.pinned)
+				picker:find({ refresh = true })
+			end,
+			-- <A-f>: ghim/bỏ ghim lệnh dưới con trỏ, lưu ngay.
+			aiterm_fav_toggle = function(picker, item)
+				if not item then
+					return
+				end
+				toggle_fav("commands", item.cmd.name)
+				picker.title = title_for(find_tool(picker.opts.wf_tool) or tools[1], picker.opts.pinned)
+				picker:find({ refresh = true })
+			end,
+			-- <A-a>: đổi giữa chỉ-ghim và tất-cả.
+			aiterm_fav_all = function(picker)
+				picker.opts.pinned = not picker.opts.pinned
+				picker.title = title_for(find_tool(picker.opts.wf_tool) or tools[1], picker.opts.pinned)
 				picker:find({ refresh = true })
 			end,
 		},
@@ -2001,12 +2132,16 @@ function M.workflows()
 			input = {
 				keys = {
 					["<a-t>"] = { "aiterm_wf_tool", mode = { "i", "n" }, desc = "switch tool" },
+					["<a-f>"] = { "aiterm_fav_toggle", mode = { "i", "n" }, desc = "pin / unpin" },
+					["<a-a>"] = { "aiterm_fav_all", mode = { "i", "n" }, desc = "pinned / all" },
 					["<a-?>"] = { "toggle_help_input", mode = { "i", "n" }, desc = "show keys" },
 				},
 			},
 			list = {
 				keys = {
 					["<a-t>"] = { "aiterm_wf_tool", desc = "switch tool" },
+					["<a-f>"] = { "aiterm_fav_toggle", desc = "pin / unpin" },
+					["<a-a>"] = { "aiterm_fav_all", desc = "pinned / all" },
 					["<a-?>"] = { "toggle_help_list", desc = "show keys" },
 				},
 			},
@@ -2016,15 +2151,27 @@ function M.workflows()
 				return
 			end
 			local cm = item.cmd
-			local msg = cm.invoke
+			-- Tính ARG một lần: lệnh path -> "."; lệnh ask -> hỏi (huỷ thì không gửi).
+			local arg
 			if path_args[cm.name] then
-				msg = msg .. " ." -- lệnh nhận [path]; "." = cả project
+				arg = "." -- lệnh nhận [path]; "." = cả project
 			elseif ask_args[cm.name] then
-				local answer = vim.fn.input(ask_args[cm.name])
-				if answer == "" then
+				arg = vim.fn.input(ask_args[cm.name])
+				if arg == "" then
 					return -- huỷ input thì KHÔNG gửi lệnh cụt
 				end
-				msg = msg .. " " .. answer
+			end
+			-- Tool chạy slash natively -> gửi /token (+arg). Không (codex) -> DÁN NỘI DUNG
+			-- file lệnh (đúng cái /command bung ra); đọc lỗi thì quay về /token best-effort.
+			local msg
+			if slash_native(item.tool) then
+				msg = cm.invoke .. (arg and (" " .. arg) or "")
+			else
+				msg = command_body(cm, arg)
+				if not msg then
+					notify(("could not read %s; sending slash token"):format(cm.name), "warn")
+					msg = cm.invoke .. (arg and (" " .. arg) or "")
+				end
 			end
 			picker:close()
 			vim.schedule(function()
@@ -2042,6 +2189,7 @@ end
 -- Hiện ĐỦ mọi skill, phân nhóm theo nguồn: ecc (ECC cài) / builtin (skill gốc của tool,
 -- ví dụ 6 cái .system của codex) / user (bạn tự viết).
 local SKILL_ORIGIN = {
+	project = { "project", "SnacksPickerGitBranch" }, -- skill CỤC BỘ repo, hiện đầu
 	ecc = { "ECC", nil }, -- nil -> lấy màu theo tool
 	builtin = { "built-in", "SnacksPickerSpecial" },
 	user = { "user", "SnacksPickerLabel" },
@@ -2057,10 +2205,12 @@ function M.skill_pick()
 		notify("aiterm: ECC module unavailable", "warn")
 		return
 	end
+	-- cwd để kèm skill CỤC BỘ repo (origin=project). Dùng project_cwd (realpath thật).
+	local cwd = history().project_cwd()
 	-- Chỉ xoay qua tool CÓ skill: xoay vào danh sách rỗng thì <A-t> nhìn như bị hỏng.
 	local tools = {}
 	for _, t in ipairs(M.config.tools) do
-		if #e.skill_list(t.name) > 0 then
+		if #e.skill_list(t.name, cwd) > 0 then
 			tools[#tools + 1] = t
 		end
 	end
@@ -2080,38 +2230,59 @@ function M.skill_pick()
 	local ctx = capture_context()
 	ensure_hl()
 
-	local function title_for(t)
-		local g = { ecc = 0, builtin = 0, user = 0 }
-		for _, s in ipairs(e.skill_list(t.name)) do
-			g[s.origin] = (g[s.origin] or 0) + 1
-		end
-		local parts = {}
-		for _, k in ipairs({ "ecc", "builtin", "user" }) do
-			if g[k] > 0 then
-				parts[#parts + 1] = ("%d %s"):format(g[k], SKILL_ORIGIN[k][1])
+	-- Mục hiện trong chế độ pinned: đã ghim HOẶC là skill của repo (project luôn hiện).
+	local function shown_in_pinned(s)
+		return is_fav("skills", s.name) or s.origin == "project"
+	end
+	local function title_for(t, pinned)
+		local n_show, n_all = 0, 0
+		for _, s in ipairs(e.skill_list(t.name, cwd)) do
+			n_all = n_all + 1
+			if shown_in_pinned(s) then
+				n_show = n_show + 1
 			end
 		end
-		return ("Skills (%s)  %s"):format(t.name, table.concat(parts, " · "))
+		local mode = pinned and (M.icons().star .. " %d pinned"):format(n_show) or ("all %d"):format(n_all)
+		return ("Skills (%s) · %s"):format(t.name, mode)
 	end
 
 	Snacks.picker({
-		title = title_for(tools[idx]),
+		title = title_for(tools[idx], fav_count("skills") > 0),
 		sk_tool = tools[idx].name,
+		-- Mặc định chỉ hiện mục đã ghim; chưa ghim gì -> hiện tất cả (tránh list rỗng).
+		pinned = fav_count("skills") > 0,
 		finder = function(popts)
 			local t = find_tool(popts.sk_tool) or tools[1]
-			local list = e.skill_list(t.name)
-			local w = 0
+			local list = e.skill_list(t.name, cwd)
+			-- pinned: lọc còn ghim + project. all: giữ hết, project/ghim lên đầu.
+			local shown = {}
 			for _, s in ipairs(list) do
+				if not popts.pinned or shown_in_pinned(s) then
+					shown[#shown + 1] = s
+				end
+			end
+			if not popts.pinned then
+				table.sort(shown, function(a, b)
+					local ra = a.origin == "project" and 0 or (is_fav("skills", a.name) and 1 or 2)
+					local rb = b.origin == "project" and 0 or (is_fav("skills", b.name) and 1 or 2)
+					if ra ~= rb then
+						return ra < rb
+					end
+					return a.name < b.name
+				end)
+			end
+			local w = 0
+			for _, s in ipairs(shown) do
 				w = math.max(w, #s.name)
 			end
 			local items = {}
-			for _, s in ipairs(list) do
+			for _, s in ipairs(shown) do
 				items[#items + 1] = {
 					skill = s,
 					tool = t,
 					pad = string.rep(" ", w - #s.name + 2),
-					-- origin nằm trong text -> gõ "ecc" hay "builtin" là lọc theo nhóm.
-					text = s.origin .. " " .. s.name .. " " .. s.desc,
+					-- origin + "fav" nằm trong text -> gõ "ecc"/"project"/"fav" lọc theo nhóm.
+					text = s.origin .. " " .. (is_fav("skills", s.name) and "fav " or "") .. s.name .. " " .. s.desc,
 					file = s.path, -- preview thẳng SKILL.md, khỏi tự dựng doc
 				}
 			end
@@ -2119,7 +2290,9 @@ function M.skill_pick()
 		end,
 		format = function(item)
 			local o = SKILL_ORIGIN[item.skill.origin] or SKILL_ORIGIN.user
+			local star = is_fav("skills", item.skill.name) and M.icons().star or " "
 			return {
+				{ star .. " ", "SnacksPickerSpecial" },
 				{ ("%-9s "):format(o[1]), o[2] or TOOL_HL[item.tool.name] or "SnacksPickerSpecial" },
 				{ item.skill.name, "SnacksPickerLabel" },
 				{ item.pad },
@@ -2136,7 +2309,22 @@ function M.skill_pick()
 				end
 				idx = idx % #tools + 1
 				picker.opts.sk_tool = tools[idx].name
-				picker.title = title_for(tools[idx])
+				picker.title = title_for(tools[idx], picker.opts.pinned)
+				picker:find({ refresh = true })
+			end,
+			-- <A-f>: ghim/bỏ ghim skill dưới con trỏ, lưu ngay.
+			aiterm_fav_toggle = function(picker, item)
+				if not item then
+					return
+				end
+				toggle_fav("skills", item.skill.name)
+				picker.title = title_for(find_tool(picker.opts.sk_tool) or tools[1], picker.opts.pinned)
+				picker:find({ refresh = true })
+			end,
+			-- <A-a>: đổi giữa chỉ-ghim và tất-cả.
+			aiterm_fav_all = function(picker)
+				picker.opts.pinned = not picker.opts.pinned
+				picker.title = title_for(find_tool(picker.opts.sk_tool) or tools[1], picker.opts.pinned)
 				picker:find({ refresh = true })
 			end,
 		},
@@ -2144,12 +2332,16 @@ function M.skill_pick()
 			input = {
 				keys = {
 					["<a-t>"] = { "aiterm_skill_tool", mode = { "i", "n" }, desc = "switch tool" },
+					["<a-f>"] = { "aiterm_fav_toggle", mode = { "i", "n" }, desc = "pin / unpin" },
+					["<a-a>"] = { "aiterm_fav_all", mode = { "i", "n" }, desc = "pinned / all" },
 					["<a-?>"] = { "toggle_help_input", mode = { "i", "n" }, desc = "show keys" },
 				},
 			},
 			list = {
 				keys = {
 					["<a-t>"] = { "aiterm_skill_tool", desc = "switch tool" },
+					["<a-f>"] = { "aiterm_fav_toggle", desc = "pin / unpin" },
+					["<a-a>"] = { "aiterm_fav_all", desc = "pinned / all" },
 					["<a-?>"] = { "toggle_help_list", desc = "show keys" },
 				},
 			},
@@ -2405,7 +2597,8 @@ function M.toggle_hints()
 	notify("AI code hints " .. (hints_on and "on" or "off"), "info")
 end
 
--- Đọc default tool đã lưu ngay khi require (độc lập với việc hint bật hay tắt).
+-- Đọc default tool + favorites đã lưu ngay khi require (độc lập với hint bật/tắt).
 load_default()
+load_favorites()
 
 return M

@@ -60,37 +60,65 @@ local function config_home()
 	return vim.fn.expand("~/.config")
 end
 
+-- Thư mục command CỤC BỘ của repo (rooted ở cwd), theo tool. Đứng TRƯỚC nguồn HOME
+-- nên bản của repo thắng. scope="project" để command_list gắn nhãn + sort đầu.
+local function project_command_srcs(tool, cwd)
+	if not cwd then
+		return {}
+	end
+	local by_tool = {
+		claude = { { dir = cwd .. "/.claude/commands", prefix = "", invoke = "/%s" } },
+		codex = { { dir = cwd .. "/.codex/prompts", prefix = "ecc-", invoke = "/ecc-%s" } },
+		opencode = {
+			{ dir = cwd .. "/.opencode/commands", prefix = "", invoke = "/%s" },
+			{ dir = cwd .. "/.opencode/command", prefix = "", invoke = "/%s" },
+		},
+	}
+	local out = by_tool[tool] or {}
+	for _, s in ipairs(out) do
+		s.scope = "project"
+	end
+	return out
+end
+
 -- Danh sách thư mục có thể chứa command, theo thứ tự ưu tiên. Trả cả thư mục KHÔNG
 -- tồn tại: sig phải phân biệt được "chưa có" với "vừa tạo" thì cache mới tự hết hạn.
----@return { dir: string, prefix: string, invoke: string }[]
-local function sources(tool)
+-- cwd (tuỳ chọn): thêm nguồn CỤC BỘ repo lên đầu (scope="project"). Không truyền -> chỉ HOME.
+---@return { dir: string, prefix: string, invoke: string, scope?: string }[]
+local function sources(tool, cwd)
+	local home_srcs = {}
 	if tool == "claude" then
-		local out = { { dir = home(".claude/commands"), prefix = "", invoke = "/%s" } }
+		home_srcs = { { dir = home(".claude/commands"), prefix = "", invoke = "/%s" } }
 		-- Đường plugin (/plugin install ecc@ecc) không phải đường mình cài, nhưng nếu
 		-- người dùng đã cài kiểu đó thì vẫn nhận ra. Glob ĐỘ SÂU CỐ ĐỊNH, không đệ quy:
 		-- ~/.claude/plugins có thể chứa node_modules, quét đệ quy ở đây là bẫy hiệu năng.
 		for _, pat in ipairs({ ".claude/plugins/*/ecc", ".claude/plugins/*/*/ecc" }) do
 			for _, d in ipairs(vim.fn.glob(home(pat) .. "/commands", false, true)) do
-				out[#out + 1] = { dir = d, prefix = "", invoke = "/ecc:%s" }
+				home_srcs[#home_srcs + 1] = { dir = d, prefix = "", invoke = "/ecc:%s" }
 			end
 		end
-		return out
 	elseif tool == "codex" then
-		return { { dir = home(".codex/prompts"), prefix = "ecc-", invoke = "/ecc-%s" } }
+		home_srcs = { { dir = home(".codex/prompts"), prefix = "ecc-", invoke = "/ecc-%s" } }
 	elseif tool == "opencode" then
 		-- ĐÃ ĐO trên máy này: opencode coi ~/.opencode LÀ một config root - gõ /code-rev
 		-- trong TUI ra đủ autocomplete dù ~/.config/opencode không có thư mục command
 		-- nào. Đó cũng là lý do `install.sh --target opencode` của ECC ghi vào đây.
 		-- Vẫn giữ ~/.config/opencode (đường tài liệu ghi) cho ai tự chép sang.
 		local c = config_home() .. "/opencode"
-		return {
+		home_srcs = {
 			{ dir = home(".opencode/commands"), prefix = "", invoke = "/%s" },
 			{ dir = home(".opencode/command"), prefix = "", invoke = "/%s" },
 			{ dir = c .. "/command", prefix = "", invoke = "/%s" },
 			{ dir = c .. "/commands", prefix = "", invoke = "/%s" },
 		}
+	else
+		return {}
 	end
-	return {}
+	-- Nguồn CỤC BỘ repo đứng TRƯỚC nguồn HOME: "nguồn trước thắng" trong M.commands()
+	-- nên bản của repo ưu tiên hơn bản global cùng tên.
+	local out = project_command_srcs(tool, cwd)
+	vim.list_extend(out, home_srcs)
+	return out
 end
 
 local function signature(srcs)
@@ -110,17 +138,20 @@ function M.dir()
 end
 
 -- Bảng "tên command của ECC" -> "chuỗi gõ vào session". Rỗng nếu chưa cài.
+-- cwd (tuỳ chọn): thêm command CỤC BỘ repo (scope="project"). Không truyền -> chỉ HOME
+-- (installed/count/status/doctor gọi kiểu này -> phát hiện cài đặt không đổi).
 ---@param tool string
+---@param cwd? string
 ---@return table<string, string>
-function M.commands(tool)
-	local srcs = sources(tool)
+function M.commands(tool, cwd)
+	local srcs = sources(tool, cwd)
 	local sig = signature(srcs)
 	local c = cache[tool]
 	if c and c.sig == sig then
 		return c.cmds
 	end
 
-	local cmds, paths = {}, {}
+	local cmds, paths, scopes = {}, {}, {}
 	for _, s in ipairs(srcs) do
 		if vim.uv.fs_stat(s.dir) then
 			-- Độ sâu 1: command của cả ba harness đều là file phẳng trong thư mục.
@@ -128,17 +159,18 @@ function M.commands(tool)
 				local base = kind == "file" and name:match("^(.*)%.md$")
 				if base and (s.prefix == "" or base:sub(1, #s.prefix) == s.prefix) then
 					local key = base:sub(#s.prefix + 1)
-					-- Nguồn trước thắng: bản cài tay ưu tiên hơn bản plugin dò được.
+					-- Nguồn trước thắng: bản CỤC BỘ repo / bản cài tay ưu tiên hơn.
 					if key ~= "" and not cmds[key] then
 						cmds[key] = s.invoke:format(key)
 						paths[key] = s.dir .. "/" .. name
+						scopes[key] = s.scope == "project" and "project" or "global"
 					end
 				end
 			end
 		end
 	end
 
-	cache[tool] = { sig = sig, cmds = cmds, paths = paths }
+	cache[tool] = { sig = sig, cmds = cmds, paths = paths, scopes = scopes }
 	return cmds
 end
 
@@ -150,15 +182,32 @@ end
 --   codex không đọc, liệt kê thứ tool không thấy chính là kiểu "quảng cáo lệnh không
 --   tồn tại" mà cả plugin này đang tránh. Skill gốc của codex nằm sâu một tầng trong
 --   .system/ nên phải quét riêng.
-local function skill_dirs(tool)
+-- Trả list { dir, scope }. cwd (tuỳ chọn) -> thêm thư mục skill CỤC BỘ repo lên đầu
+-- (scope="project"); không truyền -> chỉ HOME (scope="global"). Không truy đệ quy.
+local function skill_dirs(tool, cwd)
+	local home_dirs
 	if tool == "claude" then
-		return { home(".claude/skills") }
+		home_dirs = { home(".claude/skills") }
 	elseif tool == "opencode" then
-		return { home(".opencode/skills") }
+		home_dirs = { home(".opencode/skills") }
 	elseif tool == "codex" then
-		return { home(".codex/skills"), home(".codex/skills/.system") }
+		home_dirs = { home(".codex/skills"), home(".codex/skills/.system") }
+	else
+		return {}
 	end
-	return {}
+	local proj = ({
+		claude = cwd and { cwd .. "/.claude/skills" } or {},
+		opencode = cwd and { cwd .. "/.opencode/skills" } or {},
+		codex = cwd and { cwd .. "/.codex/skills" } or {},
+	})[tool] or {}
+	local out = {}
+	for _, d in ipairs(proj) do
+		out[#out + 1] = { dir = d, scope = "project" }
+	end
+	for _, d in ipairs(home_dirs) do
+		out[#out + 1] = { dir = d, scope = "global" }
+	end
+	return out
 end
 
 -- File ECC đã ghi ra cho tool này, lấy từ install-state. Đây là dấu vết CHUẨN để biết
@@ -185,15 +234,16 @@ function M.ecc_owned(tool)
 	return set
 end
 
-local ORIGIN_ORDER = { ecc = 1, builtin = 2, user = 3 }
+local ORIGIN_ORDER = { project = 0, ecc = 1, builtin = 2, user = 3 }
 
 -- Skill của tool, kèm mô tả + nguồn. Sắp theo NHÓM rồi tên.
+-- cwd (tuỳ chọn): kèm skill CỤC BỘ repo, origin="project" (sort đầu). Không truyền -> chỉ HOME.
+---@param tool string
+---@param cwd? string
 ---@return { name: string, desc: string, hint: string|nil, path: string, origin: string }[]
-function M.skill_list(tool)
-	local dirs = skill_dirs(tool)
-	local sig = signature(vim.tbl_map(function(d)
-		return { dir = d }
-	end, dirs))
+function M.skill_list(tool, cwd)
+	local dirs = skill_dirs(tool, cwd)
+	local sig = signature(dirs) -- dirs đã có .dir -> dùng thẳng
 	local c = skill_cache[tool]
 	if c and c.sig == sig then
 		return c.list
@@ -201,7 +251,8 @@ function M.skill_list(tool)
 
 	local owned = M.ecc_owned(tool)
 	local list, seen = {}, {}
-	for _, dir in ipairs(dirs) do
+	for _, entry in ipairs(dirs) do
+		local dir = entry.dir
 		if vim.uv.fs_stat(dir) then
 			for name, kind in vim.fs.dir(dir) do
 				local path = dir .. "/" .. name .. "/SKILL.md"
@@ -215,11 +266,13 @@ function M.skill_list(tool)
 						tagged = tagged or l:find("origin: ECC", 1, true) ~= nil
 					end
 					desc = desc:gsub('^"(.*)"$', "%1"):gsub("^'(.*)'$", "%1")
-					-- Thứ tự xác định nguồn: .system là skill gốc của tool -> install-state
-					-- (chuẩn nhất) -> frontmatter (dự phòng cho codex, vốn không có
-					-- install-state) -> còn lại là bạn tự viết.
+					-- Thứ tự xác định nguồn: CỤC BỘ repo -> .system (skill gốc của tool) ->
+					-- install-state (chuẩn nhất) -> frontmatter (dự phòng cho codex, vốn
+					-- không có install-state) -> còn lại là bạn tự viết.
 					local origin = "user"
-					if dir:find("/.system", 1, true) then
+					if entry.scope == "project" then
+						origin = "project"
+					elseif dir:find("/.system", 1, true) then
 						origin = "builtin"
 					elseif owned[path] or tagged then
 						origin = "ecc"
@@ -255,15 +308,19 @@ end
 -- Danh sách command kèm mô tả, cho picker M.workflows(). Mô tả lấy từ frontmatter
 -- `description:` - chỉ đọc HEAD_LINES dòng đầu mỗi file, đủ để qua frontmatter mà
 -- không nuốt cả trăm file markdown vào RAM.
----@return { name: string, invoke: string, desc: string, path: string }[]
-function M.command_list(tool)
-	local cmds = M.commands(tool) -- nạp cache trước, cache[tool].paths có ngay sau đó
+-- cwd (tuỳ chọn): kèm command CỤC BỘ repo, gắn scope="project" (picker sort đầu + nhãn).
+---@param tool string
+---@param cwd? string
+---@return { name: string, invoke: string, desc: string, path: string, scope: string }[]
+function M.command_list(tool, cwd)
+	local cmds = M.commands(tool, cwd) -- nạp cache trước, cache[tool].paths/scopes có ngay sau đó
 	local sig = cache[tool].sig
 	local c = desc_cache[tool]
 	if c and c.sig == sig then
 		return c.list
 	end
 	local paths = cache[tool].paths or {}
+	local scopes = cache[tool].scopes or {}
 	local list = {}
 	for name, invoke in pairs(cmds) do
 		local path = paths[name]
@@ -281,9 +338,13 @@ function M.command_list(tool)
 				end
 			end
 		end
-		list[#list + 1] = { name = name, invoke = invoke, desc = desc, path = path }
+		list[#list + 1] = { name = name, invoke = invoke, desc = desc, path = path, scope = scopes[name] or "global" }
 	end
+	-- project trước, rồi theo tên: picker hiện convention của repo lên đầu.
 	table.sort(list, function(a, b)
+		if (a.scope == "project") ~= (b.scope == "project") then
+			return a.scope == "project"
+		end
 		return a.name < b.name
 	end)
 	desc_cache[tool] = { sig = sig, list = list }
