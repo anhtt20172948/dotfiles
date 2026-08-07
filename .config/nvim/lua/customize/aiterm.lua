@@ -269,6 +269,29 @@ M.config = {
 		slash_native = { claude = true, opencode = true, codex = false },
 	},
 
+	-- Nguồn skill THỨ HAI (ngoài ECC): vercel-labs/skills CLI (`npx skills add`). Cài
+	-- SKILL.md vào đúng thư mục aiterm quét -> hiện luôn trong <leader>aS (origin=user).
+	-- Xem M.skills_add() (<leader>aV).
+	--   sources  - seed list gợi ý trong picker; picker thêm mục "Enter source…" tự nhập.
+	--   scope    - "global" -> cờ -g (dùng chung mọi repo); "project" -> vào repo.
+	--   copy     - --copy: chép file thật (tự chứa) thay vì symlink vào cache của CLI.
+	--   agent_id - map tên tool của aiterm -> --agent id của CLI (claude vs claude-code).
+	skills = {
+		-- Nguồn seed cho developer (đã verify trên skills.sh). Picker hiện "src — desc"
+		-- kèm mục "Enter source…" để tự nhập owner/repo hay URL bất kỳ.
+		sources = {
+			{ src = "mattpocock/skills", desc = "TDD, code-review, git-guardrails, debugging" },
+			{ src = "anthropics/skills", desc = "skill-creator, webapp-testing, mcp-builder, docs" },
+			{ src = "vercel-labs/agent-skills", desc = "React/Next best-practices, composition" },
+			{ src = "prisma/skills", desc = "Prisma ORM: setup, client, cli, postgres" },
+			{ src = "supabase/agent-skills", desc = "Supabase / Postgres best practices" },
+		},
+		registry = "https://skills.sh", -- nơi khám phá skill (skills find truy vào đây)
+		scope = "global", -- -g: dùng chung mọi repo
+		copy = true, -- --copy: chép file thật (tự chứa)
+		agent_id = { claude = "claude-code", codex = "codex", opencode = "opencode" },
+	},
+
 	-- Node treesitter coi là "khối code" để lấy làm context ở normal mode. Khớp
 	-- theo SUBSTRING type nên phủ nhiều ngôn ngữ mà không cần query riêng từng ngôn
 	-- ngữ (function_declaration, method_definition, class_specifier, struct_specifier...).
@@ -617,10 +640,10 @@ local function install_ecc(tool)
 	vim.list_extend(lines, steps)
 	lines[#lines + 1] = ""
 	lines[#lines + 1] = "This clones a third-party repo and runs its installer."
-	if tool.name == "opencode" then
-		-- Không đổi ngầm: profile cấu hình là minimal nhưng README của ECC chỉ ghi
-		-- --profile full cho target opencode.
-		lines[#lines + 1] = ("Note: opencode uses --profile full (config profile is %s)."):format(e.config.profile)
+	if tool.name == "codex" then
+		-- Không đổi ngầm: đường sync của codex sinh prompt từ TOÀN BỘ commands/, không
+		-- lọc theo profile -> codex nhận đủ lệnh bất kể M.config.profile là developer.
+		lines[#lines + 1] = "Note: codex sync copies ALL commands (profile does not apply)."
 	end
 	if vim.fn.confirm(table.concat(lines, "\n"), "&Yes\n&No", 2) ~= 1 then
 		return
@@ -639,6 +662,367 @@ local function install_ecc(tool)
 			end
 		end,
 	}))
+end
+
+-- vercel-labs/skills CLI (`npx skills add/find/use/init`) --------------------
+-- CLI KHÔNG lưu nguồn/lockfile -> aiterm tự ghi provenance (diff thư mục skill
+-- trước/sau add) để <leader>aS hiện được "skill này từ source nào".
+local function xdg_config()
+	local x = vim.env.XDG_CONFIG_HOME
+	return (x and x ~= "") and x or vim.fn.expand("~/.config")
+end
+
+-- Dir "universal" mà vercel skills CLI hay ghi vào; claude/codex/opencode KHÔNG đọc.
+-- M.skills_activate() symlink từ đây vào dir thật của tool.
+local AGENTS_SKILLS = vim.fn.expand("~/.agents/skills")
+
+local function have_npx()
+	if vim.fn.executable("npx") == 1 then
+		return true
+	end
+	notify("aiterm: `npx` not on PATH (cần Node) để chạy skills CLI", "warn")
+	return false
+end
+
+-- Tool để đặt nhãn pane cho find/init (lệnh thật là npx, không phụ thuộc tool):
+-- ưu tiên session đang sống, không có thì tool đầu.
+local function pane_tool()
+	for _, s in ipairs(sessions) do
+		if is_alive(s) then
+			return s.tool
+		end
+	end
+	return M.config.tools[1]
+end
+
+-- Thư mục vercel skills CLI ghi vào cho (tool, scope) - khớp bảng path của CLI.
+local function skills_target_dir(tool, scope, cwd)
+	local name = tool.name
+	if scope == "project" then
+		local p = {
+			claude = cwd .. "/.claude/skills",
+			codex = cwd .. "/.agents/skills",
+			opencode = cwd .. "/.agents/skills",
+		}
+		return p[name]
+	end
+	local g = {
+		claude = vim.fn.expand("~/.claude/skills"),
+		codex = vim.fn.expand("~/.codex/skills"),
+		opencode = xdg_config() .. "/opencode/skills",
+	}
+	return g[name]
+end
+
+-- Tên các skill (thư mục con) trong một thư mục skills - cơ sở để diff.
+local function skill_dir_names(dir)
+	local set = {}
+	if not dir then
+		return set
+	end
+	local ok, it = pcall(vim.fs.dir, dir)
+	if not ok then
+		return set
+	end
+	for n, kind in it do
+		if kind == "directory" then
+			set[n] = true
+		end
+	end
+	return set
+end
+
+-- provenance: tool -> { skillName -> { source, scope } }. Lưu qua các lần mở nvim.
+local skill_src = {}
+local function skill_src_file()
+	return vim.fs.joinpath(vim.fn.stdpath("state"), "aiterm-skill-sources.json")
+end
+local function load_skill_src()
+	local ok, lines = pcall(vim.fn.readfile, skill_src_file())
+	if not ok or not lines or #lines == 0 then
+		return
+	end
+	local ok2, d = pcall(vim.json.decode, table.concat(lines, "\n"))
+	if ok2 and type(d) == "table" then
+		skill_src = d
+	end
+end
+local function save_skill_src()
+	pcall(vim.fn.writefile, { vim.json.encode(skill_src) }, skill_src_file())
+end
+-- provenance của 1 skill (nil nếu không phải skill do aiterm add).
+local function skill_source(tool, name)
+	return (skill_src[tool] or {})[name]
+end
+
+-- Ghi provenance cho các skill MỚI xuất hiện trong dir sau khi add.
+local function record_new_skills(tname, dir, before, source, scope)
+	local after = skill_dir_names(dir)
+	skill_src[tname] = skill_src[tname] or {}
+	local n = 0
+	for name in pairs(after) do
+		if not before[name] then
+			skill_src[tname][name] = { source = source, scope = scope }
+			n = n + 1
+		end
+	end
+	if n > 0 then
+		save_skill_src()
+	end
+	return n
+end
+
+-- add: confirm -> chạy `npx skills add` trong pane (TUI chọn skill chạy tương tác,
+-- nên KHÔNG -y) -> on_exit ghi provenance + refresh cache ECC.
+function M.skills_add()
+	if not have_npx() then
+		return
+	end
+	local cfg = M.config.skills
+	-- items: mỗi source là {src,desc}; thêm sentinel {enter=true}.
+	local items = {}
+	for _, s in ipairs(cfg.sources or {}) do
+		items[#items + 1] = s
+	end
+	items[#items + 1] = { enter = true }
+	vim.ui.select(items, {
+		prompt = "Skills source:",
+		format_item = function(it)
+			if it.enter then
+				return "Enter source…"
+			end
+			return it.src .. "  —  " .. (it.desc or "")
+		end,
+	}, function(it)
+		if not it then
+			return
+		end
+		local src
+		if it.enter then
+			src = vim.fn.input("owner/repo or URL: ")
+			if src == "" then
+				return
+			end
+		else
+			src = it.src
+		end
+		local names = {}
+		for _, t in ipairs(M.config.tools) do
+			names[#names + 1] = t.name
+		end
+		vim.ui.select(names, { prompt = "Install skills into which tool?" }, function(tname)
+			if not tname then
+				return
+			end
+			local tool = find_tool(tname)
+			if not tool then
+				return
+			end
+			local agent = (cfg.agent_id or {})[tname] or tname
+			local argv = { "npx", "skills", "add", src, "-a", agent }
+			if cfg.scope == "global" then
+				argv[#argv + 1] = "-g"
+			end
+			if cfg.copy then
+				argv[#argv + 1] = "--copy"
+			end
+			local prompt = ("Run: %s\n\nTải & cài skill bên thứ ba vào %s (scope %s)."):format(
+				table.concat(argv, " "),
+				tname,
+				cfg.scope
+			)
+			if vim.fn.confirm(prompt, "&Yes\n&No", 2) ~= 1 then
+				return
+			end
+			-- snapshot thư mục đích TRƯỚC khi cài để diff ra skill mới.
+			local dir = skills_target_dir(tool, cfg.scope, history().project_cwd())
+			local before = skill_dir_names(dir)
+			attach(new_session(tool, {
+				cmd = argv,
+				cwd = history().project_cwd(),
+				title = "skills add",
+				on_exit = function()
+					local added = record_new_skills(tname, dir, before, src, cfg.scope)
+					local e = ecc()
+					if e then
+						e.refresh() -- skill mới hiện trong <leader>aS
+					end
+					notify(("skills add: +%d skill từ %s -> %s"):format(added, src, tname), "info")
+				end,
+			}))
+		end)
+	end)
+end
+
+-- find: `npx skills find [query]` - TUI fzf khám phá skill (skills.sh + GitHub) trong pane.
+function M.skills_find()
+	if not have_npx() then
+		return
+	end
+	local q = vim.fn.input("skills find (query, để trống = duyệt): ")
+	local argv = { "npx", "skills", "find" }
+	if q ~= "" then
+		argv[#argv + 1] = q
+	end
+	attach(new_session(pane_tool(), {
+		cmd = argv,
+		cwd = history().project_cwd(),
+		title = "skills find",
+		on_exit = function()
+			local e = ecc()
+			if e then
+				e.refresh()
+			end
+		end,
+	}))
+end
+
+-- use: `npx skills use <source[@skill]>` sinh prompt (KHÔNG cài) rồi gửi vào session AI.
+-- Chạy qua vim.system (không phải TTY) nên NÊN kèm @skill; timeout chặn treo.
+function M.skills_use()
+	if not have_npx() then
+		return
+	end
+	local cfg = M.config.skills
+	local first = cfg.sources and cfg.sources[1]
+	local default = type(first) == "table" and first.src or (first or "")
+	local spec = vim.fn.input({ prompt = "skills use source[@skill]: ", default = default })
+	if spec == "" then
+		return
+	end
+	notify(("skills use: resolving %s…"):format(spec), "info")
+	vim.system(
+		{ "npx", "skills", "use", spec },
+		{ text = true, timeout = 60000 },
+		vim.schedule_wrap(function(r)
+			local out = r.stdout and vim.trim(r.stdout) or ""
+			if r.code ~= 0 or out == "" then
+				local why = (r.stderr and vim.trim(r.stderr) ~= "") and vim.trim(r.stderr) or ("exit " .. tostring(r.code))
+				notify(("skills use failed (%s) — thử kèm @skill"):format(why), "warn")
+				return
+			end
+			M.send(r.stdout, { submit = true })
+		end)
+	)
+end
+
+-- init: `npx skills init [name]` scaffold SKILL.md trong repo (skill cấp project).
+function M.skills_init()
+	if not have_npx() then
+		return
+	end
+	local name = vim.fn.input("new skill name (để trống = thư mục hiện tại): ")
+	local argv = { "npx", "skills", "init" }
+	if name ~= "" then
+		argv[#argv + 1] = name
+	end
+	attach(new_session(pane_tool(), {
+		cmd = argv,
+		cwd = history().project_cwd(),
+		title = "skills init",
+	}))
+end
+
+-- Tên skill (thư mục con có SKILL.md) trong ~/.agents/skills.
+local function agents_skill_names()
+	local out = {}
+	local ok, it = pcall(vim.fs.dir, AGENTS_SKILLS)
+	if not ok then
+		return out
+	end
+	for n, kind in it do
+		if (kind == "directory" or kind == "link") and vim.uv.fs_stat(AGENTS_SKILLS .. "/" .. n .. "/SKILL.md") then
+			out[#out + 1] = n
+		end
+	end
+	return out
+end
+
+-- Symlink ~/.agents/skills/<name> -> <dir skill global thật của tool>/<name> để tool
+-- ĐỌC được. Trả "ok" | "exists" | "error". Idempotent.
+local function activate_skill(tool, name)
+	local dst = skills_target_dir(tool, "global") .. "/" .. name
+	if vim.uv.fs_stat(dst) then
+		return "exists"
+	end
+	vim.fn.mkdir(vim.fn.fnamemodify(dst, ":h"), "p")
+	local ok = vim.uv.fs_symlink(AGENTS_SKILLS .. "/" .. name, dst)
+	return ok and "ok" or "error"
+end
+
+-- Activate skill 'shared' (~/.agents/skills) vào dir thật của tool: chọn skill (hoặc
+-- tất cả) + tool -> symlink. Sau đó skill hiện scope=global và tool đọc được.
+function M.skills_activate()
+	local names = agents_skill_names()
+	if #names == 0 then
+		notify("~/.agents/skills trống — không có skill nào để activate", "info")
+		return
+	end
+	local ALL = "★ all"
+	local choices = { ALL }
+	vim.list_extend(choices, names)
+	vim.ui.select(choices, { prompt = "Activate shared skill:" }, function(pick)
+		if not pick then
+			return
+		end
+		local toolnames = {}
+		for _, t in ipairs(M.config.tools) do
+			toolnames[#toolnames + 1] = t.name
+		end
+		vim.ui.select(toolnames, { prompt = "Activate into which tool?" }, function(tn)
+			if not tn then
+				return
+			end
+			local tool = find_tool(tn)
+			if not tool then
+				return
+			end
+			local list = pick == ALL and names or { pick }
+			local ok = 0
+			for _, n in ipairs(list) do
+				if activate_skill(tool, n) ~= "error" then
+					ok = ok + 1
+				end
+			end
+			local e = ecc()
+			if e then
+				e.refresh()
+			end
+			notify(("activated %d skill -> %s (mở <leader>aS)"):format(ok, tn), "info")
+		end)
+	end)
+end
+
+-- Menu skills (<leader>aV): Add / Find / Use / Init / Activate / Browse.
+function M.skills()
+	vim.ui.select({
+		{ k = "add", label = "Add skills…" },
+		{ k = "find", label = "Find / discover…" },
+		{ k = "use", label = "Use one-off (send to session)…" },
+		{ k = "init", label = "Init new skill…" },
+		{ k = "activate", label = "Activate shared (~/.agents/skills)…" },
+		{ k = "browse", label = "Browse installed  (<leader>aS)" },
+	}, {
+		prompt = "Skills:",
+		format_item = function(a)
+			return a.label
+		end,
+	}, function(c)
+		if not c then
+			return
+		end
+		local fn = ({
+			add = M.skills_add,
+			find = M.skills_find,
+			use = M.skills_use,
+			init = M.skills_init,
+			activate = M.skills_activate,
+			browse = M.skill_pick,
+		})[c.k]
+		if fn then
+			fn()
+		end
+	end)
 end
 
 -- codex archive HOÀN TÁC được (codex unarchive); opencode session delete và xoá
@@ -2193,6 +2577,7 @@ local SKILL_ORIGIN = {
 	ecc = { "ECC", nil }, -- nil -> lấy màu theo tool
 	builtin = { "built-in", "SnacksPickerSpecial" },
 	user = { "user", "SnacksPickerLabel" },
+	shared = { "shared", "DiagnosticWarn" }, -- ~/.agents/skills, chưa activate (amber)
 }
 
 function M.skill_pick()
@@ -2277,12 +2662,27 @@ function M.skill_pick()
 			end
 			local items = {}
 			for _, s in ipairs(shown) do
+				-- scope: project / shared (~/.agents/skills, chưa activate) / global.
+				-- source: provenance nếu skill do aiterm add qua skills CLI.
+				local scope = (s.origin == "project" or s.origin == "shared") and s.origin or "global"
+				local prov = skill_source(t.name, s.name)
+				local source = prov and prov.source or nil
 				items[#items + 1] = {
 					skill = s,
 					tool = t,
+					scope = scope,
+					source = source,
 					pad = string.rep(" ", w - #s.name + 2),
-					-- origin + "fav" nằm trong text -> gõ "ecc"/"project"/"fav" lọc theo nhóm.
-					text = s.origin .. " " .. (is_fav("skills", s.name) and "fav " or "") .. s.name .. " " .. s.desc,
+					-- origin/scope/source/"fav" vào text -> gõ "ecc"/"project"/"global"/
+					-- "vercel"/"fav" đều lọc theo nhóm.
+					text = table.concat({
+						s.origin,
+						scope,
+						source or "",
+						is_fav("skills", s.name) and "fav" or "",
+						s.name,
+						s.desc,
+					}, " "),
 					file = s.path, -- preview thẳng SKILL.md, khỏi tự dựng doc
 				}
 			end
@@ -2291,13 +2691,25 @@ function M.skill_pick()
 		format = function(item)
 			local o = SKILL_ORIGIN[item.skill.origin] or SKILL_ORIGIN.user
 			local star = is_fav("skills", item.skill.name) and M.icons().star or " "
-			return {
+			local row = {
 				{ star .. " ", "SnacksPickerSpecial" },
 				{ ("%-9s "):format(o[1]), o[2] or TOOL_HL[item.tool.name] or "SnacksPickerSpecial" },
 				{ item.skill.name, "SnacksPickerLabel" },
 				{ item.pad },
 				{ item.skill.desc, "SnacksPickerDimmed" },
 			}
+			-- badge scope (project/shared/global) + source thật (nếu có provenance).
+			local scope_hl = "SnacksPickerDimmed"
+			if item.scope == "project" then
+				scope_hl = "SnacksPickerGitBranch"
+			elseif item.scope == "shared" then
+				scope_hl = "DiagnosticWarn" -- amber: chưa activate cho tool này
+			end
+			row[#row + 1] = { "  " .. item.scope, scope_hl }
+			if item.source then
+				row[#row + 1] = { "  " .. item.source, "SnacksPickerSpecial" }
+			end
+			return row
 		end,
 		preview = "file",
 		layout = build_layout(SKILL_FOOTER),
@@ -2351,6 +2763,26 @@ function M.skill_pick()
 				return
 			end
 			local s = item.skill
+			-- Skill 'shared' (~/.agents/skills) chưa nằm trong dir tool ĐỌC -> "Use the x
+			-- skill" tool không thấy. Symlink vào dir tool trước rồi mới gửi.
+			if s.origin == "shared" then
+				local yes = vim.fn.confirm(
+					("'%s' chưa active cho %s.\nSymlink vào dir tool rồi dùng?"):format(s.name, item.tool.name),
+					"&Yes\n&No",
+					1
+				)
+				if yes ~= 1 then
+					return
+				end
+				if activate_skill(item.tool, s.name) == "error" then
+					notify(("không symlink được %s vào %s"):format(s.name, item.tool.name), "warn")
+					return
+				end
+				local e = ecc()
+				if e then
+					e.refresh()
+				end
+			end
 			local instr = ("Use the `%s` skill."):format(s.name)
 			if s.hint then
 				-- Skill khai argument-hint nghĩa là nó CẦN tham số (tdd-workflow cần
@@ -2597,8 +3029,9 @@ function M.toggle_hints()
 	notify("AI code hints " .. (hints_on and "on" or "off"), "info")
 end
 
--- Đọc default tool + favorites đã lưu ngay khi require (độc lập với hint bật/tắt).
+-- Đọc default tool + favorites + provenance skill đã lưu ngay khi require.
 load_default()
 load_favorites()
+load_skill_src()
 
 return M

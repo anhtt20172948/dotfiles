@@ -121,6 +121,15 @@ return {
 			mode = "n",
 		},
 		{
+			-- Menu skills (vercel-labs/skills CLI): Add / Find / Use / Init / Browse.
+			"<leader>aV",
+			function()
+				require("customize.aiterm").skills()
+			end,
+			desc = "AI: skills (add/find/use/init)",
+			mode = "n",
+		},
+		{
 			-- Chốt tool mặc định (auto-tạo khi chưa có session), lưu qua các lần mở nvim.
 			"<leader>aD",
 			function()
