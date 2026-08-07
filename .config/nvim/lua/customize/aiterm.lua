@@ -2396,6 +2396,16 @@ function M.workflows()
 	local function shown_in_pinned(cm)
 		return is_fav("commands", cm.name) or cm.scope == "project"
 	end
+	-- Có lệnh pin/project hiện được ở cwd này không -> KHÔNG mở pinned nếu rỗng (tránh
+	-- "No Results" khi chỉ pin project command của repo khác).
+	local function pinned_has_items(t)
+		for _, cm in ipairs(e.command_list(t.name, cwd)) do
+			if shown_in_pinned(cm) then
+				return true
+			end
+		end
+		return false
+	end
 	local function title_for(t, pinned)
 		local n_show, n_all = 0, 0
 		for _, cm in ipairs(e.command_list(t.name, cwd)) do
@@ -2408,25 +2418,33 @@ function M.workflows()
 		return ("ECC workflows (%s) · %s"):format(t.name, mode)
 	end
 
+	-- Chỉ mở pinned khi CÓ lệnh pin/project hiện được ở cwd này (tránh "No Results").
+	local start_pinned = fav_count("commands") > 0 and pinned_has_items(tools[idx])
 	Snacks.picker({
-		title = title_for(tools[idx], fav_count("commands") > 0),
+		title = title_for(tools[idx], start_pinned),
 		-- Tool nằm trong PICKER OPTS chứ không phải upvalue: finder đọc popts nên chỉ có
 		-- một đường đọc state. Bug "title đổi mà list không đổi" của scope lần trước sinh
 		-- ra đúng từ chỗ có hai đường.
 		wf_tool = tools[idx].name,
-		-- Mặc định chỉ hiện lệnh đã ghim; chưa ghim gì -> hiện tất cả (tránh list rỗng).
-		pinned = fav_count("commands") > 0,
+		pinned = start_pinned,
 		finder = function(popts)
 			local t = find_tool(popts.wf_tool) or tools[1]
 			local list = e.command_list(t.name, cwd)
-			-- pinned: lọc còn ghim + project. all: giữ hết, project/ghim lên đầu.
+			-- pinned: lọc còn ghim + project. Lọc ra RỖNG (hoặc all) -> hiện hết, sort
+			-- project/ghim lên đầu. Fallback rỗng -> all để không bao giờ "No Results".
 			local shown = {}
-			for _, cm in ipairs(list) do
-				if not popts.pinned or shown_in_pinned(cm) then
-					shown[#shown + 1] = cm
+			if popts.pinned then
+				for _, cm in ipairs(list) do
+					if shown_in_pinned(cm) then
+						shown[#shown + 1] = cm
+					end
 				end
 			end
-			if not popts.pinned then
+			if not popts.pinned or #shown == 0 then
+				shown = {}
+				for _, cm in ipairs(list) do
+					shown[#shown + 1] = cm
+				end
 				table.sort(shown, function(a, b)
 					local ra = a.scope == "project" and 0 or (is_fav("commands", a.name) and 1 or 2)
 					local rb = b.scope == "project" and 0 or (is_fav("commands", b.name) and 1 or 2)
@@ -2619,6 +2637,17 @@ function M.skill_pick()
 	local function shown_in_pinned(s)
 		return is_fav("skills", s.name) or s.origin == "project"
 	end
+	-- Có mục nào pin/project hiện được ở cwd hiện tại không. Dùng để KHÔNG mở chế độ
+	-- pinned khi tập pin rỗng ở đây (vd chỉ pin 1 project skill của repo khác) -> tránh
+	-- picker "No Results".
+	local function pinned_has_items(t)
+		for _, s in ipairs(e.skill_list(t.name, cwd)) do
+			if shown_in_pinned(s) then
+				return true
+			end
+		end
+		return false
+	end
 	local function title_for(t, pinned)
 		local n_show, n_all = 0, 0
 		for _, s in ipairs(e.skill_list(t.name, cwd)) do
@@ -2631,22 +2660,31 @@ function M.skill_pick()
 		return ("Skills (%s) · %s"):format(t.name, mode)
 	end
 
+	-- Chỉ mở pinned khi CÓ mục pin/project hiện được ở cwd này (tránh "No Results"
+	-- khi chỉ pin project skill của repo khác).
+	local start_pinned = fav_count("skills") > 0 and pinned_has_items(tools[idx])
 	Snacks.picker({
-		title = title_for(tools[idx], fav_count("skills") > 0),
+		title = title_for(tools[idx], start_pinned),
 		sk_tool = tools[idx].name,
-		-- Mặc định chỉ hiện mục đã ghim; chưa ghim gì -> hiện tất cả (tránh list rỗng).
-		pinned = fav_count("skills") > 0,
+		pinned = start_pinned,
 		finder = function(popts)
 			local t = find_tool(popts.sk_tool) or tools[1]
 			local list = e.skill_list(t.name, cwd)
-			-- pinned: lọc còn ghim + project. all: giữ hết, project/ghim lên đầu.
+			-- pinned: lọc còn ghim + project. Nếu lọc ra RỖNG (hoặc chế độ all) -> hiện
+			-- hết, sort project/ghim lên đầu. Fallback rỗng-> all để không bao giờ "No Results".
 			local shown = {}
-			for _, s in ipairs(list) do
-				if not popts.pinned or shown_in_pinned(s) then
-					shown[#shown + 1] = s
+			if popts.pinned then
+				for _, s in ipairs(list) do
+					if shown_in_pinned(s) then
+						shown[#shown + 1] = s
+					end
 				end
 			end
-			if not popts.pinned then
+			if not popts.pinned or #shown == 0 then
+				shown = {}
+				for _, s in ipairs(list) do
+					shown[#shown + 1] = s
+				end
 				table.sort(shown, function(a, b)
 					local ra = a.origin == "project" and 0 or (is_fav("skills", a.name) and 1 or 2)
 					local rb = b.origin == "project" and 0 or (is_fav("skills", b.name) and 1 or 2)
