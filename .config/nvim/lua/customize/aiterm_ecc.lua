@@ -18,7 +18,11 @@ local M = {}
 M.config = {
 	repo = "https://github.com/affaan-m/ECC",
 	dir = nil, -- nil -> stdpath("data")/ecc
-	profile = "minimal", -- profile cho install.sh (minimal = không có hooks-runtime)
+	-- developer = profile "kỹ sư mặc định" của ECC: minimal + framework-language +
+	-- database + orchestration. Nhiều skill/command hơn minimal; favorites/pin
+	-- (<leader>aS/<leader>aw) giữ picker gọn. codex (sync) và opencode (pin full)
+	-- bỏ qua giá trị này; chỉ claude dùng --profile.
+	profile = "developer",
 }
 
 -- Command của ECC dùng làm MỐC nhận diện. ~/.claude/commands/ có thể toàn command tự
@@ -189,16 +193,20 @@ local function skill_dirs(tool, cwd)
 	if tool == "claude" then
 		home_dirs = { home(".claude/skills") }
 	elseif tool == "opencode" then
-		home_dirs = { home(".opencode/skills") }
+		-- ~/.opencode/skills: ECC ghi vào đây. ~/.config/opencode/skills: vercel skills
+		-- CLI (`npx skills add -a opencode -g`) ghi vào đây -> phải quét cả hai.
+		home_dirs = { home(".opencode/skills"), config_home() .. "/opencode/skills" }
 	elseif tool == "codex" then
 		home_dirs = { home(".codex/skills"), home(".codex/skills/.system") }
 	else
 		return {}
 	end
+	-- Project: đường của tool + `.agents/skills` (vercel skills CLI ghi skill CỤC BỘ
+	-- của codex/opencode vào <cwd>/.agents/skills).
 	local proj = ({
 		claude = cwd and { cwd .. "/.claude/skills" } or {},
-		opencode = cwd and { cwd .. "/.opencode/skills" } or {},
-		codex = cwd and { cwd .. "/.codex/skills" } or {},
+		opencode = cwd and { cwd .. "/.opencode/skills", cwd .. "/.agents/skills" } or {},
+		codex = cwd and { cwd .. "/.codex/skills", cwd .. "/.agents/skills" } or {},
 	})[tool] or {}
 	local out = {}
 	for _, d in ipairs(proj) do
@@ -207,6 +215,10 @@ local function skill_dirs(tool, cwd)
 	for _, d in ipairs(home_dirs) do
 		out[#out + 1] = { dir = d, scope = "global" }
 	end
+	-- ~/.agents/skills: dir "universal" mà vercel skills CLI hay ghi vào, nhưng
+	-- claude/codex/opencode KHÔNG đọc. Xếp CUỐI -> dedup theo tên giữ bản ở dir thật
+	-- của tool trước, nên skill chỉ hiện scope="shared" khi CHƯA activate vào tool.
+	out[#out + 1] = { dir = vim.fn.expand("~/.agents/skills"), scope = "shared" }
 	return out
 end
 
@@ -234,7 +246,7 @@ function M.ecc_owned(tool)
 	return set
 end
 
-local ORIGIN_ORDER = { project = 0, ecc = 1, builtin = 2, user = 3 }
+local ORIGIN_ORDER = { project = 0, ecc = 1, builtin = 2, user = 3, shared = 4 }
 
 -- Skill của tool, kèm mô tả + nguồn. Sắp theo NHÓM rồi tên.
 -- cwd (tuỳ chọn): kèm skill CỤC BỘ repo, origin="project" (sort đầu). Không truyền -> chỉ HOME.
@@ -256,7 +268,9 @@ function M.skill_list(tool, cwd)
 		if vim.uv.fs_stat(dir) then
 			for name, kind in vim.fs.dir(dir) do
 				local path = dir .. "/" .. name .. "/SKILL.md"
-				if kind == "directory" and not seen[name] and vim.uv.fs_stat(path) then
+				-- "link": skill đã activate là symlink -> vim.fs.dir báo type "link", không
+				-- phải "directory". fs_stat theo symlink nên vẫn xác nhận SKILL.md thật.
+				if (kind == "directory" or kind == "link") and not seen[name] and vim.uv.fs_stat(path) then
 					seen[name] = true
 					local desc, hint, tagged = "", nil, false
 					local ok, lines = pcall(vim.fn.readfile, path, "", HEAD_LINES)
@@ -272,6 +286,8 @@ function M.skill_list(tool, cwd)
 					local origin = "user"
 					if entry.scope == "project" then
 						origin = "project"
+					elseif entry.scope == "shared" then
+						origin = "shared" -- ~/.agents/skills, chưa activate vào dir tool
 					elseif dir:find("/.system", 1, true) then
 						origin = "builtin"
 					elseif owned[path] or tagged then
@@ -582,10 +598,10 @@ function M.steps(tool)
 		-- Nó ghi thẳng ~/.codex/prompts nên không cần bước nối.
 		add('cd "$D" && bash scripts/sync-ecc-to-codex.sh')
 	elseif tool == "opencode" then
-		-- README chỉ ghi ĐÚNG một dòng cho target này và nó là --profile full; không
-		-- có tài liệu cho minimal --target opencode nên giữ nguyên full, và hộp
-		-- confirm phải nói rõ chỗ lệch này thay vì đổi ngầm.
-		add('cd "$D" && npm run build:opencode && ./install.sh --profile full --target opencode')
+		-- install-apply.js nhận `--profile <name> --target opencode` cho MỌI profile
+		-- (usage dòng 29), nên dùng chung M.config.profile như claude (giờ = developer).
+		-- README chỉ nêu ví dụ full; developer là tập con hợp lệ, ít module hơn.
+		add(('cd "$D" && npm run build:opencode && ./install.sh --profile %s --target opencode'):format(prof))
 		-- VÁ CONFIG CỦA ECC. Hai lỗi trong ~/.opencode/opencode.json, mà opencode ĐỌC
 		-- file đó thật (đã đo):
 		--   1. model Anthropic pin cứng ở top-level + cả 26 agent -> không có tài khoản
