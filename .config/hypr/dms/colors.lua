@@ -4,23 +4,23 @@
 hl.config({
 	general = {
 		col = {
-			active_border = "rgb(aac7ff)",
-			inactive_border = "rgb(8e9099)",
+			active_border = "rgb(bbc3ff)",
+			inactive_border = "rgb(90909a)",
 		},
 	},
 	group = {
 		col = {
-			border_active = "rgb(aac7ff)",
-			border_inactive = "rgb(8e9099)",
+			border_active = "rgb(bbc3ff)",
+			border_inactive = "rgb(90909a)",
 			border_locked_active = "rgb(ffb4ab)",
-			border_locked_inactive = "rgb(8e9099)",
+			border_locked_inactive = "rgb(90909a)",
 		},
 		groupbar = {
 			col = {
-				active = "rgb(aac7ff)",
-				inactive = "rgb(8e9099)",
+				active = "rgb(bbc3ff)",
+				inactive = "rgb(90909a)",
 				locked_active = "rgb(ffb4ab)",
-				locked_inactive = "rgb(8e9099)",
+				locked_inactive = "rgb(90909a)",
 			},
 		},
 	},
