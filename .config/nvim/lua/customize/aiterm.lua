@@ -505,7 +505,7 @@ end
 -- id session vẫn là "<tool>-<n>": uuid 36 ký tự làm buffer name / winbar không
 -- dùng được. Phần người-đọc-được nằm ở session.label (winbar) và session.title.
 ---@param tool table
----@param opts? { args?: string[], cwd?: string, title?: string, cmd?: string[], on_exit?: fun(code:number) }
+---@param opts? { args?: string[], cwd?: string, title?: string, cmd?: string[], real_id?: string, on_exit?: fun(code:number) }
 local function new_session(tool, opts)
 	opts = opts or {}
 
@@ -551,6 +551,13 @@ local function new_session(tool, opts)
 		job = job,
 		cwd = cwd,
 		title = opts.title,
+		-- real_id: id THẬT của session trên đĩa (uuid/thread). Resume biết trước
+		-- (gán qua opts.real_id); session vừa tạo (new/fork/browse) để nil, tới
+		-- build_items tự dò trong history rồi pin lại. Dùng để loại mục past trùng.
+		real_id = opts.real_id,
+		-- launch_time (epoch giây, cùng đơn vị e.time của history): mốc để
+		-- build_items tìm entry history <=> chính session này.
+		launch_time = os.time(),
 		label = tool_icon(tool) .. " " .. id .. (opts.title and (" · " .. opts.title) or ""),
 	}
 	sessions[#sessions + 1] = session
@@ -1573,9 +1580,49 @@ local function build_items(all_dirs)
 		scope_cwd = history().scope_cwd()
 	end
 
-	for _, e in ipairs(history().list(scope_cwd)) do
+	-- Session live đang chạy cũng ĐƯỢC CHÍNH TOOL GHI VÀO ĐĨA (claude jsonl,
+	-- codex threads, opencode session) nên history() sẽ trả lại chính nó ở nhóm
+	-- past -> cùng một session hiện 2 dòng (1 live + 1 past cùng tên). Loại bỏ
+	-- mục past trùng khỏi picker:
+	--   * entry có (tool, id) khớp real_id của session live -> resume biết trước.
+	--   * session new/fork/browse chưa biết id -> tự dò entry cùng tool trong list,
+	--     mới nhất chưa ai chiếm, thời điểm >= lúc launch; pin lại ngay lần đầu.
+	local function tool_key(tool_name, id)
+		return tool_name .. "\0" .. tostring(id)
+	end
+	local hist = history().list(scope_cwd)
+	local live_ids, claimed = {}, {}
+	for _, s in ipairs(sessions) do
+		if is_alive(s) then
+			if s.real_id then
+				-- id đã biết -> giữ chỗ trước để discovery của session khác không
+				-- cướp mất entry của mình.
+				claimed[s.real_id] = true
+			else
+				local best, best_d
+				for _, e in ipairs(hist) do
+					if e.tool == s.tool.name and not claimed[e.id] and (e.time or 0) >= s.launch_time then
+						local d = (e.time or 0) - s.launch_time
+						if not best_d or d < best_d then
+							best, best_d = e.id, d
+						end
+					end
+				end
+				if best then
+					claimed[best] = true
+					s.real_id = best
+				end
+			end
+			if s.real_id then
+				live_ids[tool_key(s.tool.name, s.real_id)] = true
+			end
+		end
+	end
+
+	for _, e in ipairs(hist) do
 		local tool = find_tool(e.tool)
-		if tool then
+		-- KHÔNG thêm mục past trùng với session đang chạy (đã ở nhóm live).
+		if tool and not live_ids[tool_key(e.tool, e.id)] then
 			items[#items + 1] = {
 				kind = "past",
 				tool = tool,
@@ -1670,7 +1717,7 @@ function M.resume(e)
 		notify("aiterm: tool does not support resume: " .. tostring(e and e.tool), "warn")
 		return
 	end
-	attach(new_session(tool, { args = tool.resume(e.id), cwd = e.cwd, title = e.title }))
+	attach(new_session(tool, { args = tool.resume(e.id), cwd = e.cwd, title = e.title, real_id = e.id }))
 end
 
 -- Resume session mới nhất của cwd, không qua picker. Chưa có gì -> mở picker.
