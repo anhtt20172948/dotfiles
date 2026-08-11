@@ -81,7 +81,7 @@ return {
 		},
 		{
 			-- Bật/tắt inlay hint (dòng ảo phía trên function/class dưới con trỏ).
-			"<leader>at",
+			"<leader>aT",
 			function()
 				require("customize.aiterm").toggle_hints()
 			end,
