@@ -13,6 +13,153 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 		dependencies = {
 			"nvim-lua/plenary.nvim",
 			"nvim-tree/nvim-web-devicons", -- not strictly required, but recommended
+				{ -- named directory icons (Material Design Icons plane; verified to render in kitty)
+					"echasnovski/mini.icons",
+					opts = {
+						directory = {
+							src = { glyph = "󰴉", hl = "MiniIconsPurple" },
+							lib = { glyph = "󰲂", hl = "MiniIconsGrey" },
+							core = { glyph = "󰲂", hl = "MiniIconsGrey" },
+							common = { glyph = "󰲂", hl = "MiniIconsGrey" },
+							app = { glyph = "󰉗", hl = "MiniIconsAzure" },
+							apps = { glyph = "󰉗", hl = "MiniIconsAzure" },
+							components = { glyph = "󰴉", hl = "MiniIconsAzure" },
+							component = { glyph = "󰴉", hl = "MiniIconsAzure" },
+							hooks = { glyph = "󱁽", hl = "MiniIconsRed" },
+							utils = { glyph = "󰲂", hl = "MiniIconsYellow" },
+							util = { glyph = "󰲂", hl = "MiniIconsYellow" },
+							helpers = { glyph = "󰲂", hl = "MiniIconsYellow" },
+							context = { glyph = "󰴉", hl = "MiniIconsCyan" },
+							types = { glyph = "󰴉", hl = "MiniIconsBlue" },
+							constants = { glyph = "󱁿", hl = "MiniIconsGrey" },
+							models = { glyph = "󰴉", hl = "MiniIconsOrange" },
+							views = { glyph = "󰴉", hl = "MiniIconsAzure" },
+							controllers = { glyph = "󰴉", hl = "MiniIconsAzure" },
+							services = { glyph = "󰴉", hl = "MiniIconsAzure" },
+							service = { glyph = "󰴉", hl = "MiniIconsAzure" },
+							middleware = { glyph = "󰴉", hl = "MiniIconsYellow" },
+							providers = { glyph = "󰴉", hl = "MiniIconsAzure" },
+							store = { glyph = "󱋣", hl = "MiniIconsRed" },
+							stores = { glyph = "󱋣", hl = "MiniIconsRed" },
+							config = { glyph = "󱁿", hl = "MiniIconsGrey" },
+							configs = { glyph = "󱁿", hl = "MiniIconsGrey" },
+							settings = { glyph = "󱁿", hl = "MiniIconsGrey" },
+							schema = { glyph = "󱋣", hl = "MiniIconsCyan" },
+							schemas = { glyph = "󱋣", hl = "MiniIconsCyan" },
+							assets = { glyph = "󰉏", hl = "MiniIconsAzure" },
+							images = { glyph = "󰉏", hl = "MiniIconsAzure" },
+							img = { glyph = "󰉏", hl = "MiniIconsAzure" },
+							icons = { glyph = "󰉏", hl = "MiniIconsYellow" },
+							fonts = { glyph = "󰉋", hl = "MiniIconsPurple" },
+							font = { glyph = "󰉋", hl = "MiniIconsPurple" },
+							styles = { glyph = "󰉋", hl = "MiniIconsRed" },
+							css = { glyph = "󰉋", hl = "MiniIconsRed" },
+							scss = { glyph = "󰉋", hl = "MiniIconsRed" },
+							sass = { glyph = "󰉋", hl = "MiniIconsRed" },
+							themes = { glyph = "󰉋", hl = "MiniIconsPurple" },
+							theme = { glyph = "󰉋", hl = "MiniIconsPurple" },
+							layouts = { glyph = "󰉗", hl = "MiniIconsAzure" },
+							pages = { glyph = "󰉗", hl = "MiniIconsAzure" },
+							public = { glyph = "󰉗", hl = "MiniIconsGrey" },
+							static = { glyph = "󰉗", hl = "MiniIconsGrey" },
+							media = { glyph = "󱞊", hl = "MiniIconsYellow" },
+							videos = { glyph = "󱞊", hl = "MiniIconsYellow" },
+							audio = { glyph = "󱞊", hl = "MiniIconsYellow" },
+							js = { glyph = "󰴉", hl = "MiniIconsYellow" },
+							javascript = { glyph = "󰴉", hl = "MiniIconsYellow" },
+							ts = { glyph = "󰴉", hl = "MiniIconsBlue" },
+							typescript = { glyph = "󰴉", hl = "MiniIconsBlue" },
+							react = { glyph = "󰴉", hl = "MiniIconsBlue" },
+							vue = { glyph = "󰴉", hl = "MiniIconsGreen" },
+							angular = { glyph = "󰴉", hl = "MiniIconsRed" },
+							svelte = { glyph = "󰴉", hl = "MiniIconsOrange" },
+							node = { glyph = "󰴉", hl = "MiniIconsGreen" },
+							nodejs = { glyph = "󰴉", hl = "MiniIconsGreen" },
+							node_modules = { glyph = "󱧺", hl = "MiniIconsGreen" },
+							python = { glyph = "󰴉", hl = "MiniIconsPurple" },
+							rust = { glyph = "󰴉", hl = "MiniIconsOrange" },
+							go = { glyph = "󰴉", hl = "MiniIconsCyan" },
+							golang = { glyph = "󰴉", hl = "MiniIconsCyan" },
+							java = { glyph = "󰴉", hl = "MiniIconsOrange" },
+							kotlin = { glyph = "󰴉", hl = "MiniIconsPurple" },
+							php = { glyph = "󰴉", hl = "MiniIconsBlue" },
+							ruby = { glyph = "󰴉", hl = "MiniIconsRed" },
+							swift = { glyph = "󰴉", hl = "MiniIconsOrange" },
+							dart = { glyph = "󰴉", hl = "MiniIconsCyan" },
+							flutter = { glyph = "󰴉", hl = "MiniIconsAzure" },
+							elixir = { glyph = "󰴉", hl = "MiniIconsPurple" },
+							scala = { glyph = "󰴉", hl = "MiniIconsRed" },
+							lua = { glyph = "󰴉", hl = "MiniIconsBlue" },
+							docker = { glyph = "󱁿", hl = "MiniIconsAzure" },
+							kubernetes = { glyph = "󱁿", hl = "MiniIconsAzure" },
+							k8s = { glyph = "󱁿", hl = "MiniIconsAzure" },
+							terraform = { glyph = "󱁿", hl = "MiniIconsPurple" },
+							ansible = { glyph = "󱁿", hl = "MiniIconsRed" },
+							aws = { glyph = "󱁿", hl = "MiniIconsOrange" },
+							azure = { glyph = "󱁿", hl = "MiniIconsAzure" },
+							gcp = { glyph = "󱁿", hl = "MiniIconsAzure" },
+							nginx = { glyph = "󱁿", hl = "MiniIconsGreen" },
+							database = { glyph = "󱋣", hl = "MiniIconsYellow" },
+							db = { glyph = "󱋣", hl = "MiniIconsYellow" },
+							data = { glyph = "󱋣", hl = "MiniIconsYellow" },
+							redis = { glyph = "󱋣", hl = "MiniIconsRed" },
+							graphql = { glyph = "󰴉", hl = "MiniIconsRed" },
+							server = { glyph = "󱧼", hl = "MiniIconsCyan" },
+							cloud = { glyph = "󱧼", hl = "MiniIconsCyan" },
+							api = { glyph = "󰴉", hl = "MiniIconsGreen" },
+							scripts = { glyph = "󱁽", hl = "MiniIconsYellow" },
+							bin = { glyph = "󱧺", hl = "MiniIconsYellow" },
+							build = { glyph = "󱧼", hl = "MiniIconsGrey" },
+							dist = { glyph = "󱧼", hl = "MiniIconsGrey" },
+							out = { glyph = "󱧼", hl = "MiniIconsGrey" },
+							target = { glyph = "󱧼", hl = "MiniIconsGrey" },
+							coverage = { glyph = "󰪺", hl = "MiniIconsGrey" },
+							vendor = { glyph = "󰲂", hl = "MiniIconsGrey" },
+							packages = { glyph = "󱧺", hl = "MiniIconsYellow" },
+							modules = { glyph = "󱁽", hl = "MiniIconsGreen" },
+							deps = { glyph = "󱧺", hl = "MiniIconsGreen" },
+							plugins = { glyph = "󱁽", hl = "MiniIconsGreen" },
+							test = { glyph = "󱞊", hl = "MiniIconsBlue" },
+							tests = { glyph = "󱞊", hl = "MiniIconsBlue" },
+							spec = { glyph = "󱞊", hl = "MiniIconsBlue" },
+							mocks = { glyph = "󱞊", hl = "MiniIconsGrey" },
+							docs = { glyph = "󱂷", hl = "MiniIconsPurple" },
+							examples = { glyph = "󱂷", hl = "MiniIconsPurple" },
+							migrations = { glyph = "󱋣", hl = "MiniIconsPurple" },
+							seeders = { glyph = "󱋣", hl = "MiniIconsGreen" },
+							logs = { glyph = "󰪺", hl = "MiniIconsGrey" },
+							tmp = { glyph = "󰪺", hl = "MiniIconsGrey" },
+							temp = { glyph = "󰪺", hl = "MiniIconsGrey" },
+							cache = { glyph = "󰪺", hl = "MiniIconsYellow" },
+							backup = { glyph = "󰪺", hl = "MiniIconsGrey" },
+							ci = { glyph = "󱁿", hl = "MiniIconsGrey" },
+							workflows = { glyph = "󱁿", hl = "MiniIconsAzure" },
+							i18n = { glyph = "󱂷", hl = "MiniIconsCyan" },
+							locales = { glyph = "󱂷", hl = "MiniIconsCyan" },
+							lang = { glyph = "󱂷", hl = "MiniIconsCyan" },
+							translations = { glyph = "󱂷", hl = "MiniIconsCyan" },
+							keys = { glyph = "󱁿", hl = "MiniIconsYellow" },
+							certs = { glyph = "󱁿", hl = "MiniIconsYellow" },
+							secrets = { glyph = "󱁿", hl = "MiniIconsYellow" },
+							[".github"] = { glyph = "󱁿", hl = "MiniIconsAzure" },
+							[".gitlab"] = { glyph = "󱁿", hl = "MiniIconsOrange" },
+							[".git"] = { glyph = "󱁿", hl = "MiniIconsOrange" },
+							[".vscode"] = { glyph = "󱁿", hl = "MiniIconsAzure" },
+							[".idea"] = { glyph = "󱁿", hl = "MiniIconsOrange" },
+							[".husky"] = { glyph = "󱁽", hl = "MiniIconsYellow" },
+							[".storybook"] = { glyph = "󱁽", hl = "MiniIconsRed" },
+							[".next"] = { glyph = "󱁽", hl = "MiniIconsGrey" },
+							[".nuxt"] = { glyph = "󱁽", hl = "MiniIconsGreen" },
+							[".expo"] = { glyph = "󱁽", hl = "MiniIconsGrey" },
+							[".cache"] = { glyph = "󰪺", hl = "MiniIconsGrey" },
+							[".config"] = { glyph = "󱁿", hl = "MiniIconsGrey" },
+							[".local"] = { glyph = "󰉌", hl = "MiniIconsCyan" },
+							nvim = { glyph = "󰉋", hl = "MiniIconsGreen" },
+							[".docker"] = { glyph = "󱁿", hl = "MiniIconsAzure" },
+							[".vercel"] = { glyph = "󱁿", hl = "MiniIconsGrey" },
+						},
+					},
+				},
 			"MunifTanjim/nui.nvim",
 			-- {"3rd/image.nvim", opts = {}}, -- Optional image support in preview window: See `# Preview Mode` for more information
 			{
@@ -55,45 +202,12 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 		-----@type neotree.Config
 		-- opts = {},
 		config = function(_, opts)
-			-- If you want icons for diagnostic errors, you'll need to define them somewhere.
-			-- In Neovim v0.10+, you can configure them in vim.diagnostic.config(), like:
-			--
-			vim.diagnostic.config({
-				signs = {
-					text = {
-						[vim.diagnostic.severity.ERROR] = "",
-						[vim.diagnostic.severity.WARN] = "",
-						[vim.diagnostic.severity.INFO] = "",
-						[vim.diagnostic.severity.HINT] = "󰌵",
-					},
-				},
-			})
-			--
-			-- In older versions, you can define the signs manually:
-			-- vim.fn.sign_define("DiagnosticSignError", { text = " ", texthl = "DiagnosticSignError" })
-			-- vim.fn.sign_define("DiagnosticSignWarn", { text = " ", texthl = "DiagnosticSignWarn" })
-			-- vim.fn.sign_define("DiagnosticSignInfo", { text = " ", texthl = "DiagnosticSignInfo" })
-			-- vim.fn.sign_define("DiagnosticSignHint", { text = "󰌵", texthl = "DiagnosticSignHint" })
 			local function on_move(data)
 				Snacks.rename.on_rename_file(data.source, data.destination)
 			end
 			local events = require("neo-tree.events")
-			opts.event_handlers = opts.event_handlers or {}
-			vim.list_extend(opts.event_handlers, {
-				{ event = events.FILE_MOVED, handler = on_move },
-				{ event = events.FILE_RENAMED, handler = on_move },
-			})
-			require("neo-tree").setup(opts)
-			vim.api.nvim_create_autocmd("TermClose", {
-				pattern = "*lazygit",
-				callback = function()
-					if package.loaded["neo-tree.sources.git_status"] then
-						require("neo-tree.sources.git_status").refresh()
-					end
-				end,
-			})
 
-			require("neo-tree").setup({
+			local local_opts = {
 				close_if_last_window = false, -- Close Neo-tree if it is the last window left in the tab
 				popup_border_style = "NC", -- or "" to use 'winborder' on Neovim v0.11+
 				enable_git_status = true,
@@ -143,17 +257,42 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 						symbol = "•",
 						highlight = "NeoTreeModified",
 					},
+					diagnostics = {
+						symbols = {
+							error = "",
+							warn = "",
+							info = "",
+							hint = "󰌵",
+						},
+					},
 					icon = {
-						folder_closed = "",
-						folder_open = "",
-						folder_empty = " ",
+						folder_closed = "󰉋",
+						folder_open = "󰝰",
+						folder_empty = "󰉖",
+						folder_empty_open = "󰷏",
 						-- Custom folder icons based on name
 						provider = function(icon, node, state) -- default icon provider utilizes nvim-web-devicons if available
-							if node.type == "file" or node.type == "terminal" then
+							if node.type == "directory" then
+								-- Named folder icons (Material-style) via mini.icons.
+								-- neo-tree has already set icon.text to folder_open/closed/empty
+								-- based on node state; only override for folders that mini.icons
+								-- has a dedicated (non-default) icon for, so plain folders keep
+								-- their open/closed distinction and expander arrows.
+								local ok, mini_icons = pcall(require, "mini.icons")
+								if ok then
+									local devicon, hl, is_default = mini_icons.get("directory", node.name)
+									if not is_default then
+										icon.text = devicon or icon.text
+										icon.highlight = hl or icon.highlight
+									end
+								end
+							elseif node.type == "file" or node.type == "terminal" then
 								local success, web_devicons = pcall(require, "nvim-web-devicons")
 								local name = node.type == "terminal" and "terminal" or node.name
 								if success then
-									local devicon, hl = web_devicons.get_icon(name)
+									-- default = true: unknown extensions get web-devicons' generic
+									-- file glyph instead of falling back to the "*" placeholder.
+									local devicon, hl = web_devicons.get_icon(name, nil, { default = true })
 									icon.text = devicon or icon.text
 									icon.highlight = hl or icon.highlight
 								end
@@ -572,6 +711,27 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 						},
 					},
 				},
+			}
+			local move_handlers = {
+				{ event = events.FILE_MOVED, handler = on_move },
+				{ event = events.FILE_RENAMED, handler = on_move },
+			}
+			local incoming_opts = opts or {}
+			local merged_handlers = vim.list_extend(
+				vim.deepcopy(incoming_opts.event_handlers or {}),
+				move_handlers
+			)
+			local final_opts = vim.tbl_deep_extend("force", {}, vim.deepcopy(incoming_opts), local_opts)
+			final_opts.event_handlers = merged_handlers
+			require("neo-tree").setup(final_opts)
+
+			vim.api.nvim_create_autocmd("TermClose", {
+				pattern = "*lazygit",
+				callback = function()
+					if package.loaded["neo-tree.sources.git_status"] then
+						require("neo-tree.sources.git_status").refresh()
+					end
+				end,
 			})
 
 			vim.keymap.set("n", "<leader>e", "<Cmd>Neotree reveal<CR>")
