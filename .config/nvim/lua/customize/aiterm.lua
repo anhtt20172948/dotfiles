@@ -302,7 +302,7 @@ M.config = {
 	-- theo tool) + vài action có icon + phím tắt mờ. actions là danh sách action.key
 	-- muốn quảng cáo; icon tra M.icons() nên tự xuống chữ ở style unicode/ascii.
 	hints = {
-		enabled = true,
+		enabled = false,
 		actions = { "explain", "fix", "tests" },
 		key = "<leader>ai",
 	},
