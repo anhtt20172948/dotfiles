@@ -10,5 +10,8 @@ function Linemode:size_and_mtime()
     end
 
     local size = self._file:size()
-    return string.format("%s %s", size and ya.readable_size(size) or "-", time)
+    local uid = self._file.cha.uid
+    local user = uid and ya.user_name(uid) or "-"
+
+    return string.format("%s %s %s", size and ya.readable_size(size) or "-", user, time)
 end
