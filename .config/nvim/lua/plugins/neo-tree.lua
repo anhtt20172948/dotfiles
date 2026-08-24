@@ -734,6 +734,20 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 				end,
 			})
 
+			local function set_folder_hl()
+				vim.api.nvim_set_hl(0, "NeoTreeDirectoryIcon", { fg = "#dcb67a" })
+				vim.api.nvim_set_hl(0, "NeoTreeDirectoryName", { fg = "#dcb67a" })
+				vim.api.nvim_set_hl(0, "NeoTreeRootName", { fg = "#dcb67a" })
+			end
+			set_folder_hl()
+			vim.api.nvim_create_autocmd("ColorScheme", {
+				group = vim.api.nvim_create_augroup("NeoTreeFolderColor", { clear = true }),
+				callback = function()
+					set_folder_hl()
+					vim.schedule(set_folder_hl)
+				end,
+			})
+
 			vim.keymap.set("n", "<leader>e", "<Cmd>Neotree reveal<CR>")
 		end,
 	},
