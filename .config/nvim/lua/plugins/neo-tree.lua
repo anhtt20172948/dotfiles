@@ -588,6 +588,29 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 				},
 
 				renderers = {
+					directory = {
+						{ "indent" },
+						{ "icon" },
+						{ "current_filter" },
+						{
+							"container",
+							content = {
+								{ "name", zindex = 10 },
+								{
+									"symlink_target",
+									zindex = 10,
+									highlight = "NeoTreeSymbolicLinkTarget",
+								},
+								{ "clipboard", zindex = 10 },
+								{ "diagnostics", zindex = 20, align = "right" },
+								{ "git_status", zindex = 10, align = "right", hide_when_expanded = true },
+								{ "file_size", zindex = 10, align = "right" },
+								{ "type", zindex = 10, align = "right" },
+								{ "last_modified", zindex = 10, align = "right" },
+								{ "created", zindex = 10, align = "right" },
+							},
+						},
+					},
 					file = {
 						{ "indent" },
 						{ "icon" },
@@ -723,6 +746,50 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 			)
 			local final_opts = vim.tbl_deep_extend("force", {}, vim.deepcopy(incoming_opts), local_opts)
 			final_opts.event_handlers = merged_handlers
+
+			-- Folder icon/name turn yellow (warning) / red (error) based on the most
+			-- severe LSP diagnostic found in the files they contain. neo-tree already
+			-- aggregates child diagnostics onto ancestor dirs in
+			-- utils.get_diagnostic_counts(); these wrappers only recolor the built-in
+			-- icon/name output, keeping mini.icons folder variants and git colors.
+			local common_components = require("neo-tree.sources.common.components")
+			-- The renderer resolves components through `state.components`, which is a
+			-- tbl_deep_extend() snapshot of the common module taken when
+			-- filesystem/components.lua first loads. Custom components must therefore
+			-- be attached to that snapshot table, not to common.components itself.
+			local components = require("neo-tree.sources.filesystem.components")
+			local DIAG_HL = { [1] = "DiagnosticError", [2] = "DiagnosticWarn" }
+			local function folder_diag_hl(node, state)
+				local d = state.diagnostics_lookup and state.diagnostics_lookup[node:get_id()]
+				if d and d.severity_number and d.severity_number <= 2 then
+					return DIAG_HL[d.severity_number]
+				end
+			end
+			-- Renderer entries keep their standard names ("icon"/"name") so they still
+			-- receive the default_component_configs merge (folder glyphs, provider,
+			-- git colors...). The diagnostic recoloring is applied by overriding those
+			-- keys on the snapshot table, wrapping the originals, guarded to
+			-- directories only so file rendering stays untouched.
+			local orig_icon, orig_name = common_components.icon, common_components.name
+			components.icon = function(config, node, state)
+				local item = orig_icon(config, node, state)
+				if node.type == "directory" then
+					local hl = folder_diag_hl(node, state)
+					if item.text and hl then
+						item.highlight = hl
+					end
+				end
+				return item
+			end
+			components.name = function(config, node, state)
+				local item = orig_name(config, node, state)
+				local hl = node.type == "directory" and folder_diag_hl(node, state)
+				if hl then
+					item.highlight = hl
+				end
+				return item
+			end
+
 			require("neo-tree").setup(final_opts)
 
 			vim.api.nvim_create_autocmd("TermClose", {
@@ -731,20 +798,6 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 					if package.loaded["neo-tree.sources.git_status"] then
 						require("neo-tree.sources.git_status").refresh()
 					end
-				end,
-			})
-
-			local function set_folder_hl()
-				vim.api.nvim_set_hl(0, "NeoTreeDirectoryIcon", { fg = "#dcb67a" })
-				vim.api.nvim_set_hl(0, "NeoTreeDirectoryName", { fg = "#dcb67a" })
-				vim.api.nvim_set_hl(0, "NeoTreeRootName", { fg = "#dcb67a" })
-			end
-			set_folder_hl()
-			vim.api.nvim_create_autocmd("ColorScheme", {
-				group = vim.api.nvim_create_augroup("NeoTreeFolderColor", { clear = true }),
-				callback = function()
-					set_folder_hl()
-					vim.schedule(set_folder_hl)
 				end,
 			})
 
