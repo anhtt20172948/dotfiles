@@ -42,6 +42,9 @@ for _, map in ipairs(ai_maps) do
 end
 check(mapped["<C-H>"] and mapped["<C-H>"].callback, "AI terminal needs a Ctrl+h callback")
 check(mapped["<C-W>h"] and mapped["<C-W>h"].callback, "AI terminal needs a Ctrl+w h callback")
+for _, lhs in ipairs({ "<C-J>", "<C-K>", "<C-W>j", "<C-W>k" }) do
+	check(mapped[lhs] and mapped[lhs].callback, "AI terminal needs a buffer-local " .. lhs .. " callback")
+end
 
 mapped["<C-H>"].callback()
 check(vim.api.nvim_get_current_win() == code_win, "Ctrl+h should move left from AI terminal")
@@ -79,7 +82,7 @@ check(not mapped["<C-W>"], "Ctrl+w alone should still pass through to AI app")
 local other_buf = vim.api.nvim_create_buf(false, true)
 local other_maps = vim.api.nvim_buf_get_keymap(other_buf, "t")
 for _, map in ipairs(other_maps) do
-	check(map.lhs ~= "<C-H>" and map.lhs ~= "<C-W>h", "other terminal buffers should not get AI navigation maps")
+	check(not vim.tbl_contains({ "<C-H>", "<C-W>h", "<C-J>", "<C-K>", "<C-W>j", "<C-W>k" }, map.lhs), "other terminal buffers should not get AI navigation maps")
 end
 
 print("aiterm navigation: OK")
