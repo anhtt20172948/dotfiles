@@ -1,3 +1,5 @@
+-- Run with: TMUX= nvim --headless -u NONE -i NONE -c 'luafile tests/aiterm_navigation_mode.lua'
+-- This asynchronous test needs Neovim's event loop; -l exits before its timers run.
 local root = vim.fn.getcwd()
 package.path = root .. "/.config/nvim/lua/?.lua;" .. root .. "/.config/nvim/lua/?/init.lua;" .. package.path
 

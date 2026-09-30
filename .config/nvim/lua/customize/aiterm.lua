@@ -8,6 +8,7 @@
 -- Keybindings ngoài picker:
 --   <C-Space> (trong AI pane) -> quay lại code (pane vẫn mở, session vẫn chạy)
 --   <C-h>/<C-w>h (trong AI pane) -> code ngay bên trái nếu có
+--   <C-j/k>/<C-w>j/k (trong AI pane) -> pane ngay bên dưới/trên nếu có
 --   <C-l>/<C-w>l (trong editor) -> AI pane nếu ở ngay bên phải
 --   <C-w>p    (trong editor)  -> attach/focus AI pane (session gần nhất)
 --
@@ -447,17 +448,23 @@ local function set_term_keymaps(buf)
 	local o = { buffer = buf, silent = true, nowait = true }
 	vim.keymap.set("t", "<C-Space>", [[<C-\><C-n><C-w>p]], o)
 	vim.keymap.set("t", "<C-@>", [[<C-\><C-n><C-w>p]], o)
-	local function focus_left()
+	local function focus_direction(direction)
 		local current = vim.api.nvim_get_current_win()
-		local left = vim.fn.win_getid(vim.fn.winnr("h"))
-		if left == current then
-			return -- không có pane trái: giữ nguyên terminal-mode
+		local target = vim.fn.win_getid(vim.fn.winnr(direction))
+		if target == current then
+			return -- không có pane theo hướng này: giữ nguyên terminal-mode
 		end
 		vim.cmd("stopinsert")
-		vim.api.nvim_set_current_win(left)
+		vim.api.nvim_set_current_win(target)
 	end
-	vim.keymap.set("t", "<C-h>", focus_left, { buffer = buf, silent = true })
-	vim.keymap.set("t", "<C-w>h", focus_left, { buffer = buf, silent = true })
+	for _, direction in ipairs({ "h", "j", "k" }) do
+		local d = direction
+		local function focus()
+			focus_direction(d)
+		end
+		vim.keymap.set("t", "<C-" .. d .. ">", focus, { buffer = buf, silent = true })
+		vim.keymap.set("t", "<C-w>" .. d, focus, { buffer = buf, silent = true })
+	end
 end
 
 local function is_alive(s)
