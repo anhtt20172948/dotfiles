@@ -69,6 +69,17 @@ return {
 			mode = "n",
 		},
 		{
+			"<C-w>l",
+			function()
+				local aiterm = package.loaded["customize.aiterm"]
+				if not (aiterm and aiterm.focus_if_right()) then
+					vim.cmd(vim.v.count1 .. "wincmd l")
+				end
+			end,
+			desc = "Right: focus AI terminal if adjacent",
+			mode = "n",
+		},
+		{
 			-- Gửi file/selection tới session AI đang chạy: menu explain/ask/fix/...
 			-- (kiểu CodeCompanion). Visual = @ref + fenced selection; normal = @ref +
 			-- function/class dưới con trỏ (treesitter), top-level = @ref cả file.
