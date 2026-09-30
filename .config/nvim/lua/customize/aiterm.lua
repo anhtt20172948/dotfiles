@@ -7,6 +7,8 @@
 --
 -- Keybindings ngoài picker:
 --   <C-Space> (trong AI pane) -> quay lại code (pane vẫn mở, session vẫn chạy)
+--   <C-h>/<C-w>h (trong AI pane) -> code ngay bên trái nếu có
+--   <C-l>/<C-w>l (trong editor) -> AI pane nếu ở ngay bên phải
 --   <C-w>p    (trong editor)  -> attach/focus AI pane (session gần nhất)
 --
 -- !! ICON: file này KHÔNG chứa glyph thô, tất cả dựng từ CODEPOINT !!
@@ -439,11 +441,23 @@ end
 
 -- Terminal-mode: <C-Space> (và alias <C-@>/<Nul> mà kitty đôi khi gửi) để quay lại
 -- code. rhs dùng noremap nên <C-w>p ở đây là builtin previous-window (về code),
--- KHÔNG vòng lại global map <C-w>p. <Esc>/<Space>/<C-w> vẫn truyền thẳng vào AI app.
+-- KHÔNG vòng lại global map <C-w>p. <Esc>/<Space> vẫn truyền thẳng vào AI app;
+-- <C-w> riêng lẻ vẫn tới app sau timeoutlen vì chỉ chuỗi <C-w>h được map.
 local function set_term_keymaps(buf)
 	local o = { buffer = buf, silent = true, nowait = true }
 	vim.keymap.set("t", "<C-Space>", [[<C-\><C-n><C-w>p]], o)
 	vim.keymap.set("t", "<C-@>", [[<C-\><C-n><C-w>p]], o)
+	local function focus_left()
+		local current = vim.api.nvim_get_current_win()
+		local left = vim.fn.win_getid(vim.fn.winnr("h"))
+		if left == current then
+			return -- không có pane trái: giữ nguyên terminal-mode
+		end
+		vim.cmd("stopinsert")
+		vim.api.nvim_set_current_win(left)
+	end
+	vim.keymap.set("t", "<C-h>", focus_left, { buffer = buf, silent = true })
+	vim.keymap.set("t", "<C-w>h", focus_left, { buffer = buf, silent = true })
 end
 
 local function is_alive(s)
@@ -563,6 +577,14 @@ local function new_session(tool, opts)
 	sessions[#sessions + 1] = session
 	-- set_term_keymaps ở đây -> mọi đường (new/resume/fork/browse) đều có <C-Space>.
 	set_term_keymaps(buf)
+	vim.api.nvim_create_autocmd("WinEnter", {
+		buffer = buf,
+		callback = function()
+			if M.config.start_insert and is_alive(session) and vim.api.nvim_get_current_buf() == buf then
+				vim.cmd("startinsert")
+			end
+		end,
+	})
 
 	vim.api.nvim_create_autocmd("TermClose", {
 		buffer = buf,
@@ -1930,6 +1952,15 @@ function M.focus()
 	else
 		M.pick()
 	end
+end
+
+-- Chỉ focus AI nếu nó là cửa sổ liền bên phải; caller giữ điều hướng gốc nếu false.
+function M.focus_if_right()
+	if not win_valid() or vim.api.nvim_get_current_win() == win or vim.fn.win_getid(vim.fn.winnr("l")) ~= win then
+		return false
+	end
+	M.focus()
+	return true
 end
 
 -- Ẩn pane AI: ĐÓNG window nhưng KHÔNG đụng tới job.
