@@ -1485,15 +1485,17 @@ end
 -- và "⌥" còn là ký hiệu riêng của macOS, sang Linux/Windows đọc thành sai phím.
 local FOOTER = {
 	{ " <CR> ", "SnacksPickerLabel" },
-	{ "resume  ", "SnacksPickerDimmed" },
+	{ "open  ", "SnacksPickerDimmed" },
 	{ "C-x ", "SnacksPickerLabel" },
 	{ "new  ", "SnacksPickerDimmed" },
 	{ "C-o ", "SnacksPickerLabel" },
 	{ "fork  ", "SnacksPickerDimmed" },
 	{ "M-a ", "SnacksPickerLabel" },
 	{ "scope  ", "SnacksPickerDimmed" },
+	{ "Tab ", "SnacksPickerLabel" },
+	{ "mark  ", "SnacksPickerDimmed" },
 	{ "dd ", "SnacksPickerLabel" },
-	{ "delete  ", "SnacksPickerDimmed" },
+	{ "del  ", "SnacksPickerDimmed" },
 	{ "? ", "SnacksPickerLabel" },
 	{ "keys ", "SnacksPickerDimmed" },
 }
@@ -1885,23 +1887,63 @@ function M.pick(opts)
 					}))
 				end)
 			end,
-			-- dd: archive (codex, hoàn tác được) / delete (opencode, KHÔNG) /
-			-- xoá file jsonl (claude, KHÔNG) -> default của confirm là &No.
+			-- Tab đánh dấu nhiều session; Esc rồi dd xóa các session cũ đã chọn.
+			-- Codex archive hoàn tác được; opencode/claude KHÔNG -> confirm mặc định No.
 			aiterm_delete = function(picker, item)
-				if not (item and item.kind == "past") then
+				local marked = picker:selected()
+				local candidates = #marked > 0 and marked or (item and { item } or {})
+				local targets, skipped, counts = {}, 0, {}
+				for _, candidate in ipairs(candidates) do
+					if candidate.kind == "past" then
+						targets[#targets + 1] = candidate
+						local name = candidate.tool.name
+						counts[name] = (counts[name] or 0) + 1
+					else
+						skipped = skipped + 1
+					end
+				end
+				if #targets == 0 then
+					if skipped > 0 then
+						notify(("No past sessions to delete; skipped %d non-past item(s)."):format(skipped), "warn")
+					end
 					return
 				end
-				local e = item.entry
-				local prompt = ('Delete session "%s" (%s)?'):format(e.title or e.id, e.tool)
+				local tools, lines = {}, {}
+				for name, count in pairs(counts) do
+					tools[#tools + 1] = ("%s: %d"):format(name, count)
+				end
+				table.sort(tools)
+				for _, target in ipairs(targets) do
+					local e = target.entry
+					lines[#lines + 1] = ("  %s: %s [%s]"):format(target.tool.name, e.title or e.id, e.id)
+				end
+				local prompt = ("Delete %d past session(s) (%s)?\n%s"):format(#targets, table.concat(tools, ", "), table.concat(lines, "\n"))
+				if skipped > 0 then
+					prompt = prompt .. ("\nSkipped %d non-past item(s)."):format(skipped)
+				end
 				if vim.fn.confirm(prompt, "&Yes\n&No", 2) ~= 1 then
 					return
 				end
-				if delete_entry(item.tool, e) then
-					history().invalidate()
-					picker:find({ refresh = true })
-				else
-					notify(("delete failed: %s"):format(e.id), "warn")
+				local deleted, failed = 0, {}
+				for _, target in ipairs(targets) do
+					if delete_entry(target.tool, target.entry) then
+						deleted = deleted + 1
+					else
+						failed[#failed + 1] = target.entry.id
+					end
 				end
+				if deleted > 0 then
+					history().invalidate()
+					picker:refresh() -- clear stale marks, then re-run finder once
+				end
+				local summary = ("Deleted %d/%d past session(s)"):format(deleted, #targets)
+				if #failed > 0 then
+					summary = summary .. ("; failed: %s"):format(table.concat(failed, ", "))
+				end
+				if skipped > 0 then
+					summary = summary .. ("; skipped %d non-past item(s)"):format(skipped)
+				end
+				notify(summary, #failed > 0 and "warn" or "info")
 			end,
 		},
 		-- `desc` không phải trang trí: overlay `?` (toggle_help_input) đọc keymap
