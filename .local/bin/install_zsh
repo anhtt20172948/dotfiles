@@ -1,8 +1,28 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# Tự động dọn dẹp nếu script bị lỗi giữa chừng
-trap 'echo "Có lỗi xảy ra. Đang dọn dẹp..."; rm -rf ncurses-6.5* zsh*;' ERR
+# Chỉ dọn các file do lần chạy này tạo ra, kể cả khi bị ngắt.
+BUILD_DIR=$(mktemp -d "${TMPDIR:-/tmp}/install_zsh.XXXXXXXX")
+trap 'rm -rf -- "$BUILD_DIR"' EXIT
+trap 'echo "Cài đặt thất bại ở dòng $LINENO." >&2' ERR
+trap 'exit 130' INT
+trap 'exit 143' TERM
+cd "$BUILD_DIR"
+
+# Giới hạn từng lần tải và thử nguồn dự phòng khi máy chủ không phản hồi.
+download() {
+    local output=$1 url
+    shift
+    for url in "$@"; do
+        echo "Đang tải: $url"
+        if timeout 120s wget --timeout=15 --tries=2 --show-progress -O "$output" "$url"; then
+            return 0
+        fi
+        echo "Không tải được từ $url; thử nguồn tiếp theo nếu có." >&2
+    done
+    echo "Không thể tải $output. Kiểm tra kết nối mạng rồi chạy lại." >&2
+    return 1
+}
 
 # Tạo cấu trúc thư mục .local tiêu chuẩn
 mkdir -p "$HOME/.local/bin" "$HOME/.local/include" "$HOME/.local/lib" "$HOME/.local/lib/pkgconfig"
@@ -12,7 +32,7 @@ export CXXFLAGS="-fPIC"
 export CFLAGS="-fPIC" 
 export CPPFLAGS="-I${HOME}/.local/include" 
 export LDFLAGS="-L${HOME}/.local/lib"
-export PKG_CONFIG_PATH="$HOME/.local/lib/pkgconfig:$PKG_CONFIG_PATH"
+export PKG_CONFIG_PATH="$HOME/.local/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 export PATH="$HOME/.local/bin:$PATH"
 
 # Số core CPU để tăng tốc biên dịch
@@ -22,7 +42,9 @@ NUM_CORES=$(nproc 2>/dev/null || echo 2)
 # 1. CÀI ĐẶT NCURSES (Có thêm hỗ trợ pkg-config)
 # ==========================================
 echo "--- Đang tải và cài đặt ncurses vào ~/.local ---"
-wget -q --show-progress https://ftp.gnu.org/pub/gnu/ncurses/ncurses-6.5.tar.gz
+download ncurses-6.5.tar.gz \
+    https://mirrors.kernel.org/gnu/ncurses/ncurses-6.5.tar.gz \
+    https://ftp.gnu.org/pub/gnu/ncurses/ncurses-6.5.tar.gz
 tar -xzvf ncurses-6.5.tar.gz
 cd ncurses-6.5
 
@@ -43,13 +65,13 @@ cd "$HOME/.local/lib"
 ln -sf libncursesw.so libncurses.so
 ln -sf libncursesw.a libncurses.a
 
-cd - && cd .. && rm -rf ncurses-6.5.tar.gz ncurses-6.5
+cd "$BUILD_DIR"
 
 # ==========================================
 # 2. CÀI ĐẶT ZSH (Bổ sung cờ định vị thư viện chuyên sâu)
 # ==========================================
 echo "--- Đang tải và cài đặt zsh vào ~/.local ---"
-wget -q --show-progress -O zsh.tar.xz https://sourceforge.net/projects/zsh/files/latest/download
+download zsh.tar.xz https://sourceforge.net/projects/zsh/files/latest/download
 mkdir -p zsh_src
 tar -xJf zsh.tar.xz -C zsh_src --strip-components 1
 cd zsh_src
@@ -59,11 +81,11 @@ cd zsh_src
             --enable-multibyte \
             --with-term-lib="ncurses" \
             CPPFLAGS="-I${HOME}/.local/include -I${HOME}/.local/include/ncursesw -I${HOME}/.local/include/ncurses" \
-            LDFLAGS="-L${HOME}/.local/lib"
+            LDFLAGS="-L${HOME}/.local/lib -Wl,-rpath,${HOME}/.local/lib"
 
 make -j"$NUM_CORES"
 make install
-cd .. && rm -rf zsh.tar.xz zsh_src
+cd "$BUILD_DIR"
 
 # ==========================================
 # 3. CẤU HÌNH KHỞI ĐỘNG (BASH TO ZSH)
@@ -79,9 +101,9 @@ if [ -d "$HOME/.local/bin" ] ; then
 fi
 
 # Tự động chuyển sang ZSH cài ở .local
-if [ -f ~/.local/bin/zsh ]; then
+if [[ $- == *i* ]] && [ -x "$HOME/.local/bin/zsh" ]; then
     export SHELL=$HOME/.local/bin/zsh
-    exec $HOME/.local/bin/zsh -l
+    exec "$HOME/.local/bin/zsh" -l
 fi
 EOF
     echo "Đã thêm cấu hình Zsh vào ~/.bash_profile"
@@ -91,3 +113,4 @@ fi
 
 echo "--- HOÀN THÀNH ---"
 echo "Hãy chạy lệnh: source ~/.bash_profile"
+
