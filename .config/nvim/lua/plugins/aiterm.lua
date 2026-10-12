@@ -149,5 +149,51 @@ return {
 			desc = "AI: set default tool",
 			mode = "n",
 		},
+		-- Agent workflow (kunchenguid), logic ở lua/customize/aiterm_flow.lua; dùng
+		-- chung script tmux ai-workflow.sh với menu prefix F.
+		{
+			-- Push nhánh hiện tại qua gate no-mistakes (review/test/lint -> PR).
+			"<leader>ap",
+			function()
+				require("customize.aiterm_flow").push_gate()
+			end,
+			desc = "AI flow: push through no-mistakes",
+			mode = "n",
+		},
+		{
+			"<leader>aP",
+			function()
+				require("customize.aiterm_flow").pipelines()
+			end,
+			desc = "AI flow: no-mistakes pipelines (TUI)",
+			mode = "n",
+		},
+		{
+			-- Vòng lặp gnhf --worktree trên một goal, ở window tmux riêng.
+			"<leader>ag",
+			function()
+				require("customize.aiterm_flow").gnhf()
+			end,
+			desc = "AI flow: gnhf overnight loop",
+			mode = "n",
+		},
+		{
+			-- Worktree treehouse + session AI mới trong đó. Không dùng <leader>at:
+			-- supermaven đã giữ phím đó.
+			"<leader>aW",
+			function()
+				require("customize.aiterm_flow").worktree()
+			end,
+			desc = "AI flow: new session in treehouse worktree",
+			mode = "n",
+		},
+		{
+			"<leader>aF",
+			function()
+				require("customize.aiterm_flow").firstmate()
+			end,
+			desc = "AI flow: firstmate",
+			mode = "n",
+		},
 	},
 }

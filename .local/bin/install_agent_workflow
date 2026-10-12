@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+# Cài bộ agent workflow của kunchenguid lên HOST:
+#   treehouse   - pool git worktree tái dùng (binary Go)
+#   no-mistakes - git remote cục bộ chặn push: review -> test -> lint -> PR -> CI fix
+#   gnhf        - vòng lặp agent chạy qua đêm, mỗi iteration một commit
+#   firstmate   - orchestrator: agent chính sinh crewmate trong tmux window
+#   AXI skills  - gh-axi, chrome-devtools-axi, lavish-axi (chỉ skill, KHÔNG hooks)
+#
+# Idempotent: tool nào đã đúng version thì bỏ qua. --update để cài lại bản pin.
+# Config (stow): ~/.config/treehouse/config.toml, ~/.no-mistakes/config.yaml,
+# ~/.gnhf/config.yml. Phím: tmux prefix F / N, nvim <leader>ap/aP/ag/aW/aF.
+set -euo pipefail
+
+TREEHOUSE_VER="3.1.2"
+NO_MISTAKES_VER="1.84.0"
+GNHF_VER="0.1.51"
+# Pin commit chứ không theo main: firstmate là repo AGENTS.md + script, main đổi
+# hằng ngày và có thể đổi hành vi của agent mà không báo.
+FIRSTMATE_REV="20dcbf91520b1816663b81873ad67d0b93b3e4d6"
+FIRSTMATE_DIR="${FIRSTMATE_DIR:-$HOME/.local/share/firstmate}"
+# <repo>:<tên thư mục skill> - tên skill không luôn trùng tên repo
+# (lavish-axi cài thành skill "lavish").
+AXI_SKILLS="gh-axi:gh-axi chrome-devtools-axi:chrome-devtools-axi lavish-axi:lavish"
+
+BIN_DIR="$HOME/.local/bin"
+UPDATE=false
+
+usage() {
+	cat <<'EOF'
+Usage: install_agent_workflow [--update] [--help]
+
+  --update   cài lại các bản đã pin dù đã có sẵn
+EOF
+}
+
+while (($#)); do
+	case "$1" in
+	--update) UPDATE=true ;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	*)
+		usage >&2
+		exit 2
+		;;
+	esac
+	shift
+done
+
+log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33mwarn:\033[0m %s\n' "$*" >&2; }
+die() {
+	printf '\033[1;31merror:\033[0m %s\n' "$*" >&2
+	exit 1
+}
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# --- Kiểm tra phụ thuộc -------------------------------------
+check_deps() {
+	local missing=()
+	local bin
+	for bin in git tmux curl tar sha256sum node npm npx; do
+		have "$bin" || missing+=("$bin")
+	done
+	((${#missing[@]} == 0)) || die "thiếu: ${missing[*]}"
+
+	local node_major
+	node_major=$(node -p 'process.versions.node.split(".")[0]')
+	((node_major >= 20)) || die "cần node >= 20 (đang có $(node --version))"
+
+	[[ "$(uname -s)-$(uname -m)" == "Linux-x86_64" ]] ||
+		die "chỉ hỗ trợ Linux x86_64 (đang chạy $(uname -s)-$(uname -m))"
+
+	# gh không chặn việc cài, nhưng no-mistakes / firstmate cần nó để mở PR.
+	if ! have gh; then
+		warn "chưa có 'gh': sudo pacman -S github-cli && gh auth login"
+	elif ! gh auth status >/dev/null 2>&1; then
+		warn "'gh' chưa đăng nhập: gh auth login"
+	fi
+}
+
+# --- Binary Go từ GitHub release, có kiểm checksum ---------
+# installed_version <bin>: in version đang cài ("" nếu chưa có).
+installed_version() {
+	local bin="$BIN_DIR/$1"
+	[[ -x "$bin" ]] || return 0
+	"$bin" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1
+}
+
+install_go_release() {
+	local name=$1 ver=$2
+	if [[ "$UPDATE" == false && "$(installed_version "$name")" == "$ver" ]]; then
+		log "$name v$ver đã có, bỏ qua"
+		return
+	fi
+
+	local base="https://github.com/kunchenguid/$name/releases/download/v$ver"
+	local asset="$name-v$ver-linux-amd64.tar.gz"
+	local tmp
+	tmp=$(mktemp -d)
+	# Không dùng trap RETURN: nó còn dính sau khi hàm return và đụng biến local.
+	log "tải $asset"
+	if ! curl -fsSL -o "$tmp/$asset" "$base/$asset" ||
+		! curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt"; then
+		rm -rf "$tmp"
+		die "tải $name thất bại"
+	fi
+
+	# Tự so hash thay vì `sha256sum -c` để chỉ kiểm đúng một dòng của asset này.
+	local want got
+	want=$(awk -v f="$asset" '$2 == f || $2 == "*" f { print $1 }' "$tmp/checksums.txt")
+	got=$(sha256sum "$tmp/$asset" | awk '{ print $1 }')
+	if [[ -z "$want" || "$want" != "$got" ]]; then
+		rm -rf "$tmp"
+		die "checksum $asset không khớp (want=${want:-?} got=$got)"
+	fi
+
+	tar -xzf "$tmp/$asset" -C "$tmp" "$name"
+	install -m 0755 "$tmp/$name" "$BIN_DIR/$name"
+	rm -rf "$tmp"
+	log "$name v$ver -> $BIN_DIR/$name"
+}
+
+# --- gnhf (npm) ---------------------------------------------
+install_gnhf() {
+	local current=""
+	have gnhf && current=$(gnhf --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)
+	if [[ "$UPDATE" == false && "$current" == "$GNHF_VER" ]]; then
+		log "gnhf v$GNHF_VER đã có, bỏ qua"
+		return
+	fi
+	# Prefix mặc định của npm (nvm thì nằm trong ~/.nvm) -> không cần sudo.
+	log "npm i -g gnhf@$GNHF_VER"
+	npm install -g "gnhf@$GNHF_VER"
+}
+
+# --- AXI skills ---------------------------------------------
+# Chỉ cài skill (-g -> ~/.claude/skills ...). Cố ý KHÔNG chạy `<tool> setup hooks`:
+# mỗi cái thêm một SessionStart hook chồng lên hook của ECC, tốn context mỗi phiên.
+install_axi_skills() {
+	local pair repo skill
+	for pair in $AXI_SKILLS; do
+		repo=${pair%%:*}
+		skill=${pair#*:}
+		# skills CLI đặt bản gốc ở ~/.agents/skills rồi symlink sang từng agent.
+		if [[ "$UPDATE" == false && (-d "$HOME/.agents/skills/$skill" || -d "$HOME/.claude/skills/$skill") ]]; then
+			log "skill $skill đã có, bỏ qua"
+			continue
+		fi
+		log "npx skills add kunchenguid/$repo -g"
+		npx -y skills add "kunchenguid/$repo" -g -y ||
+			warn "cài skill $repo thất bại (bỏ qua, chạy lại sau)"
+	done
+}
+
+# --- firstmate (git checkout, pin commit) -------------------
+install_firstmate() {
+	if [[ ! -d "$FIRSTMATE_DIR/.git" ]]; then
+		log "clone firstmate -> $FIRSTMATE_DIR"
+		mkdir -p "$(dirname "$FIRSTMATE_DIR")"
+		git clone --quiet https://github.com/kunchenguid/firstmate "$FIRSTMATE_DIR"
+	elif [[ "$UPDATE" == true ]]; then
+		git -C "$FIRSTMATE_DIR" fetch --quiet origin
+	fi
+
+	local head
+	head=$(git -C "$FIRSTMATE_DIR" rev-parse HEAD)
+	if [[ "$head" == "$FIRSTMATE_REV" ]]; then
+		log "firstmate @ ${FIRSTMATE_REV:0:7} đã có, bỏ qua"
+		return
+	fi
+	# firstmate ghi state (projects/, data/) vào chính checkout -> không checkout
+	# đè khi cây đang bẩn, tránh mất state của nó.
+	if [[ -n "$(git -C "$FIRSTMATE_DIR" status --porcelain --untracked-files=no)" ]]; then
+		warn "firstmate có thay đổi chưa commit, giữ nguyên @ ${head:0:7}"
+		return
+	fi
+	git -C "$FIRSTMATE_DIR" fetch --quiet origin "$FIRSTMATE_REV" 2>/dev/null || true
+	git -C "$FIRSTMATE_DIR" -c advice.detachedHead=false checkout --quiet "$FIRSTMATE_REV"
+	log "firstmate -> ${FIRSTMATE_REV:0:7}"
+}
+
+main() {
+	check_deps
+	# Tạo sẵn thư mục THẬT trước khi stow: nếu chưa có, stow gập cả thư mục thành
+	# một symlink vào dotfiles và DB/worktree/run log của tool rơi luôn vào repo.
+	mkdir -p "$BIN_DIR" "$HOME/.no-mistakes" "$HOME/.gnhf" "$HOME/.config/treehouse"
+	install_go_release treehouse "$TREEHOUSE_VER"
+	install_go_release no-mistakes "$NO_MISTAKES_VER"
+	install_gnhf
+	install_axi_skills
+	install_firstmate
+
+	cat <<EOF
+
+Xong. Bước tiếp:
+  1. stow lại dotfiles để có config: cd ~/dotfiles && stow .
+  2. Trong mỗi repo muốn chặn push: no-mistakes init
+  3. Kiểm tra: no-mistakes doctor
+  4. tmux: prefix F (menu workflow), prefix N (no-mistakes TUI)
+EOF
+}
+
+main "$@"
