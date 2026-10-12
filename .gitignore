@@ -20,3 +20,10 @@ tmp/
 # ...existing custom ignore rules...
 .zshrc
 .bashrc
+# Agent workflow (install_agent_workflow): chỉ track config, không track state.
+# stow --adopt sẽ hút file thật ở $HOME vào repo nếu chúng trùng đường dẫn.
+.no-mistakes/*
+!.no-mistakes/config.yaml
+.gnhf/*
+!.gnhf/config.yml
+.treehouse/
