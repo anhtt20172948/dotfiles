@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# ai-workflow.sh — kunchenguid agent workflow menu (prefix F)
+# ai-workflow.sh - kunchenguid agent workflow menu (prefix F)
 #
 #   treehouse    new shell in a pooled worktree        (new tmux window)
 #   worktrees    treehouse status                      (in the popup)
@@ -10,7 +10,7 @@
 #   firstmate    focus or start the first-mate window  (new tmux window)
 #
 # Usage: ai-workflow.sh [action [args...]]
-#   No action opens the fzf menu. An action runs directly — that is the entry
+#   No action opens the fzf menu. An action runs directly - that is the entry
 #   point aiterm_flow.lua uses, so nvim and tmux share one implementation:
 #     ai-workflow.sh gnhf "<goal>"     ai-workflow.sh firstmate
 #
@@ -57,7 +57,7 @@ fail() {
 }
 
 need() {
-  have "$1" || fail "'$1' not found — run install_agent_workflow"
+  have "$1" || fail "'$1' not found - run install_agent_workflow"
 }
 
 need_git_repo() {
@@ -78,7 +78,7 @@ action_treehouse() {
   need treehouse
   need_git_repo
   # `treehouse get` opens a subshell and returns the worktree to the pool when
-  # it exits — so it must own the window, not run inside the popup.
+  # it exits - so it must own the window, not run inside the popup.
   new_window "wt:$(basename "$PWD")" "$PWD" 'treehouse get'
 }
 
@@ -110,9 +110,9 @@ action_push() {
 
   local branch
   branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null) \
-    || fail 'detached HEAD — check out a branch before pushing through the gate'
+    || fail 'detached HEAD - check out a branch before pushing through the gate'
   [[ -z "$(git status --porcelain --untracked-files=no)" ]] \
-    || info 'Uncommitted changes are NOT pushed — only commits on this branch.'
+    || info 'Uncommitted changes are NOT pushed - only commits on this branch.'
 
   git push "$NM_REMOTE" "$branch" || fail "git push $NM_REMOTE $branch failed"
   info "Pipeline started. Watch it with prefix N (no-mistakes TUI)."
@@ -139,11 +139,11 @@ action_gnhf() {
   # --worktree keeps the loop off the checkout you are working in; gnhf refuses
   # it from a gnhf/ branch, so let gnhf itself report that.
   # tmux runs the window command through default-shell (zsh here), whose `read`
-  # has no -n1/-p — so hand the whole line to bash explicitly, or the hold
+  # has no -n1/-p - so hand the whole line to bash explicitly, or the hold
   # prompt fails and the window closes taking the run's summary with it.
   local inner cmd
   printf -v inner 'gnhf --worktree --max-iterations %q %q; echo; read -rsn1 -p %q' \
-    "$GNHF_MAX_ITERATIONS" "$goal" 'gnhf finished — press any key to close'
+    "$GNHF_MAX_ITERATIONS" "$goal" 'gnhf finished - press any key to close'
   printf -v cmd 'bash -c %q' "$inner"
   new_window "gnhf" "$PWD" "$cmd"
 }
@@ -156,7 +156,7 @@ firstmate_target() {
 
 action_firstmate() {
   [[ -d "$FIRSTMATE_DIR/.git" ]] \
-    || fail "firstmate not found at $FIRSTMATE_DIR — run install_agent_workflow"
+    || fail "firstmate not found at $FIRSTMATE_DIR - run install_agent_workflow"
   need "$FIRSTMATE_AGENT"
   [[ -n "${TMUX:-}" ]] || fail 'firstmate needs tmux (its crewmates are tmux windows)'
 
