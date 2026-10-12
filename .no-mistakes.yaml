@@ -1,0 +1,47 @@
+# no-mistakes cho chính repo dotfiles: `git push no-mistakes <branch>`
+# (hoặc tmux prefix F -> Push, nvim <leader>ap).
+#
+# LƯU Ý: `commands` và `review` chỉ được đọc từ bản trên nhánh mặc định (origin/main),
+# không từ nhánh đang push -> sửa file này phải merge vào main mới có hiệu lực.
+
+commands:
+  # Cùng lối vào với khi chạy tay: tests/run.sh.
+  lint: "tests/run.sh lint"
+  test: "tests/run.sh test"
+
+# Repo không có GitHub Actions: khai báo rõ để gate không chờ/đòi CI.
+no_ci: true
+
+ignore_patterns:
+  # Ảnh nền, theme sinh tự động: không đáng để review.
+  - "**/*.png"
+  - "**/*.jpg"
+  - ".config/hypr/dms/colors.lua"
+  - ".config/kitty/dank-*.conf"
+
+review:
+  path_instructions:
+    - path: ".config/tmux/scripts/**"
+      instructions: |
+        Scripts must stay bash 3.2 compatible and BSD/GNU userland clean (no mapfile,
+        associative arrays, ${x,,}, GNU-only flags). UI text goes to stderr; stdout of
+        ai-sessions.sh is a machine channel. When the user-facing flow changes,
+        popup.conf / ai-popup.conf / .config/tmux/README.md must change with it.
+    - path: ".config/nvim/lua/**"
+      instructions: |
+        Lua modules use tabs and `local M = {}`. Logic lives in lua/customize/,
+        lazy.nvim wiring in lua/plugins/. aiterm changes should keep aiterm*.lua,
+        plugins/aiterm.lua and the history helpers consistent. Comments are written
+        in Vietnamese; keep that.
+    - path: ".local/bin/**"
+      instructions: |
+        Installers are bash with `set -euo pipefail`, pin versions, install into
+        ~/.local and must be safe to re-run.
+    - path: "docs/**"
+      instructions: |
+        Design notes from AI runs. Prose only; do not request tests.
+
+document:
+  instructions: |
+    .config/tmux/README.md owns tmux keybinds and the AI/agent-workflow scripts;
+    README.md owns install steps (stow). Do not create new top-level docs.
