@@ -130,9 +130,9 @@ install_gnhf() {
 		log "gnhf v$GNHF_VER đã có, bỏ qua"
 		return
 	fi
-	# Prefix mặc định của npm (nvm thì nằm trong ~/.nvm) -> không cần sudo.
-	log "npm i -g gnhf@$GNHF_VER"
-	npm install -g "gnhf@$GNHF_VER"
+	# Ép prefix ~/.local: prefix mặc định của npm hệ thống là /usr -> EACCES.
+	log "npm i -g --prefix ~/.local gnhf@$GNHF_VER"
+	npm install -g --prefix "$HOME/.local" "gnhf@$GNHF_VER"
 }
 
 # --- AXI skills ---------------------------------------------
@@ -181,11 +181,32 @@ install_firstmate() {
 	log "firstmate -> ${FIRSTMATE_REV:0:7}"
 }
 
+# --- Thư mục state phải là thư mục THẬT ---------------------
+# Nếu chưa có lúc stow, stow gập cả thư mục thành một symlink vào dotfiles và
+# DB/worktree/run log của tool rơi luôn vào repo. Gỡ symlink đó, tạo thư mục thật
+# rồi link lại từng file bằng symlink tương đối (đúng dạng stow tự tạo).
+unfold_dir() {
+	local dir=$1 src entry
+	if [[ ! -L "$dir" ]]; then
+		mkdir -p "$dir"
+		return
+	fi
+	src=$(readlink -f "$dir")
+	[[ -d "$src" ]] || die "$dir là symlink hỏng"
+	log "tách $dir khỏi symlink stow"
+	rm "$dir"
+	mkdir -p "$dir"
+	for entry in "$src"/* "$src"/.[!.]*; do
+		[[ -e "$entry" || -L "$entry" ]] && ln -sr "$entry" "$dir/"
+	done
+}
+
 main() {
 	check_deps
-	# Tạo sẵn thư mục THẬT trước khi stow: nếu chưa có, stow gập cả thư mục thành
-	# một symlink vào dotfiles và DB/worktree/run log của tool rơi luôn vào repo.
-	mkdir -p "$BIN_DIR" "$HOME/.no-mistakes" "$HOME/.gnhf" "$HOME/.config/treehouse"
+	mkdir -p "$BIN_DIR"
+	unfold_dir "$HOME/.no-mistakes"
+	unfold_dir "$HOME/.gnhf"
+	unfold_dir "$HOME/.config/treehouse"
 	install_go_release treehouse "$TREEHOUSE_VER"
 	install_go_release no-mistakes "$NO_MISTAKES_VER"
 	install_gnhf
