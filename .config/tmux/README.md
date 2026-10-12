@@ -191,6 +191,9 @@ Notes:
   co-author trailers. That only applies inside firstmate's sessions; global
   Claude/ECC rules are untouched.
 - `no-mistakes`, `gnhf` and `firstmate` need `gh` logged in to open PRs.
+- All binaries, including `gnhf` (npm, `--prefix ~/.local`), go to
+  `~/.local/bin`. The installer warns if another `gnhf` (e.g. an nvm global)
+  shadows the pinned one on `$PATH`.
 
 ## Requirements
 
