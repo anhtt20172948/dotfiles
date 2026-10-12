@@ -44,4 +44,4 @@ review:
 document:
   instructions: |
     .config/tmux/README.md owns tmux keybinds and the AI/agent-workflow scripts;
-    README.md owns install steps (stow). Do not create new top-level docs.
+    README.md owns install steps (install.sh). Do not create new top-level docs.
