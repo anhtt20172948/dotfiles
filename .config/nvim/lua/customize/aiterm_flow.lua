@@ -71,7 +71,7 @@ local function script_ok()
 	if vim.fn.executable(M.config.script) == 1 then
 		return true
 	end
-	M.notify("thiếu " .. M.config.script .. " (stow dotfiles chưa?)", "error")
+	M.notify("thiếu " .. M.config.script .. " (chạy ~/dotfiles/install.sh chưa?)", "error")
 	return false
 end
 

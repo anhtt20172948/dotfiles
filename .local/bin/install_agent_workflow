@@ -7,7 +7,7 @@
 #   AXI skills  - gh-axi, chrome-devtools-axi, lavish-axi (chỉ skill, KHÔNG hooks)
 #
 # Idempotent: tool nào đã đúng version thì bỏ qua. --update để cài lại bản pin.
-# Config (stow): ~/.config/treehouse/config.toml, ~/.no-mistakes/config.yaml,
+# Config (install.sh): ~/.config/treehouse/config.toml, ~/.no-mistakes/config.yaml,
 # ~/.gnhf/config.yml. Phím: tmux prefix F / N, nvim <leader>ap/aP/ag/aW/aF.
 set -euo pipefail
 
@@ -184,8 +184,9 @@ install_firstmate() {
 }
 
 # --- Thư mục state phải là thư mục THẬT ---------------------
-# Nếu chưa có lúc stow, stow gập cả thư mục thành một symlink vào dotfiles và
-# DB/worktree/run log của tool rơi luôn vào repo. Chỉ gỡ symlink trỏ vào CHÍNH
+# Bản cài bằng stow cũ: thư mục chưa có lúc stow bị gập cả thành một symlink vào
+# dotfiles và DB/worktree/run log của tool rơi luôn vào repo (install.sh không
+# gập các thư mục này). Chỉ gỡ symlink trỏ vào CHÍNH
 # repo này (symlink tự đặt sang chỗ khác thì giữ), tạo thư mục thật rồi link lại
 # từng file theo đúng dạng stow tạo: "../<đích của symlink gập>/<tên>".
 REPO_DIR=$(dirname "$(dirname "$(dirname "$(readlink -f "$0")")")")
@@ -228,7 +229,7 @@ main() {
 	cat <<EOF
 
 Xong. Bước tiếp:
-  1. stow lại dotfiles để có config: cd ~/dotfiles && stow .
+  1. link lại dotfiles để có config: ~/dotfiles/install.sh
   2. Trong mỗi repo muốn chặn push: no-mistakes init
   3. Kiểm tra: no-mistakes doctor
   4. tmux: prefix F (menu workflow), prefix N (no-mistakes TUI)

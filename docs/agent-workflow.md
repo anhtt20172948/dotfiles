@@ -17,7 +17,7 @@ gnhf --worktree "<goal>"   long unattended loop, one commit per iteration
 
 ## Components
 
-| Tool | What it does | Installed as | Global config (stowed) |
+| Tool | What it does | Installed as | Global config (linked) |
 |------|--------------|--------------|------------------------|
 | [treehouse](https://github.com/kunchenguid/treehouse) | Pool of reusable git worktrees, so dependencies and build caches survive between tasks | Go binary, `~/.local/bin` | `.config/treehouse/config.toml` |
 | [no-mistakes](https://github.com/kunchenguid/no-mistakes) | A local git remote. Pushing to it runs review, test, docs, lint, push, PR and CI fixes in a throwaway worktree | Go binary, `~/.local/bin` | `.no-mistakes/config.yaml` |
@@ -45,7 +45,7 @@ Then, from the repo:
 
 ```bash
 cd ~/dotfiles
-stow .                               # links configs and the installer
+./install.sh                         # links configs and the installer
 install_agent_workflow               # or: ./.local/bin/install_agent_workflow
 ```
 
@@ -54,11 +54,12 @@ version. `install_agent_workflow --update` reinstalls the pinned versions.
 
 Two things it takes care of:
 
-- **Stow folding.** If `~/.no-mistakes`, `~/.gnhf` or `~/.config/treehouse`
-  did not exist when you stowed, stow links the whole directory into the repo,
-  and tool state (databases, gate repos, run logs) would land in `~/dotfiles`.
-  The installer turns such a folded link back into a real directory. It only
-  touches links that point into this repo, never one you set up yourself.
+- **Folded state dirs.** `install.sh` keeps `~/.no-mistakes`, `~/.gnhf` and
+  `~/.config/treehouse` as real directories so tool state (databases, gate
+  repos, run logs) never lands in `~/dotfiles`. An older stow install may have
+  linked one of them as a whole into the repo; the installer turns such a
+  folded link back into a real directory. It only touches links that point
+  into this repo, never one you set up yourself.
 - **Shadowed gnhf.** gnhf goes to `~/.local/bin`. If another `gnhf` (for
   example an nvm global) comes first on `$PATH`, the installer warns. Remove
   the other copy with `npm rm -g gnhf` under that node.
@@ -129,7 +130,7 @@ skip. Answer from the TUI (`prefix N`) or with `no-mistakes axi respond`.
 |---------|-----|
 | `shallow update not allowed` on `git push no-mistakes` | The clone is shallow: `git fetch --unshallow origin` |
 | Push step fails with `could not read Username for 'https://github.com'` | The gate has no git credentials: `gh auth setup-git` |
-| `stow .` reports "existing target is not owned by stow" | The target is a hand-made symlink or file. Check it points to the same content, remove it, stow again |
+| A config you had before is gone after `./install.sh` | It was in the way, so the installer moved it to `~/.dotfiles-backup/<timestamp>/`. Merge what you need into the repo copy |
 | A run is waiting and nothing happens | It is parked at a gate. Open `prefix N` or run `no-mistakes axi status` |
 | Local branch is behind the pipeline after a run | The pipeline committed fixes. Sync with `no-mistakes sync` before new commits |
 
