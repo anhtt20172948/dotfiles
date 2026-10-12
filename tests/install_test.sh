@@ -55,6 +55,9 @@ echo old >"$HOME/.tmux.conf"
 ln -s "$TMP/elsewhere" "$HOME/.config/yazi"
 # Symlink tương đối kiểu stow từng tạo: phải được coi là đã link.
 ln -s ../dotfiles/.zshrc "$HOME/.zshrc"
+# Thư mục NO_FOLD bị stow cũ gập vào repo: phải tách lại thành thư mục thật.
+mkdir -p "$HOME/.local"
+ln -s ../../dotfiles/.local/bin "$HOME/.local/bin"
 
 # Dry-run không được đụng tới $HOME.
 before=$(cd "$HOME" && find . -printf '%p %y %l\n' | sort)
@@ -78,6 +81,7 @@ assert_link .config/nvim/lua
 assert_real_dir .local
 assert_real_dir .local/bin
 assert_link .local/bin/show
+[[ "$(ls -A "$REPO/.local/bin")" == show ]] || fail "repo .local/bin changed: $(ls -A "$REPO/.local/bin")"
 [[ -d "$HOME/.local/share/app" ]] || fail "~/.local/share lost"
 # Thư mục state của tool agent cũng không gập (DB/run log không rơi vào repo).
 assert_real_dir .no-mistakes
