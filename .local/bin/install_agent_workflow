@@ -124,15 +124,17 @@ install_go_release() {
 
 # --- gnhf (npm) ---------------------------------------------
 install_gnhf() {
-	local current=""
-	have gnhf && current=$(gnhf --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)
-	if [[ "$UPDATE" == false && "$current" == "$GNHF_VER" ]]; then
+	if [[ "$UPDATE" == false && "$(installed_version gnhf)" == "$GNHF_VER" ]]; then
 		log "gnhf v$GNHF_VER đã có, bỏ qua"
-		return
+	else
+		# Ép prefix ~/.local: prefix mặc định của npm hệ thống là /usr -> EACCES.
+		log "npm i -g --prefix ~/.local gnhf@$GNHF_VER"
+		npm install -g --prefix "$HOME/.local" "gnhf@$GNHF_VER"
 	fi
-	# Ép prefix ~/.local: prefix mặc định của npm hệ thống là /usr -> EACCES.
-	log "npm i -g --prefix ~/.local gnhf@$GNHF_VER"
-	npm install -g --prefix "$HOME/.local" "gnhf@$GNHF_VER"
+	local resolved
+	resolved=$(command -v gnhf || true)
+	[[ "$resolved" == "$BIN_DIR/gnhf" ]] ||
+		warn "'gnhf' trên PATH là ${resolved:-<không có>}, không phải $BIN_DIR/gnhf (v$GNHF_VER); gỡ bản kia hoặc đưa $BIN_DIR lên trước PATH"
 }
 
 # --- AXI skills ---------------------------------------------
