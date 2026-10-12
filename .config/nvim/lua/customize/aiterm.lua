@@ -1790,6 +1790,11 @@ function M.doctor()
 			"module 'customize.aiterm_ecc' không tải được - bỏ qua mục này.",
 		}
 	end
+	-- Trạng thái treehouse / no-mistakes / gnhf / firstmate (<leader>ap/ag/aW/aF).
+	local ok_flow, flow = pcall(require, "customize.aiterm_flow")
+	if ok_flow then
+		vim.list_extend(lines, flow.doctor_lines())
+	end
 	history().doctor(lines)
 end
 
@@ -2099,6 +2104,13 @@ local function resolve_default_tool()
 		end
 	end
 	return first or M.config.tools[1]
+end
+
+-- Tên tool mặc định (cùng luật với picker/send) cho module ngoài, vd aiterm_flow
+-- mở session trong worktree treehouse.
+---@return string
+function M.default_tool_name()
+	return resolve_default_tool().name
 end
 
 -- Đọc lựa chọn đã lưu (pcall-safe: file thiếu/rác -> không override).

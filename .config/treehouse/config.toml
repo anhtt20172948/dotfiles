@@ -1,0 +1,13 @@
+# treehouse - pool worktree dùng chung cho mọi repo (install_agent_workflow).
+# Repo nào cần khác thì đặt treehouse.toml ở root repo (`treehouse init`).
+
+# Số worktree tối đa trong pool mỗi repo. firstmate mỗi crewmate giữ một slot.
+max_trees = 8
+
+# Để trống = $HOME/.treehouse. Giữ ngoài dotfiles để stow --adopt không hút
+# worktree vào repo.
+# root = "$HOME/.treehouse"
+
+# Tên slot <repo>-<slot> thay vì <repo>: aiterm_history và tmux ai-sessions gom
+# session theo thư mục, cùng tên lá thì session của các worktree trộn vào nhau.
+unique_leaf = true

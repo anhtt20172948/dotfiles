@@ -22,6 +22,7 @@ Modular dotfile-based tmux configuration.
     ├── ai-sessions.sh          → per-tool new, live and saved session picker
     ├── persistent-ai.sh        → persistent, per-project AI popup controller
     ├── ai-status.sh            → status-bar segment: live agent count
+    ├── ai-workflow.sh          → agent workflow menu (treehouse/no-mistakes/gnhf/firstmate)
     ├── monitor-lib.sh          → shared helpers for the two monitor scripts
     ├── monitor.sh              → system monitor launcher (fzf menu)
     ├── monitor-preview.sh      → monitor live preview pane
@@ -112,6 +113,8 @@ the lot.
 |-----|--------|
 | `a` | AI picker — tool, then session list (the only path to `New session`) |
 | `A` | Quick-attach the most recently used live agent for this project |
+| `F` | Agent workflow menu - see [Agent workflow](#agent-workflow) |
+| `N` | no-mistakes pipeline TUI |
 | `g` | Lazygit |
 | `G` | Lazydocker |
 | `b` | Btop / Htop |
@@ -155,6 +158,42 @@ the lot.
 
 `C-h` `C-j` `C-k` `C-l` and `C-Left` `C-Down` `C-Up` `C-Right` navigate panes and
 pass through to Neovim, via vim-tmux-navigator.
+
+## Agent workflow
+
+`prefix F` opens `scripts/ai-workflow.sh`, a menu over
+[kunchenguid](https://github.com/kunchenguid)'s agent tools. Install them with
+`~/.local/bin/install_agent_workflow` (pinned versions, idempotent, `--update`
+to reinstall); their global configs are stowed from this repo
+(`~/.config/treehouse/config.toml`, `~/.no-mistakes/config.yaml`,
+`~/.gnhf/config.yml`).
+
+| Entry | Runs | Where |
+|-------|------|-------|
+| New worktree shell | `treehouse get` - a pooled worktree, returned to the pool on exit | new window |
+| Worktree pool status | `treehouse status` | popup |
+| Push through no-mistakes | `git push no-mistakes <branch>` (offers `no-mistakes init` first) | popup |
+| no-mistakes pipelines | the no-mistakes TUI (also `prefix N`) | popup |
+| gnhf: overnight loop | `gnhf --worktree --max-iterations $AI_GNHF_MAX_ITERATIONS` (default 20) | new window |
+| firstmate | focus the `firstmate` window, or start `$AI_FIRSTMATE_AGENT` (default `claude`) in `~/.local/share/firstmate` | new window |
+
+Each action also runs directly - `ai-workflow.sh gnhf "<goal>"` - which is how
+Neovim's `<leader>ag` / `<leader>aF` reuse it.
+
+Notes:
+
+- Everything runs on the **host**. The Docker location picker of `prefix a` does
+  not apply: these tools spawn the agent CLI themselves, in host worktree paths.
+- AXI skills (`gh-axi`, `chrome-devtools-axi`, `lavish-axi`) are installed as
+  skills only - `<tool> setup hooks` is skipped on purpose so they do not add
+  SessionStart hooks on top of ECC's.
+- firstmate runs from its own checkout with its own `AGENTS.md`, which forbids
+  co-author trailers. That only applies inside firstmate's sessions; global
+  Claude/ECC rules are untouched.
+- `no-mistakes`, `gnhf` and `firstmate` need `gh` logged in to open PRs.
+- All binaries, including `gnhf` (npm, `--prefix ~/.local`), go to
+  `~/.local/bin`. The installer warns if another `gnhf` (e.g. an nvm global)
+  shadows the pinned one on `$PATH`.
 
 ## Requirements
 
