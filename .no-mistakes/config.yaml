@@ -1,4 +1,4 @@
-# no-mistakes - config toàn cục (~/.no-mistakes/config.yaml, qua stow).
+# no-mistakes - config toàn cục (~/.no-mistakes/config.yaml, qua install.sh).
 # Repo-level: .no-mistakes.yaml ở root repo, ưu tiên hơn file này.
 # Tham chiếu: https://github.com/kunchenguid/no-mistakes (docs/reference/global-config.md)
 

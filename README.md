@@ -1,8 +1,8 @@
 # dotfiles
 
-Personal configuration files for an Arch Linux + Hyprland desktop, managed with
-[GNU stow](https://www.gnu.org/software/stow/). Each top-level entry mirrors its
-location in `$HOME`, so stowing the repo symlinks every config into place.
+Personal configuration files for an Arch Linux + Hyprland desktop. Each
+top-level entry mirrors its location in `$HOME`, and `install.sh` symlinks every
+config into place - no root access and no GNU stow needed.
 
 ## Repository layout
 
@@ -21,13 +21,15 @@ location in `$HOME`, so stowing the repo symlinks every config into place.
 │   └── yazi/           → terminal file manager
 ├── .local/bin/         → user scripts placed on $PATH
 ├── .tmux.conf          → tmux entrypoint (sources ~/.config/tmux/*)
+├── install.sh          → links the repo into $HOME
 ├── .gitignore
 └── README.md
 ```
 
 ## Installation
 
-Prerequisite: `stow` (`sudo pacman -S stow`).
+Prerequisites: `bash` and coreutils (`ln`, `mkdir`, `mv`, `readlink`). No
+`sudo` needed.
 
 1. Clone the repository into your home directory:
 
@@ -35,22 +37,32 @@ Prerequisite: `stow` (`sudo pacman -S stow`).
    git clone https://github.com/yourusername/dotfiles.git ~/dotfiles
    ```
 
-2. Enter the directory:
+2. Preview, then create the symlinks:
 
    ```bash
-   cd ~/dotfiles
+   ~/dotfiles/install.sh --dry-run
+   ~/dotfiles/install.sh
    ```
 
-3. Create the symlinks:
+The installer folds directories the way stow does:
 
-   ```bash
-   stow --adopt .
-   ```
+- Destination missing: link it as a whole (`~/.config/nvim` →
+  `~/dotfiles/.config/nvim`).
+- Destination is a real directory: keep it and link its children one by one,
+  so files that only exist on this machine stay put.
+- Destination already links to the repo (including relative links left by an
+  earlier stow install): leave it.
+- Anything else in the way (a file, or a symlink pointing elsewhere) is moved to
+  `~/.dotfiles-backup/<timestamp>/` before linking; nothing is deleted.
 
-   `--adopt` makes stow take over any pre-existing real files at the target
-   paths (moving their content into the repo) instead of erroring out. Run
-   `git diff` afterwards to review what was adopted, and `git checkout .` to
-   discard changes you did not intend to keep.
+`~/.config`, `~/.local`, `~/.local/{bin,share,state}` and the agent-tool state
+dirs (`~/.no-mistakes`, `~/.gnhf`, `~/.config/treehouse`) are always kept as
+real directories (or left as-is if they are symlinks to another disk), so apps
+and the bootstrap scripts never write into the repo. Repo-only entries (`docs/`,
+`tests/`, the repo-level `.claude/`, `.no-mistakes.yaml`, `README.md`,
+`install.sh`, git files, editor backups) are never linked. Re-running is safe:
+it prints what it linked or backed up and touches nothing that is already in
+place.
 
 ## Configurations
 
@@ -79,7 +91,7 @@ Install with `install_agent_workflow`; tmux `prefix F`, Neovim `<leader>ap` /
 
 `.local/bin/show` and `.local/bin/download` search a list of SSH hosts in
 parallel for a given path, then open it or copy it down. They live in
-`.local/bin` so `stow` puts them on `$PATH`.
+`.local/bin` so `install.sh` puts them on `$PATH`.
 
 ```bash
 show     /home/user/project/report.pdf          # sshfs-mount + xdg-open
@@ -126,7 +138,7 @@ fresh machine needs no root to get a working userland:
 
 ## Requirements
 
-- `stow` — to link the configs.
+- `bash` + coreutils - to run `install.sh`.
 - The individual tools you intend to use: `nvim`, `hypr`(land), `kitty`, `tmux`
   (+ TPM, auto-bootstrapped on first launch), `yazi`, `btop`, `atuin`,
   `lazygit`, `lazydocker`, `clangd`.
