@@ -17,7 +17,7 @@ metadata:
 
 ## Code Architecture
 
-- The repo is organized as a `stow`-managed dotfiles tree, with source files rooted under `.config/`, `.local/`, and a few top-level dotfiles like `.tmux.conf`.
+- The repo is organized as a dotfiles tree linked into `$HOME` by `install.sh`, with source files rooted under `.config/`, `.local/`, and a few top-level dotfiles like `.tmux.conf`.
 - Neovim config lives under `.config/nvim/lua/` and is split into `core/`, `configs/`, `customize/`, `lib/`, and `plugins/`.
 - Tmux config lives under `.config/tmux/` and is split between `.conf` fragments and shell helpers in `.config/tmux/scripts/`.
 - AI terminal work clusters around `.config/nvim/lua/customize/aiterm*.lua`, `.config/nvim/lua/plugins/aiterm.lua`, and `.config/tmux/scripts/ai-*.sh` plus `persistent-ai.sh`.

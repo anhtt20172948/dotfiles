@@ -3,7 +3,7 @@
 # (.no-mistakes.yaml gọi `tests/run.sh lint` / `tests/run.sh test`).
 #
 #   tests/run.sh lint   shellcheck các script đã sạch (danh sách LINT_FILES)
-#   tests/run.sh test   chạy mọi tests/*.lua trong nvim headless
+#   tests/run.sh test   chạy mọi tests/*.lua trong nvim headless và tests/*_test.sh
 #   tests/run.sh        cả hai
 set -euo pipefail
 
@@ -19,6 +19,8 @@ LINT_FILES=(
 	.config/tmux/scripts/*.sh
 	.local/bin/install_agent_workflow
 	.local/bin/install_zsh
+	install.sh
+	tests/*_test.sh
 	tests/run.sh
 )
 
@@ -52,7 +54,7 @@ run_test() {
 		return 1
 	}
 	# XDG_CONFIG_HOME rỗng: nếu không, runtimepath chứa ~/.config/nvim (bản đã
-	# stow) và require() nạp code ở đó thay vì code của checkout/worktree này.
+	# link) và require() nạp code ở đó thay vì code của checkout/worktree này.
 	local cfg
 	cfg=$(mktemp -d)
 	local failed=0 t
@@ -72,6 +74,15 @@ run_test() {
 		fi
 	done
 	rm -rf "$cfg"
+	for t in tests/*_test.sh; do
+		[[ -f "$t" ]] || continue
+		if timeout 120 bash "$t" >/dev/null 2>&1; then
+			echo "ok   $t"
+		else
+			echo "FAIL $t (rerun: bash $t)"
+			failed=1
+		fi
+	done
 	return "$failed"
 }
 
