@@ -1,0 +1,15 @@
+# gnhf - config toàn cục (~/.gnhf/config.yml, qua stow).
+# Giới hạn iteration/token là cờ runtime (--max-iterations, --max-tokens), không
+# lưu ở đây; menu tmux (prefix F) và <leader>ag tự truyền cờ mặc định.
+
+agent: claude
+
+# Commit kiểu feat:/fix: cho khớp quy ước commit của dotfiles.
+commitMessage:
+  preset: conventional
+
+# Hỏng liên tiếp chừng này iteration thì dừng, khỏi đốt token cả đêm.
+maxConsecutiveFailures: 3
+
+# Chạy qua đêm: giữ máy không ngủ (systemd-inhibit).
+preventSleep: true

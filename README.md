@@ -67,6 +67,14 @@ Prerequisite: `stow` (`sudo pacman -S stow`).
 | `.config/lazydocker` | lazydocker | Terminal UI for Docker (`config.yml`). |
 | `.config/clangd` | clangd | C/C++ language-server options (`config.yaml`). |
 
+## Agent workflow
+
+Worktree pool, pre-push quality gate, overnight agent loops and a multi-agent
+orchestrator on top of the AI CLIs (treehouse, no-mistakes, gnhf, firstmate).
+Install with `install_agent_workflow`; tmux `prefix F`, Neovim `<leader>ap` /
+`<leader>ag` / `<leader>aW` / `<leader>aF`. See
+[docs/agent-workflow.md](docs/agent-workflow.md).
+
 ## Remote helper scripts
 
 `.local/bin/show` and `.local/bin/download` search a list of SSH hosts in

@@ -1,0 +1,23 @@
+# no-mistakes - config toàn cục (~/.no-mistakes/config.yaml, qua stow).
+# Repo-level: .no-mistakes.yaml ở root repo, ưu tiên hơn file này.
+# Tham chiếu: https://github.com/kunchenguid/no-mistakes (docs/reference/global-config.md)
+
+# Thử theo thứ tự; agent không chạy được thì sang cái kế tiếp.
+# Chạy trên HOST (~/.local/bin/claude ...). Docker để phase sau qua
+# agent_path_override trỏ vào wrapper docker exec.
+agent: [claude, codex, opencode]
+
+agent_timeout: "30m"
+review_agent_timeout: "30m"
+test_agent_timeout: "30m"
+
+# Số vòng tự sửa tối đa mỗi bước. review = 0: phát hiện review thì dừng hỏi người.
+auto_fix:
+  rebase: 3
+  review: 0
+  test: 3
+  document: 3
+  lint: 3
+  ci: 3
+
+log_level: info
