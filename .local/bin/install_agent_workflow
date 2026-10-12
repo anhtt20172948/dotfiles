@@ -183,21 +183,31 @@ install_firstmate() {
 
 # --- Thư mục state phải là thư mục THẬT ---------------------
 # Nếu chưa có lúc stow, stow gập cả thư mục thành một symlink vào dotfiles và
-# DB/worktree/run log của tool rơi luôn vào repo. Gỡ symlink đó, tạo thư mục thật
-# rồi link lại từng file bằng symlink tương đối (đúng dạng stow tự tạo).
+# DB/worktree/run log của tool rơi luôn vào repo. Chỉ gỡ symlink trỏ vào CHÍNH
+# repo này (symlink tự đặt sang chỗ khác thì giữ), tạo thư mục thật rồi link lại
+# từng file theo đúng dạng stow tạo: "../<đích của symlink gập>/<tên>".
+REPO_DIR=$(dirname "$(dirname "$(dirname "$(readlink -f "$0")")")")
+
 unfold_dir() {
-	local dir=$1 src entry
+	local dir=$1 target src entry name
 	if [[ ! -L "$dir" ]]; then
 		mkdir -p "$dir"
 		return
 	fi
+	if [[ "$(readlink -f "$dir")" != "$REPO_DIR/${dir#"$HOME"/}" ]]; then
+		warn "$dir là symlink không trỏ vào $REPO_DIR, giữ nguyên"
+		return
+	fi
+	target=$(readlink "$dir")
+	[[ "$target" == /* ]] || target="../$target"
 	src=$(readlink -f "$dir")
-	[[ -d "$src" ]] || die "$dir là symlink hỏng"
 	log "tách $dir khỏi symlink stow"
 	rm "$dir"
 	mkdir -p "$dir"
 	for entry in "$src"/* "$src"/.[!.]*; do
-		[[ -e "$entry" || -L "$entry" ]] && ln -sr "$entry" "$dir/"
+		[[ -e "$entry" || -L "$entry" ]] || continue
+		name=${entry##*/}
+		ln -s "$target/$name" "$dir/$name"
 	done
 }
 
