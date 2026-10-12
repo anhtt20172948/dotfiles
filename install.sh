@@ -105,49 +105,58 @@ is_foreign_dir() {
 	return 0
 }
 
-link_entry() {
+# Dọn chỗ cho thư mục NO_FOLD: gỡ link stow cũ gập vào repo, file lạ vào backup.
+clear_dir_dst() {
 	local rel=$1
+	if points_to_repo "$HOME/$rel" "$REPO/$rel"; then
+		echo "unfold  ~/$rel"
+		run rm "$HOME/$rel"
+	elif [[ -e "$HOME/$rel" || -L "$HOME/$rel" ]]; then
+		backup "$rel"
+	fi
+}
+
+link_entry() {
+	local rel=$1 fresh=${2:-}
 	local src="$REPO/$rel" dst="$HOME/$rel"
 
 	if [[ -d "$src" && ! -L "$src" ]]; then
-		if [[ -d "$dst" && ! -L "$dst" ]]; then
+		if [[ -z "$fresh" && -d "$dst" && ! -L "$dst" ]]; then
 			link_children "$rel"
 			return
 		fi
 		if contains "$rel" "${NO_FOLD[@]}"; then
-			if is_foreign_dir "$dst"; then
+			if [[ -z "$fresh" ]] && is_foreign_dir "$dst"; then
 				link_children "$rel"
 				return
 			fi
-			if points_to_repo "$dst" "$src"; then
-				echo "unfold  ~/$rel"
-				run rm "$dst"
-			elif [[ -e "$dst" || -L "$dst" ]]; then
-				backup "$rel"
-			fi
+			[[ -n "$fresh" ]] || clear_dir_dst "$rel"
 			echo "mkdir   ~/$rel"
 			run mkdir -p "$dst"
-			link_children "$rel"
+			link_children "$rel" fresh
 			return
 		fi
 	fi
-	if points_to_repo "$dst" "$src"; then
-		unchanged=$((unchanged + 1))
-		return
-	fi
-	if [[ -e "$dst" || -L "$dst" ]]; then
-		backup "$rel"
+	if [[ -z "$fresh" ]]; then
+		if points_to_repo "$dst" "$src"; then
+			unchanged=$((unchanged + 1))
+			return
+		fi
+		if [[ -e "$dst" || -L "$dst" ]]; then
+			backup "$rel"
+		fi
 	fi
 	make_link "$rel"
 }
 
+# fresh: thư mục đích vừa được tạo (hoặc sẽ được tạo, khi dry-run) nên rỗng.
 link_children() {
-	local rel=$1 path child
+	local rel=$1 fresh=${2:-} path child
 	for path in "$REPO${rel:+/$rel}"/* "$REPO${rel:+/$rel}"/.[!.]* "$REPO${rel:+/$rel}"/..?*; do
 		[[ -e "$path" || -L "$path" ]] || continue
 		child="${rel:+$rel/}${path##*/}"
 		is_ignored "$child" && continue
-		link_entry "$child"
+		link_entry "$child" "$fresh"
 	done
 }
 

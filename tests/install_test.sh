@@ -65,6 +65,9 @@ out=$("$REPO/install.sh" --dry-run)
 after=$(cd "$HOME" && find . -printf '%p %y %l\n' | sort)
 [[ "$before" == "$after" ]] || fail "dry-run changed \$HOME"
 grep -q '^link    ~/.config/tmux ' <<<"$out" || fail "dry-run did not report links: $out"
+grep -q '^unfold  ~/.local/bin$' <<<"$out" || fail "dry-run did not report unfold: $out"
+grep -q '^link    ~/.local/bin/show ' <<<"$out" || fail "dry-run did not link unfolded child: $out"
+! grep -q '^backup  ~/.local/bin/' <<<"$out" || fail "dry-run reported backup of unfolded child: $out"
 
 out=$("$REPO/install.sh")
 
