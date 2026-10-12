@@ -164,7 +164,7 @@ pass through to Neovim, via vim-tmux-navigator.
 `prefix F` opens `scripts/ai-workflow.sh`, a menu over
 [kunchenguid](https://github.com/kunchenguid)'s agent tools. Install them with
 `~/.local/bin/install_agent_workflow` (pinned versions, idempotent, `--update`
-to reinstall); their global configs are stowed from this repo
+to reinstall); their global configs are linked from this repo by `install.sh`
 (`~/.config/treehouse/config.toml`, `~/.no-mistakes/config.yaml`,
 `~/.gnhf/config.yml`).
 
