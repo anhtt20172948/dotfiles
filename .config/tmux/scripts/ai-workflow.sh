@@ -121,7 +121,8 @@ action_push() {
 
 action_pipelines() {
   need no-mistakes
-  exec no-mistakes
+  # No exec: if it fails (e.g. repo not initialized) the popup must stay open.
+  no-mistakes || fail "no-mistakes exited with an error (repo initialized? run 'no-mistakes init')"
 }
 
 action_gnhf() {
