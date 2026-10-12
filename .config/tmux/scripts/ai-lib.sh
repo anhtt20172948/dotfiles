@@ -441,6 +441,8 @@ EOF
 # run as a non-root user), so ask rather than assume.
 container_home() {
   local name=$1 h
+  # Single quotes on purpose: $HOME must expand inside the container, not here.
+  # shellcheck disable=SC2016
   h=$(ai_run_limited 5 docker exec "$name" sh -c 'printf %s "$HOME"' 2>/dev/null)
   case $h in /*) printf '%s' "$h" ;; *) printf '/root' ;; esac
 }

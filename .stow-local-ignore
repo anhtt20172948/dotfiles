@@ -1,0 +1,29 @@
+# File này THAY danh sách ignore mặc định của stow -> chép lại mặc định trước.
+RCS
+.+,v
+CVS
+\.\#.+
+\.cvsignore
+\.svn
+_darcs
+\.hg
+\.git
+\.gitignore
+\.gitmodules
+.+~
+\#.*\#
+^/README.*
+^/LICENSE.*
+^/COPYING
+
+# Chỉ thuộc repo, không phải dotfile: không stow ra $HOME.
+# Có dấu / -> so với đường dẫn tính từ root repo, nên chỉ khớp thư mục ở root
+# (một .config/x/docs vẫn được stow bình thường).
+^/docs$
+^/tests$
+^/\.superpowers$
+# Config Claude CẤP REPO (project skill, settings.local.json) - stow ra ~/.claude
+# sẽ biến nó thành config toàn cục.
+^/\.claude$
+^/\.no-mistakes\.yaml$
+^/\.stow-local-ignore$
