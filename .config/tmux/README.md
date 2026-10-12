@@ -113,7 +113,7 @@ the lot.
 |-----|--------|
 | `a` | AI picker — tool, then session list (the only path to `New session`) |
 | `A` | Quick-attach the most recently used live agent for this project |
-| `F` | Agent workflow menu — see [Agent workflow](#agent-workflow) |
+| `F` | Agent workflow menu - see [Agent workflow](#agent-workflow) |
 | `N` | no-mistakes pipeline TUI |
 | `g` | Lazygit |
 | `G` | Lazydocker |
@@ -170,14 +170,14 @@ to reinstall); their global configs are stowed from this repo
 
 | Entry | Runs | Where |
 |-------|------|-------|
-| New worktree shell | `treehouse get` — a pooled worktree, returned to the pool on exit | new window |
+| New worktree shell | `treehouse get` - a pooled worktree, returned to the pool on exit | new window |
 | Worktree pool status | `treehouse status` | popup |
 | Push through no-mistakes | `git push no-mistakes <branch>` (offers `no-mistakes init` first) | popup |
 | no-mistakes pipelines | the no-mistakes TUI (also `prefix N`) | popup |
 | gnhf: overnight loop | `gnhf --worktree --max-iterations $AI_GNHF_MAX_ITERATIONS` (default 20) | new window |
 | firstmate | focus the `firstmate` window, or start `$AI_FIRSTMATE_AGENT` (default `claude`) in `~/.local/share/firstmate` | new window |
 
-Each action also runs directly — `ai-workflow.sh gnhf "<goal>"` — which is how
+Each action also runs directly - `ai-workflow.sh gnhf "<goal>"` - which is how
 Neovim's `<leader>ag` / `<leader>aF` reuse it.
 
 Notes:
@@ -185,7 +185,7 @@ Notes:
 - Everything runs on the **host**. The Docker location picker of `prefix a` does
   not apply: these tools spawn the agent CLI themselves, in host worktree paths.
 - AXI skills (`gh-axi`, `chrome-devtools-axi`, `lavish-axi`) are installed as
-  skills only — `<tool> setup hooks` is skipped on purpose so they do not add
+  skills only - `<tool> setup hooks` is skipped on purpose so they do not add
   SessionStart hooks on top of ECC's.
 - firstmate runs from its own checkout with its own `AGENTS.md`, which forbids
   co-author trailers. That only applies inside firstmate's sessions; global

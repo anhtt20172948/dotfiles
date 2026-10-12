@@ -1,4 +1,4 @@
-# treehouse — pool worktree dùng chung cho mọi repo (install_agent_workflow).
+# treehouse - pool worktree dùng chung cho mọi repo (install_agent_workflow).
 # Repo nào cần khác thì đặt treehouse.toml ở root repo (`treehouse init`).
 
 # Số worktree tối đa trong pool mỗi repo. firstmate mỗi crewmate giữ một slot.
