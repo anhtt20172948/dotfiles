@@ -4,8 +4,8 @@
 # Số worktree tối đa trong pool mỗi repo. firstmate mỗi crewmate giữ một slot.
 max_trees = 8
 
-# Để trống = $HOME/.treehouse. Giữ ngoài dotfiles để stow --adopt không hút
-# worktree vào repo.
+# Để trống = $HOME/.treehouse. Giữ ngoài dotfiles để worktree không rơi vào
+# repo.
 # root = "$HOME/.treehouse"
 
 # Tên slot <repo>-<slot> thay vì <repo>: aiterm_history và tmux ai-sessions gom

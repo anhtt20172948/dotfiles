@@ -31,7 +31,7 @@ assert_absent() {
 }
 
 # Repo giả mô phỏng layout thật, gồm cả các entry chỉ thuộc repo.
-mkdir -p "$REPO"/.config/{nvim/lua,tmux,yazi} "$REPO"/.local/bin \
+mkdir -p "$REPO"/.config/{nvim/lua,tmux,yazi} "$REPO"/.local/bin "$REPO"/.no-mistakes \
 	"$REPO"/{docs,tests,.claude,.git,.superpowers}
 cp "$ROOT/install.sh" "$REPO/install.sh"
 echo init >"$REPO/.config/nvim/init.lua"
@@ -39,6 +39,7 @@ echo mod >"$REPO/.config/nvim/lua/mod.lua"
 echo tmux >"$REPO/.config/tmux/tmux.conf"
 echo yazi >"$REPO/.config/yazi/yazi.toml"
 echo show >"$REPO/.local/bin/show"
+echo cfg >"$REPO/.no-mistakes/config.yaml"
 echo conf >"$REPO/.tmux.conf"
 echo zsh >"$REPO/.zshrc"
 for f in README.md LICENSE .gitignore .no-mistakes.yaml .config/nvim/init.lua~; do
@@ -78,6 +79,9 @@ assert_real_dir .local
 assert_real_dir .local/bin
 assert_link .local/bin/show
 [[ -d "$HOME/.local/share/app" ]] || fail "~/.local/share lost"
+# Thư mục state của tool agent cũng không gập (DB/run log không rơi vào repo).
+assert_real_dir .no-mistakes
+assert_link .no-mistakes/config.yaml
 # File và symlink lạ -> vào backup, không mất nội dung.
 assert_link .config/yazi
 backup=$(find "$HOME/.dotfiles-backup" -mindepth 1 -maxdepth 1)

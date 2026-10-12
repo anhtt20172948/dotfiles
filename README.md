@@ -55,7 +55,8 @@ The installer folds directories the way stow does:
 - Anything else in the way (a file, or a symlink pointing elsewhere) is moved to
   `~/.dotfiles-backup/<timestamp>/` before linking; nothing is deleted.
 
-`~/.config`, `~/.local` and `~/.local/{bin,share,state}` are always kept as
+`~/.config`, `~/.local`, `~/.local/{bin,share,state}` and the agent-tool state
+dirs (`~/.no-mistakes`, `~/.gnhf`, `~/.config/treehouse`) are always kept as
 real directories (or left as-is if they are symlinks to another disk), so apps
 and the bootstrap scripts never write into the repo. Repo-only entries (`docs/`,
 `tests/`, the repo-level `.claude/`, `.no-mistakes.yaml`, `README.md`,

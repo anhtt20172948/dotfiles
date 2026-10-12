@@ -1,4 +1,4 @@
-# gnhf - config toàn cục (~/.gnhf/config.yml, qua stow).
+# gnhf - config toàn cục (~/.gnhf/config.yml, qua install.sh).
 # Giới hạn iteration/token là cờ runtime (--max-iterations, --max-tokens), không
 # lưu ở đây; menu tmux (prefix F) và <leader>ag tự truyền cờ mặc định.
 

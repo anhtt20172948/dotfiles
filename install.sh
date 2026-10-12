@@ -28,9 +28,13 @@ ROOT_IGNORE=(
 	install.sh
 )
 
-# Thư mục ứng dụng tự ghi vào (~/.local/bin nhận binary của install_*):
-# luôn là thư mục thật, không gập thành một symlink vào repo.
-NO_FOLD=(.config .local .local/bin .local/share .local/state)
+# Thư mục ứng dụng tự ghi vào (~/.local/bin nhận binary của install_*, DB/run
+# log của no-mistakes, gnhf, treehouse): luôn là thư mục thật, không gập thành
+# một symlink vào repo.
+NO_FOLD=(
+	.config .local .local/bin .local/share .local/state
+	.no-mistakes .gnhf .config/treehouse
+)
 
 linked=0 backed_up=0 unchanged=0
 
