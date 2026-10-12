@@ -109,10 +109,6 @@ link_entry() {
 	local rel=$1
 	local src="$REPO/$rel" dst="$HOME/$rel"
 
-	if points_to_repo "$dst" "$src"; then
-		unchanged=$((unchanged + 1))
-		return
-	fi
 	if [[ -d "$src" && ! -L "$src" ]]; then
 		if [[ -d "$dst" && ! -L "$dst" ]]; then
 			link_children "$rel"
@@ -123,7 +119,10 @@ link_entry() {
 				link_children "$rel"
 				return
 			fi
-			if [[ -e "$dst" || -L "$dst" ]]; then
+			if points_to_repo "$dst" "$src"; then
+				echo "unfold  ~/$rel"
+				run rm "$dst"
+			elif [[ -e "$dst" || -L "$dst" ]]; then
 				backup "$rel"
 			fi
 			echo "mkdir   ~/$rel"
@@ -131,6 +130,10 @@ link_entry() {
 			link_children "$rel"
 			return
 		fi
+	fi
+	if points_to_repo "$dst" "$src"; then
+		unchanged=$((unchanged + 1))
+		return
 	fi
 	if [[ -e "$dst" || -L "$dst" ]]; then
 		backup "$rel"
