@@ -27,3 +27,5 @@ tmp/
 .gnhf/*
 !.gnhf/config.yml
 .treehouse/
+# Dữ liệu job runtime của Claude Code (pins.json, thư mục từng job): không track.
+.claude/jobs/
