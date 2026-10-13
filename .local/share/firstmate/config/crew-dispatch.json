@@ -1,0 +1,20 @@
+{
+  "rules": [
+    {
+      "when": "The task is a trivial mechanical edit such as a rote rename, formatting sweep, targeted typo fix, version bump, or simple file gathering.",
+      "use": { "harness": "claude", "model": "haiku", "effort": "low" },
+      "why": "Cheapest fast profile for narrow, low-ambiguity work."
+    },
+    {
+      "when": "The task is a big or ambiguous multi-file feature, a risky refactor, an architecture or design investigation, or a hard bug diagnosis that needs many moving parts held in mind.",
+      "use": { "harness": "claude", "model": "opus", "effort": "xhigh" },
+      "why": "Strongest reasoning profile for ambiguous or high-stakes work."
+    },
+    {
+      "when": "The captain asks for Codex or a second, independent implementation or opinion, or the task is a well-specified shell, Ansible, or scripting change with clear acceptance criteria.",
+      "use": { "harness": "codex", "model": "gpt-6.1-sol", "effort": "medium" },
+      "why": "Spreads load onto the OpenAI quota and gives a different model's perspective."
+    }
+  ],
+  "default": { "harness": "claude", "model": "sonnet", "effort": "medium" }
+}
