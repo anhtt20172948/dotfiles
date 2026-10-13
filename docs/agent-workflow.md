@@ -80,6 +80,7 @@ Check the result with `<leader>ad` in Neovim (section "Agent workflow") or
 | Work in a fresh worktree | `prefix F` → New worktree shell | `<leader>aW` (opens an AI session there) | `treehouse get` |
 | Start an overnight loop | `prefix F` → gnhf | `<leader>ag` | `ai-workflow.sh gnhf "<goal>"` |
 | Talk to the first mate | `prefix F` → firstmate | `<leader>aF` | `ai-workflow.sh firstmate` |
+| Check on the crew / jump to a worker | `prefix C` or `prefix F` → crew | | `ai-workflow.sh crew` |
 
 The tmux menu and the Neovim keys share one implementation,
 [`.config/tmux/scripts/ai-workflow.sh`](../.config/tmux/scripts/ai-workflow.sh).

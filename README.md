@@ -83,11 +83,9 @@ place.
 
 Worktree pool, pre-push quality gate, overnight agent loops and a multi-agent
 orchestrator on top of the AI CLIs (treehouse, no-mistakes, gnhf, firstmate).
-Install with `install_agent_workflow`; tmux `prefix F`, Neovim `<leader>ap` /
-`<leader>ag` / `<leader>aW` / `<leader>aF`. See
+Install with `install_agent_workflow`; tmux `prefix F` / `prefix C`, Neovim
+`<leader>ap` / `<leader>ag` / `<leader>aW` / `<leader>aF`. See
 [docs/agent-workflow.md](docs/agent-workflow.md).
-Use tmux `prefix C` or `prefix F` → crew for the firstmate fleet overview,
-read-only worker previews, and Enter to jump to a worker's window.
 
 ## Remote helper scripts
 
