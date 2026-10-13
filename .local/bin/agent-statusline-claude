@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Render only this Claude session's stdin data; never cache another session's state.
+set -euo pipefail
+exec jq -r '
+  def valid_number: type == "number" and . >= 0;
+  def pct: if valid_number then "\(.)%" else "unknown" end;
+  def count:
+    if valid_number then
+      tostring | gsub("(?<digit>[0-9])(?=([0-9]{3})+$)"; "\(.digit),")
+    else "n/a" end;
+  def field($name): if type == "object" then .[$name] else null end;
+  (field("model") | field("display_name") // "unknown model") as $model |
+  (field("effort") | field("level") // "n/a") as $effort |
+  (field("context_window")) as $ctx |
+  ($ctx | field("current_usage")) as $usage |
+  (if ($usage | type) == "object" and
+      ([$usage.input_tokens, $usage.cache_creation_input_tokens,
+        $usage.cache_read_input_tokens] | all(. == null or (type == "number" and . >= 0))) and
+      ([$usage.input_tokens, $usage.cache_creation_input_tokens,
+        $usage.cache_read_input_tokens] | any(. != null))
+    then (($usage.input_tokens // 0) + ($usage.cache_creation_input_tokens // 0) +
+          ($usage.cache_read_input_tokens // 0))
+    else null end) as $input_tokens |
+  "\($model) | effort \($effort) | ctx \($ctx | field("used_percentage") | pct) used, \($ctx | field("remaining_percentage") | pct) remaining | \($input_tokens | count) / \($ctx | field("context_window_size") | count) input tokens"
+'
