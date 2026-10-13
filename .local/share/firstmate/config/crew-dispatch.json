@@ -7,7 +7,7 @@
     },
     {
       "when": "The task is a big or ambiguous multi-file feature, a risky refactor, an architecture or design investigation, or a hard bug diagnosis that needs many moving parts held in mind.",
-      "use": { "harness": "claude", "model": "opus", "effort": "xhigh" },
+      "use": { "harness": "claude", "model": "opus", "effort": "high" },
       "why": "Strongest reasoning profile for ambiguous or high-stakes work."
     },
     {
