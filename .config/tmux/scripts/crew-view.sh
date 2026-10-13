@@ -47,6 +47,8 @@ have fzf || fail "'fzf' not found in PATH"
 # the worker list; fzf runs preview commands with $SHELL, which may be zsh.
 export CREW_OVERVIEW="$overview"
 selection=$(
+  # $CREW_OVERVIEW is single-quoted on purpose: fzf's preview shell expands it.
+  # shellcheck disable=SC2016
   printf '%s\n' "$workers" | fzf \
     --ansi --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
     --no-sort --cycle --layout=reverse --margin=1,2 \
