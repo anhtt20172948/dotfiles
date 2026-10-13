@@ -69,8 +69,13 @@ check_deps() {
 	node_major=$(node -p 'process.versions.node.split(".")[0]')
 	((node_major >= 20)) || die "cần node >= 20 (đang có $(node --version))"
 
-	[[ "$(uname -s)-$(uname -m)" == "Linux-x86_64" ]] ||
-		die "chỉ hỗ trợ Linux x86_64 (đang chạy $(uname -s)-$(uname -m))"
+	local platform
+	platform="$(uname -s)-$(uname -m)"
+	case "$platform" in
+	Linux-x86_64) RELEASE_ARCH=amd64 ;;
+	Linux-aarch64 | Linux-arm64) RELEASE_ARCH=arm64 ;;
+	*) die "chỉ hỗ trợ Linux x86_64/aarch64/arm64 (đang chạy $platform)" ;;
+	esac
 
 	# gh không chặn việc cài, nhưng no-mistakes / firstmate cần nó để mở PR.
 	if ! have gh; then
@@ -96,7 +101,7 @@ install_go_release() {
 	fi
 
 	local base="https://github.com/kunchenguid/$name/releases/download/v$ver"
-	local asset="$name-v$ver-linux-amd64.tar.gz"
+	local asset="$name-v$ver-linux-$RELEASE_ARCH.tar.gz"
 	local tmp
 	tmp=$(mktemp -d)
 	# Không dùng trap RETURN: nó còn dính sau khi hàm return và đụng biến local.
