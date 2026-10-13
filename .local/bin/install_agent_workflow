@@ -73,8 +73,8 @@ check_deps() {
 	platform="$(uname -s)-$(uname -m)"
 	case "$platform" in
 	Linux-x86_64) RELEASE_ARCH=amd64 ;;
-	Linux-aarch64 | Linux-arm64) RELEASE_ARCH=arm64 ;;
-	*) die "chỉ hỗ trợ Linux x86_64/aarch64/arm64 (đang chạy $platform)" ;;
+	Linux-aarch64) RELEASE_ARCH=arm64 ;;
+	*) die "chỉ hỗ trợ Linux x86_64/aarch64 (đang chạy $platform)" ;;
 	esac
 
 	# gh không chặn việc cài, nhưng no-mistakes / firstmate cần nó để mở PR.
