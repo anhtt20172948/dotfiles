@@ -37,10 +37,11 @@ linked .local/share/firstmate/config/crew-dispatch.json
 linked .claude/CLAUDE.md .config/agents/CLAUDE.md
 linked .config/opencode/AGENTS.md .config/agents/AGENTS.md
 jq -e '.statusLine.type == "command" and (.statusLine.command | contains("$HOME"))' "$HOME/.claude/settings.json" >/dev/null || fail 'Claude status line missing'
-python3 - "$HOME/.codex/config.toml" <<'PY' || fail 'Codex status line missing'
-import pathlib, sys, tomllib
+python3 - "$HOME/.codex/config.toml" "$ROOT/.local/bin/install-agent-statusline" <<'PY' || fail 'Codex status line missing'
+import pathlib, re, sys, tomllib
 items = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())['tui']['status_line']
-assert items == ['model-with-reasoning', 'context-used', 'context-remaining', 'context-window-size']
+expected = re.search(r'CODEX_ITEMS = (\[[^\]]*\])', pathlib.Path(sys.argv[2]).read_text()).group(1)
+assert items == tomllib.loads(f'v = {expected}')['v'] and 'five-hour-limit' in items
 PY
 out=$("$REPO/install.sh")
 grep -q '^done: 0 linked, 0 backed up,' <<<"$out" || fail 'not idempotent'

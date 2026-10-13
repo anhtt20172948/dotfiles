@@ -13,6 +13,12 @@ import tomllib
 ROOT = Path(__file__).resolve().parent.parent
 INSTALLER = ROOT / ".local/bin/install-agent-statusline"
 RENDERER = ROOT / ".local/bin/agent-statusline-claude"
+CODEX_ITEMS = ["model-with-reasoning", "context-used", "context-remaining", "context-window-size",
+               "five-hour-limit", "weekly-limit", "total-input-tokens", "total-output-tokens"]
+
+
+def assistant(message_id, usage):
+    return json.dumps({"type": "assistant", "message": {"id": message_id, "usage": usage}})
 
 
 class RendererTests(unittest.TestCase):
@@ -20,7 +26,63 @@ class RendererTests(unittest.TestCase):
         return subprocess.run(
             [str(RENDERER)], input=json.dumps(payload), text=True,
             capture_output=True, check=False,
+            env={**os.environ, "TZ": "UTC"},
         )
+
+    def transcript(self, *lines):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = Path(tmp.name) / "session.jsonl"
+        path.write_text("\n".join(lines) + "\n")
+        return str(path)
+
+    def test_rate_limits_session_totals_and_throughput(self):
+        transcript = self.transcript(
+            assistant("m1", {"input_tokens": 10, "cache_creation_input_tokens": 990,
+                             "cache_read_input_tokens": 0, "output_tokens": 5}),
+            assistant("m1", {"input_tokens": 10, "cache_creation_input_tokens": 990,
+                             "cache_read_input_tokens": 0, "output_tokens": 200}),
+            assistant("m2", {"input_tokens": 20, "cache_creation_input_tokens": 0,
+                             "cache_read_input_tokens": 1980, "output_tokens": 300}),
+            json.dumps({"type": "user", "message": {"content": "hi"}}),
+        )
+        result = self.render({
+            "model": {"display_name": "Opus"},
+            "transcript_path": transcript,
+            "cost": {"total_api_duration_ms": 10000},
+            "rate_limits": {
+                "five_hour": {"used_percentage": 23.5, "resets_at": 1738425600},
+                "seven_day": {"used_percentage": 41.2, "resets_at": 1738857600},
+            },
+        })
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stdout.strip(),
+            "Opus | ctx unknown used, unknown remaining | 5h 24% (resets 16:00) | "
+            "7d 41% (resets Thu 16:00) | session 3k in, 500 out | avg 300/s in, 50/s out")
+
+    def test_absent_rate_limits_and_transcript_are_omitted(self):
+        result = self.render({
+            "model": {"display_name": "Opus"},
+            "transcript_path": "/nonexistent/session.jsonl",
+            "cost": {"total_api_duration_ms": 10000},
+            "rate_limits": {"five_hour": {"resets_at": 1738425600}, "seven_day": None},
+        })
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "Opus | ctx unknown used, unknown remaining")
+
+    def test_weekly_limit_alone_and_zero_api_duration_has_no_rate(self):
+        transcript = self.transcript(assistant("m1", {"input_tokens": 1500, "output_tokens": 2500}))
+        result = self.render({
+            "model": {"display_name": "Opus"},
+            "transcript_path": transcript,
+            "cost": {"total_api_duration_ms": 0},
+            "rate_limits": {"seven_day": {"used_percentage": 5, "resets_at": 1738857600}},
+        })
+        self.assertEqual(
+            result.stdout.strip(),
+            "Opus | ctx unknown used, unknown remaining | 7d 5% (resets Thu 16:00) | "
+            "session 1.5k in, 2.5k out")
 
     def test_live_context_and_effort(self):
         payload = {
@@ -52,7 +114,7 @@ class RendererTests(unittest.TestCase):
         result = self.render(payload)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(),
-                         "Opus | effort n/a | ctx unknown used, unknown remaining | n/a / 200,000 input tokens")
+                         "Opus | ctx unknown used, unknown remaining")
 
     def test_missing_context_and_concurrent_payloads_do_not_leak(self):
         payloads = [
@@ -66,7 +128,7 @@ class RendererTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=2) as executor:
             first, second = list(executor.map(self.render, payloads))
         self.assertEqual(first.stdout.strip(),
-                         "A | effort low | ctx unknown used, unknown remaining | n/a / n/a input tokens")
+                         "A | effort low | ctx unknown used, unknown remaining")
         self.assertEqual(second.stdout.strip(),
                          "B | effort max | ctx 50% used, 50% remaining | 500 / 1,000 input tokens")
 
@@ -108,7 +170,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(config["features"], {"hooks": True})
         self.assertEqual(config["tui"]["show_tooltips"], False)
         self.assertEqual(config["tui"]["status_line"],
-                         ["model-with-reasoning", "context-used", "context-remaining", "context-window-size"])
+                         CODEX_ITEMS)
         after = (self.claude.read_bytes(), self.codex.read_bytes())
         again = self.install()
         self.assertEqual(json.loads(again.stdout), {"changed": False, "changes": []})
@@ -136,7 +198,7 @@ hooks = true
         self.assertEqual(result.returncode, 0, result.stderr)
         data = tomllib.loads(self.codex.read_text())
         self.assertEqual(data['tui']['status_line'],
-                         ['model-with-reasoning', 'context-used', 'context-remaining', 'context-window-size'])
+                         CODEX_ITEMS)
         self.assertEqual(data['features']['hooks'], True)
         self.assertEqual(data['tui']['show_tooltips'], False)
 

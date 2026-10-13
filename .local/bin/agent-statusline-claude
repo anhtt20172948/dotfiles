@@ -1,16 +1,53 @@
 #!/usr/bin/env bash
 # Render only this Claude session's stdin data; never cache another session's state.
+# Schema: https://code.claude.com/docs/en/statusline (context_window.total_*_tokens are
+# live-context values, so session totals are summed from this session's own transcript).
 set -euo pipefail
-exec jq -r '
+
+input=$(cat)
+
+# Per-message usage is repeated while streaming: keep one entry per message id (max output).
+session_totals() {
+  jq -s '
+    [.[] | select(.type == "assistant" and (.message.usage | type) == "object")
+         | {id: .message.id, u: .message.usage}]
+    | group_by(.id)
+    | map({in: (.[0].u | (.input_tokens // 0) + (.cache_creation_input_tokens // 0)
+                         + (.cache_read_input_tokens // 0)),
+           out: (map(.u.output_tokens // 0) | max)})
+    | if length == 0 then null else {in: (map(.in) | add), out: (map(.out) | add)} end
+  ' "$1"
+}
+
+transcript=$(jq -r '.transcript_path // empty' <<<"$input" 2>/dev/null || true)
+totals=null
+if [[ -n $transcript && -f $transcript ]]; then
+  totals=$(session_totals "$transcript" 2>/dev/null || echo null)
+fi
+
+exec jq -r --argjson totals "$totals" '
   def valid_number: type == "number" and . >= 0;
   def pct: if valid_number then "\(.)%" else "unknown" end;
   def count:
     if valid_number then
       tostring | gsub("(?<digit>[0-9])(?=([0-9]{3})+$)"; "\(.digit),")
     else "n/a" end;
+  def short:
+    def trim: tostring | sub("\\.0$"; "");
+    if . >= 1000000 then "\(. / 100000 | round / 10 | trim)M"
+    elif . >= 1000 then "\(. / 100 | round / 10 | trim)k"
+    else "\(. | round)" end;
   def field($name): if type == "object" then .[$name] else null end;
+  def limit($label; $fmt):
+    . as $w
+    | if ($w | field("used_percentage") | valid_number) then
+        "\($label) \($w.used_percentage | round)%"
+        + (if ($w.resets_at | valid_number)
+           then " (resets \($w.resets_at | strflocaltime($fmt)))" else "" end)
+      else empty end;
+  def rate($tokens; $secs): if $secs > 0 then "\($tokens / $secs | short)/s" else empty end;
   (field("model") | field("display_name") // "unknown model") as $model |
-  (field("effort") | field("level") // "n/a") as $effort |
+  (field("effort") | field("level")) as $effort |
   (field("context_window")) as $ctx |
   ($ctx | field("current_usage")) as $usage |
   (if ($usage | type) == "object" and
@@ -21,5 +58,22 @@ exec jq -r '
     then (($usage.input_tokens // 0) + ($usage.cache_creation_input_tokens // 0) +
           ($usage.cache_read_input_tokens // 0))
     else null end) as $input_tokens |
-  "\($model) | effort \($effort) | ctx \($ctx | field("used_percentage") | pct) used, \($ctx | field("remaining_percentage") | pct) remaining | \($input_tokens | count) / \($ctx | field("context_window_size") | count) input tokens"
-'
+  (field("rate_limits")) as $limits |
+  ((field("cost") | field("total_api_duration_ms")) as $ms
+   | if ($ms | valid_number) then $ms / 1000 else 0 end) as $api_secs |
+  [ $model,
+    (if ($effort | type) == "string" then "effort \($effort)" else empty end),
+    "ctx \($ctx | field("used_percentage") | pct) used, \($ctx | field("remaining_percentage") | pct) remaining",
+    (if $input_tokens != null
+     then "\($input_tokens | count) / \($ctx | field("context_window_size") | count) input tokens"
+     else empty end),
+    ($limits | field("five_hour") | limit("5h"; "%H:%M")),
+    ($limits | field("seven_day") | limit("7d"; "%a %H:%M")),
+    (if ($totals | type) == "object"
+     then "session \($totals.in | short) in, \($totals.out | short) out"
+     else empty end),
+    (if ($totals | type) == "object" and $api_secs > 0
+     then "avg \(rate($totals.in; $api_secs)) in, \(rate($totals.out; $api_secs)) out"
+     else empty end)
+  ] | join(" | ")
+' <<<"$input"

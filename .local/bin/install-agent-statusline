@@ -12,7 +12,8 @@ from pathlib import Path
 
 import tomllib
 
-CODEX_ITEMS = ["model-with-reasoning", "context-used", "context-remaining", "context-window-size"]
+CODEX_ITEMS = ["model-with-reasoning", "context-used", "context-remaining", "context-window-size",
+               "five-hour-limit", "weekly-limit", "total-input-tokens", "total-output-tokens"]
 CLAUDE_STATUS = {"type": "command", "command": '"$HOME/.local/bin/agent-statusline-claude"'}
 TOML_VALUE = "status_line = " + json.dumps(CODEX_ITEMS)
 TABLE_RE = re.compile(r"(?m)^\s*\[([^\]\n]+)\]\s*(?:#.*)?$")
