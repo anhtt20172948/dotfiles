@@ -1,20 +1,54 @@
 {
   "rules": [
     {
-      "when": "The task is a trivial mechanical edit such as a rote rename, formatting sweep, targeted typo fix, version bump, or simple file gathering.",
-      "use": { "harness": "claude", "model": "haiku", "effort": "low" },
-      "why": "Cheapest fast profile for narrow, low-ambiguity work."
+      "when": "The captain explicitly requests Codex, an independent second opinion, or an alternative implementation.",
+      "use": {
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "effort": "medium"
+      },
+      "why": "Honor explicit routing requests and provide an independent perspective."
     },
     {
-      "when": "The task is a big or ambiguous multi-file feature, a risky refactor, an architecture or design investigation, or a hard bug diagnosis that needs many moving parts held in mind.",
-      "use": { "harness": "claude", "model": "opus", "effort": "high" },
-      "why": "Strongest reasoning profile for ambiguous or high-stakes work."
+      "when": "The task is mechanical, deterministic, low-risk, and narrowly scoped: renaming, formatting, typo fixes, simple version bumps, file gathering, or small config changes.",
+      "use": {
+        "harness": "claude",
+        "model": "haiku",
+        "effort": "low"
+      },
+      "why": "Minimize cost and latency for tasks requiring little reasoning."
     },
     {
-      "when": "The captain asks for Codex or a second, independent implementation or opinion, or the task is a well-specified shell, Ansible, or scripting change with clear acceptance criteria.",
-      "use": { "harness": "codex", "model": "gpt-6.1-sol", "effort": "medium" },
-      "why": "Spreads load onto the OpenAI quota and gives a different model's perspective."
+      "when": "The task involves ambiguous architecture, complex cross-module changes, risky refactoring, concurrency, performance bottlenecks, difficult debugging, or high-impact design decisions.",
+      "use": {
+        "harness": "claude",
+        "model": "opus",
+        "effort": "high"
+      },
+      "why": "Reserve deep reasoning for tasks where mistakes or poor design decisions are expensive."
+    },
+    {
+      "when": "The task is a well-specified shell, Ansible, CI/CD, automation, or scripting implementation with clear acceptance criteria, excluding trivial mechanical edits.",
+      "use": {
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "effort": "medium"
+      },
+      "why": "Use Codex for bounded engineering work with testable outcomes."
+    },
+    {
+      "when": "The task is a straightforward implementation, code review, bug fix, test addition, documentation update, or moderate multi-file change with reasonably clear requirements.",
+      "use": {
+        "harness": "claude",
+        "model": "sonnet",
+        "effort": "medium"
+      },
+      "why": "Balance cost, implementation quality, and reasoning capability."
     }
   ],
-  "default": { "harness": "claude", "model": "sonnet", "effort": "medium" }
+  "default": {
+    "harness": "claude",
+    "model": "sonnet",
+    "effort": "medium"
+  }
 }
