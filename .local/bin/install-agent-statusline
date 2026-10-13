@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""Merge portable status lines into a home without replacing other CLI settings."""
+
+import argparse
+import json
+import os
+import re
+import stat
+import sys
+import tempfile
+from pathlib import Path
+
+import tomllib
+
+CODEX_ITEMS = ["model-with-reasoning", "context-used", "context-remaining", "context-window-size"]
+CLAUDE_STATUS = {"type": "command", "command": '"$HOME/.local/bin/agent-statusline-claude"'}
+TOML_VALUE = "status_line = " + json.dumps(CODEX_ITEMS)
+TABLE_RE = re.compile(r"(?m)^\s*\[([^\]\n]+)\]\s*(?:#.*)?$")
+STATUS_RE = re.compile(r"(?ms)^[ \t]*status_line[ \t]*=[ \t]*(?:\[[^\]]*\]|[^\n]*)")
+
+
+def claude_result(path):
+    data = json.loads(path.read_text()) if path.exists() else {}
+    if not isinstance(data, dict):
+        raise TypeError(f"{path}: expected a JSON object")
+    if data.get("statusLine") == CLAUDE_STATUS:
+        return None
+    return json.dumps({**data, "statusLine": CLAUDE_STATUS}, indent=2, ensure_ascii=False) + "\n"
+
+
+def codex_result(path):
+    original = path.read_text() if path.exists() else ""
+    parsed = tomllib.loads(original)
+    if parsed.get("tui", {}).get("status_line") == CODEX_ITEMS:
+        return None
+    tables = list(TABLE_RE.finditer(original))
+    table = next((m for m in tables if m.group(1).strip() == "tui"), None)
+    if table is None:
+        updated = original.rstrip("\n") + ("\n\n" if original else "") + "[tui]\n" + TOML_VALUE + "\n"
+    else:
+        end = next((m.start() for m in tables if m.start() > table.start()), len(original))
+        body = original[table.end():end]
+        existing = list(STATUS_RE.finditer(body))
+        if len(existing) > 1:
+            raise ValueError(f"{path}: duplicate status_line assignments")
+        if existing:
+            match = existing[0]
+            body = body[:match.start()] + TOML_VALUE + body[match.end():]
+        else:
+            body = "\n" + TOML_VALUE + body
+        updated = original[:table.end()] + body + original[end:]
+    after = tomllib.loads(updated)
+    desired = {**parsed, "tui": {**parsed.get("tui", {}), "status_line": CODEX_ITEMS}}
+    if after != desired:
+        raise ValueError(f"{path}: status line merge would alter other settings")
+    return updated
+
+
+def write_atomic(path, content):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--home", type=Path, default=Path.home())
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args()
+    if not args.home.is_absolute():
+        parser.error("--home must be an absolute path")
+    targets = [("claude", args.home / ".claude/settings.json", claude_result),
+               ("codex", args.home / ".codex/config.toml", codex_result)]
+    for _, path, _ in targets:
+        if path.is_symlink():
+            raise ValueError(f"{path}: settings symlink requires a manual merge")
+    changes = [(name, path, result) for name, path, render in targets
+               if (result := render(path)) is not None]
+    if not args.check:
+        for _, path, content in changes:
+            write_atomic(path, content)
+    print(json.dumps({"changed": bool(changes), "changes": [name for name, _, _ in changes]}))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, TypeError, ValueError, tomllib.TOMLDecodeError) as error:
+        print(f"install-agent-statusline: {error}", file=sys.stderr)
+        sys.exit(1)

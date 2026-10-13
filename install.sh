@@ -183,6 +183,11 @@ main() {
 	if [[ -f "$REPO/.config/agents/CLAUDE.md" ]]; then
 		link_entry .claude/CLAUDE.md "" "$REPO/.config/agents/CLAUDE.md"
 	fi
+	if [[ -x "$REPO/.local/bin/install-agent-statusline" ]]; then
+		local -a status_args=(--home "$HOME")
+		[[ $DRY_RUN -eq 0 ]] || status_args+=(--check)
+		"$REPO/.local/bin/install-agent-statusline" "${status_args[@]}" >/dev/null
+	fi
 	echo "done: $linked linked, $backed_up backed up, $unchanged already linked"
 	if [[ $backed_up -gt 0 ]]; then
 		echo "backups in $BACKUP_DIR"
