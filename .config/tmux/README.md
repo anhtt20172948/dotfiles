@@ -23,6 +23,7 @@ Modular dotfile-based tmux configuration.
     ├── persistent-ai.sh        → persistent, per-project AI popup controller
     ├── ai-status.sh            → status-bar segment: live agent count
     ├── ai-workflow.sh          → agent workflow menu (treehouse/no-mistakes/gnhf/firstmate)
+    ├── crew-view.sh            → firstmate fleet overview and worker picker
     ├── monitor-lib.sh          → shared helpers for the two monitor scripts
     ├── monitor.sh              → system monitor launcher (fzf menu)
     ├── monitor-preview.sh      → monitor live preview pane
@@ -115,6 +116,7 @@ the lot.
 | `A` | Quick-attach the most recently used live agent for this project |
 | `F` | Agent workflow menu - see [Agent workflow](#agent-workflow) |
 | `N` | no-mistakes pipeline TUI |
+| `C` | Firstmate fleet overview and worker picker (replaces customize-mode) |
 | `g` | Lazygit |
 | `G` | Lazydocker |
 | `b` | Btop / Htop |
@@ -176,12 +178,18 @@ to reinstall); their global configs are linked from this repo by `install.sh`
 | no-mistakes pipelines | the no-mistakes TUI (also `prefix N`) | popup |
 | gnhf: overnight loop | `gnhf --worktree --max-iterations $AI_GNHF_MAX_ITERATIONS` (default 20) | new window |
 | firstmate | focus the `firstmate` window, or start `$AI_FIRSTMATE_AGENT` (default `claude`) in `~/.local/share/firstmate` | new window |
+| crew | fleet overview and fzf list of `fm-*` workers (also `prefix C`) | popup |
 
 Each action also runs directly - `ai-workflow.sh gnhf "<goal>"` - which is how
 Neovim's `<leader>ag` / `<leader>aF` reuse it.
 
 Notes:
 
+- `prefix C` (or `prefix F` → crew) shows firstmate's fleet table and a read-only
+  screen preview. Enter switches to the selected worker in the `firstmate`
+  session. No keys are sent to workers. `FIRSTMATE_DIR` overrides the default
+  `~/.local/share/firstmate` checkout; missing installations, sessions and workers
+  show a message. The same view runs directly with `ai-workflow.sh crew`.
 - Everything runs on the **host**. The Docker location picker of `prefix a` does
   not apply: these tools spawn the agent CLI themselves, in host worktree paths.
 - AXI skills (`gh-axi`, `chrome-devtools-axi`, `lavish-axi`) are installed as

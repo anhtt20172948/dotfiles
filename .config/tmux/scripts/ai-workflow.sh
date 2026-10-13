@@ -8,6 +8,7 @@
 #   pipelines    no-mistakes TUI                       (in the popup)
 #   gnhf         overnight loop on a goal, --worktree  (new tmux window)
 #   firstmate    focus or start the first-mate window  (new tmux window)
+#   crew         fleet overview and worker picker     (in the popup)
 #
 # Usage: ai-workflow.sh [action [args...]]
 #   No action opens the fzf menu. An action runs directly - that is the entry
@@ -38,7 +39,7 @@ FIRSTMATE_AGENT=${AI_FIRSTMATE_AGENT:-claude}
 GNHF_MAX_ITERATIONS=${AI_GNHF_MAX_ITERATIONS:-20}
 NM_REMOTE=no-mistakes
 
-ACTIONS='treehouse worktrees push pipelines gnhf firstmate'
+ACTIONS='treehouse worktrees push pipelines gnhf firstmate crew'
 
 err() { printf '%sai-workflow:%s %s\n' "$AI_RED" "$AI_RESET" "$1" >&2; }
 info() { printf '%s%s%s\n' "$AI_SUBTEXT" "$1" "$AI_RESET" >&2; }
@@ -181,6 +182,7 @@ run_action() {
     pipelines) action_pipelines ;;
     gnhf)      action_gnhf "$@" ;;
     firstmate) action_firstmate ;;
+    crew)      "$LIB_DIR/crew-view.sh" ;;
     *)         fail "unknown action: $action (one of: $ACTIONS)" ;;
   esac
 }
@@ -194,6 +196,7 @@ action_label() {
     pipelines) printf '%s  no-mistakes pipelines (TUI)' '󰑮' ;;
     gnhf)      printf '%s  gnhf: overnight loop…' '󰽥' ;;
     firstmate) printf '%s  firstmate: crew orchestrator' '󰚩' ;;
+    crew)      printf '%s  firstmate: crew overview / jump' '󰚩' ;;
   esac
 }
 
@@ -203,6 +206,7 @@ action_tool() {
     push|pipelines)      printf 'no-mistakes' ;;
     gnhf)                printf 'gnhf' ;;
     firstmate)           printf '%s' "$FIRSTMATE_AGENT" ;;
+    crew)                printf '%s/bin/fm-fleet-view.sh' "$FIRSTMATE_DIR" ;;
   esac
 }
 
