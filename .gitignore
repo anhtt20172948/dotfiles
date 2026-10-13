@@ -26,4 +26,9 @@ tmp/
 !.no-mistakes/config.yaml
 .gnhf/*
 !.gnhf/config.yml
+# Claude Code: chỉ track skill tự viết, chặn state Claude ghi vào .claude/ (projects, sessions, jobs, cache...).
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/dotfiles-patterns/
 .treehouse/
