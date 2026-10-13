@@ -31,13 +31,19 @@ cat >"$CREW_TEST_DIR/fzf.input"
 if [[ ${WORKFLOW_MENU:-0} == 1 && $* == *'Agent Workflow'* ]]; then
   printf 'crew\n'
 else
+  # Run previews the way fzf does: $SHELL -c with {1} shell-quoted.
+  run_preview() {
+    local preview_shell quoted_index="'3'"
+    preview_shell=$(command -v zsh || command -v bash)
+    "$preview_shell" -c "${1//\{1\}/$quoted_index}" >"$CREW_TEST_DIR/$2"
+  }
   for arg in "$@"; do
     case "$arg" in
-      --preview=*)
-        preview=${arg#--preview=}
-        preview_shell=$(command -v zsh || command -v bash)
-        quoted_index="'3'"
-        "$preview_shell" -c "${preview//\{1\}/$quoted_index}" >"$CREW_TEST_DIR/preview"
+      --preview=*) run_preview "${arg#--preview=}" preview ;;
+      --header=*) printf '%s' "${arg#--header=}" >"$CREW_TEST_DIR/header" ;;
+      --bind=ctrl-p:change-preview\(*\))
+        peek=${arg#--bind=ctrl-p:change-preview(}
+        run_preview "${peek%)}" peek
         ;;
     esac
   done
@@ -66,12 +72,14 @@ run_view() {
 # RED initially: the executable does not yet exist.
 export WINDOWS=$'1\tfirstmate\n3\tfm-task-one\n5\tfm-task-two\n7\tnotes\n'
 run_view 0
-contains "$TMP/fzf.args" 'Fleet overview'
+contains "$TMP/preview" 'Fleet overview'
+contains "$TMP/preview" 'worker status: working'
+[[ $(wc -l <"$TMP/header") == 0 ]] || fail 'multi-line header crowds out worker list'
 [[ $(cat "$TMP/fzf.input") == $'3\tfm-task-one\n5\tfm-task-two' ]] || fail 'worker filtering'
 [[ $(cat "$TMP/fleet.home") == "$FIRSTMATE_DIR" ]] || fail 'FM_HOME override'
 contains "$TMP/tmux.log" 'switch-client -t =firstmate:3'
 contains "$TMP/tmux.log" 'capture-pane -p -t =firstmate:3 -S -80'
-contains "$TMP/preview" 'worker screen'
+contains "$TMP/peek" 'worker screen'
 
 reset_case
 export FZF_RC=130

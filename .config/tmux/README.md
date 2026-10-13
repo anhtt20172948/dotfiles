@@ -185,8 +185,9 @@ Neovim's `<leader>ag` / `<leader>aF` reuse it.
 
 Notes:
 
-- `prefix C` (or `prefix F` → crew) shows firstmate's fleet table and a read-only
-  screen preview. Enter switches to the selected worker in the `firstmate`
+- `prefix C` (or `prefix F` → crew) shows firstmate's fleet table in the preview
+  pane below the worker list; `Ctrl-p` peeks at the highlighted worker's screen
+  (read-only) and `Ctrl-o` returns to the fleet table. Enter switches to the selected worker in the `firstmate`
   session. No keys are sent to workers. `FIRSTMATE_DIR` overrides the default
   `~/.local/share/firstmate` checkout; missing installations, sessions and workers
   show a message. The same view runs directly with `ai-workflow.sh crew`.

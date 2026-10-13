@@ -43,15 +43,20 @@ if [[ -z "$workers" ]]; then
   exit 0
 fi
 have fzf || fail "'fzf' not found in PATH"
+# The overview lives in the preview, not the header, so it never crowds out
+# the worker list; fzf runs preview commands with $SHELL, which may be zsh.
+export CREW_OVERVIEW="$overview"
 selection=$(
   printf '%s\n' "$workers" | fzf \
     --ansi --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
     --no-sort --cycle --layout=reverse --margin=1,2 \
     --border=rounded --border-label=' Firstmate crew ' \
-    --header="$overview"$'\n\nCtrl-j/k move  •  Enter jump  •  Esc close' \
+    --header='Ctrl-j/k move • Enter jump • Ctrl-o overview • Ctrl-p peek • Esc close' \
     --prompt='Crew › ' --bind='ctrl-j:down,ctrl-k:up' \
-    --preview='tmux capture-pane -p -t "=firstmate:"{1} -S -80' \
-    --preview-window='down:45%:wrap' \
+    --preview='printf "%s\n" "$CREW_OVERVIEW"' \
+    --bind='ctrl-o:change-preview(printf "%s\n" "$CREW_OVERVIEW")' \
+    --bind='ctrl-p:change-preview(tmux capture-pane -p -t "=firstmate:"{1} -S -80)' \
+    --preview-window='down:60%:wrap' \
     --color='bg+:#313244,bg:#1e1e2e,hl:#f38ba8,fg:#cdd6f4,header:#89b4fa,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8,border:#6c7086,label:#cba6f7'
 ) || exit 0
 [[ -n "$selection" ]] || exit 0
