@@ -50,7 +50,7 @@ selection=$(
     --border=rounded --border-label=' Firstmate crew ' \
     --header="$overview"$'\n\nCtrl-j/k move  •  Enter jump  •  Esc close' \
     --prompt='Crew › ' --bind='ctrl-j:down,ctrl-k:up' \
-    --preview='tmux capture-pane -p -t =firstmate:{1} -S -80' \
+    --preview='tmux capture-pane -p -t "=firstmate:"{1} -S -80' \
     --preview-window='down:45%:wrap' \
     --color='bg+:#313244,bg:#1e1e2e,hl:#f38ba8,fg:#cdd6f4,header:#89b4fa,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8,border:#6c7086,label:#cba6f7'
 ) || exit 0

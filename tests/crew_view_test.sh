@@ -35,7 +35,9 @@ else
     case "$arg" in
       --preview=*)
         preview=${arg#--preview=}
-        bash -c "${preview//\{1\}/3}" >"$CREW_TEST_DIR/preview"
+        preview_shell=$(command -v zsh || command -v bash)
+        quoted_index="'3'"
+        "$preview_shell" -c "${preview//\{1\}/$quoted_index}" >"$CREW_TEST_DIR/preview"
         ;;
     esac
   done
@@ -65,7 +67,6 @@ run_view() {
 export WINDOWS=$'1\tfirstmate\n3\tfm-task-one\n5\tfm-task-two\n7\tnotes\n'
 run_view 0
 contains "$TMP/fzf.args" 'Fleet overview'
-contains "$TMP/fzf.args" 'tmux capture-pane -p -t =firstmate:{1}'
 [[ $(cat "$TMP/fzf.input") == $'3\tfm-task-one\n5\tfm-task-two' ]] || fail 'worker filtering'
 [[ $(cat "$TMP/fleet.home") == "$FIRSTMATE_DIR" ]] || fail 'FM_HOME override'
 contains "$TMP/tmux.log" 'switch-client -t =firstmate:3'
