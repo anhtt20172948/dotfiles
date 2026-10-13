@@ -14,7 +14,6 @@ cat >"$TMP/bin/claude" <<'MOCK'
 #!/usr/bin/env bash
 exit 0
 MOCK
-cp "$TMP/bin/claude" "$TMP/bin/codex"
 cat >"$TMP/bin/tmux" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s|' "$@" >>"$LOG"
@@ -22,7 +21,7 @@ printf '\n' >>"$LOG"
 case "$1" in
 list-windows)
   if [[ $2 == -a ]]; then
-    [[ $SCENARIO != existing ]] || printf 'dotfiles:4\t%s\n' "${FIRSTMATE_WINDOW:-firstmate}"
+    [[ $SCENARIO != existing ]] || printf 'dotfiles:4\tfirstmate\n'
   else
     case "$SCENARIO" in
       idle|busy|worker|multi|unknown|command|inspection) printf '1\t@7\t%s\t%s\n' "${WINDOW_NAME:-zsh}" "${PANES:-1}" ;;
@@ -93,13 +92,6 @@ export PROCESS_NAME=vim
 run command
 lacks 'respawn-window|'
 unset PROCESS_NAME
-export FIRSTMATE_SESSION=bridge FIRSTMATE_WINDOW=admiral AI_FIRSTMATE_AGENT=codex
-run new
-has "new-session|-d|-s|bridge|-n|admiral|-c|$FIRSTMATE_DIR|exec codex|"
-has 'switch-client|-t|=bridge:1|'
-run existing
-has 'switch-client|-t|dotfiles|;|select-window|-t|dotfiles:4|'
-unset FIRSTMATE_SESSION FIRSTMATE_WINDOW AI_FIRSTMATE_AGENT
 if run failure; then fail 'creation failure succeeded'; fi
 lacks 'switch-client|'
 echo 'firstmate session: OK'

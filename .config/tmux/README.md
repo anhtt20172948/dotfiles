@@ -201,8 +201,6 @@ Notes:
   firstmate window anywhere on the server is focused as before. When the session
   already exists, an idle single-pane shell at index 1 is reused; occupied windows
   (including all `fm-*` windows) are shifted to preserve their processes.
-  `FIRSTMATE_SESSION`, `FIRSTMATE_WINDOW`, and `FIRSTMATE_DIR` override the
-  session, window name, and checkout path; `AI_FIRSTMATE_AGENT` selects the agent.
 - firstmate runs from its own checkout with its own `AGENTS.md`, which applies
   only inside firstmate's sessions. Global agent rules are covered in the
   [top-level README](../../README.md#installation).

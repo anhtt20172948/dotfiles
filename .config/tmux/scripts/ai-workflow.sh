@@ -30,8 +30,8 @@ readonly LIB_DIR
 source "$LIB_DIR/ai-lib.sh"
 
 FIRSTMATE_DIR=${FIRSTMATE_DIR:-$HOME/.local/share/firstmate}
-FIRSTMATE_WINDOW=${FIRSTMATE_WINDOW:-firstmate}
-FIRSTMATE_SESSION=${FIRSTMATE_SESSION:-firstmate}
+FIRSTMATE_WINDOW=firstmate
+FIRSTMATE_SESSION=firstmate
 # The first mate runs on Claude Code by default: it is the harness whose Stop
 # hook firstmate verifies first. Override with AI_FIRSTMATE_AGENT=codex etc.
 FIRSTMATE_AGENT=${AI_FIRSTMATE_AGENT:-claude}
