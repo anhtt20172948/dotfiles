@@ -79,11 +79,15 @@ these rules there requires a later change through its managing tool.
 
 The installer also merges status-line settings into the existing
 `~/.claude/settings.json` and `~/.codex/config.toml` without changing their
-other settings. Claude renders its live model, effort, context percentages, and
-current input tokens through `.local/bin/agent-statusline-claude` (`jq` required).
-Codex uses its native footer items for model with reasoning, context used and
-remaining percentages, and context window size. Unknown values are omitted by
-Codex or shown as `unknown`/`n/a` by Claude. Python 3.11 or newer is required
+other settings. Claude renders its live model, effort, context percentages,
+current input tokens, 5-hour and weekly rate-limit usage with reset times,
+session input/output token totals, and their average per-second rate over API
+time through `.local/bin/agent-statusline-claude` (`jq` required). Session totals
+are summed from the session transcript; rate limits exist only for claude.ai
+subscriptions. Codex uses its native footer items for model with reasoning,
+context used and remaining percentages, context window size, 5-hour and weekly
+limits, and total input/output tokens (it has no throughput item). Segments
+without data are omitted. Python 3.11 or newer is required
 for the settings merge. To run only that merge after another linker has placed
 the scripts, use `~/.local/bin/install-agent-statusline --home "$HOME"`; add
 `--check` for a no-write preview. It prints a JSON `changed` flag and a list of
