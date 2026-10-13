@@ -33,6 +33,7 @@ ROOT_IGNORE=(
 # một symlink vào repo.
 NO_FOLD=(
 	.config .local .local/bin .local/share .local/state
+	.local/share/firstmate .local/share/firstmate/config
 	.no-mistakes .gnhf .config/treehouse
 )
 
@@ -80,10 +81,10 @@ backup() {
 }
 
 make_link() {
-	local rel=$1
-	echo "link    ~/$rel -> $REPO/$rel"
+	local rel=$1 src=${2:-$REPO/$1}
+	echo "link    ~/$rel -> $src"
 	run mkdir -p "$(dirname "$HOME/$rel")"
-	run ln -s "$REPO/$rel" "$HOME/$rel"
+	run ln -s "$src" "$HOME/$rel"
 	linked=$((linked + 1))
 }
 
@@ -118,7 +119,7 @@ clear_dir_dst() {
 
 link_entry() {
 	local rel=$1 fresh=${2:-}
-	local src="$REPO/$rel" dst="$HOME/$rel"
+	local src=${3:-$REPO/$rel} dst="$HOME/$rel"
 
 	if [[ -d "$src" && ! -L "$src" ]]; then
 		if [[ -z "$fresh" && -d "$dst" && ! -L "$dst" ]]; then
@@ -146,7 +147,7 @@ link_entry() {
 			backup "$rel"
 		fi
 	fi
-	make_link "$rel"
+	make_link "$rel" "$src"
 }
 
 # fresh: thư mục đích vừa được tạo (hoặc sẽ được tạo, khi dry-run) nên rỗng.
@@ -178,6 +179,10 @@ main() {
 
 	[[ $DRY_RUN -eq 1 ]] && echo "(dry-run: không thay đổi gì)"
 	link_children ""
+	# Global Claude instructions live outside the repo-only .claude directory.
+	if [[ -f "$REPO/.config/agents/CLAUDE.md" ]]; then
+		link_entry .claude/CLAUDE.md "" "$REPO/.config/agents/CLAUDE.md"
+	fi
 	echo "done: $linked linked, $backed_up backed up, $unchanged already linked"
 	if [[ $backed_up -gt 0 ]]; then
 		echo "backups in $BACKUP_DIR"
