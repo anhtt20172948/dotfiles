@@ -31,6 +31,7 @@ source "$LIB_DIR/ai-lib.sh"
 
 FIRSTMATE_DIR=${FIRSTMATE_DIR:-$HOME/.local/share/firstmate}
 FIRSTMATE_WINDOW=firstmate
+FIRSTMATE_SESSION=firstmate
 # The first mate runs on Claude Code by default: it is the harness whose Stop
 # hook firstmate verifies first. Override with AI_FIRSTMATE_AGENT=codex etc.
 FIRSTMATE_AGENT=${AI_FIRSTMATE_AGENT:-claude}
@@ -155,21 +156,64 @@ firstmate_target() {
     | awk -F '\t' -v w="$FIRSTMATE_WINDOW" '$2 == w { print $1; exit }'
 }
 
+# Reuse only a single idle shell pane, never a crew window. Process inspection
+# fails closed: a foreground command, background child, or unknown PID keeps it.
+firstmate_idle_shell() {
+  local window=$1 name=$2 panes=$3 pane pid current tty process processes
+  [[ "$name" != fm-* && "$panes" == 1 ]] || return 1
+  pane=$(tmux list-panes -t "$window" -F $'#{pane_pid}\t#{pane_current_command}\t#{pane_tty}') || return 1
+  IFS=$'\t' read -r pid current tty <<<"$pane"
+  [[ "$pid" =~ ^[0-9]+$ && "$tty" == /dev/* ]] || return 1
+  case "$current" in sh|bash|zsh|fish|ksh|dash|csh|tcsh) ;; *) return 1 ;; esac
+  process=$(ps -p "$pid" -o comm=) || return 1
+  process=${process##*/}
+  process=${process#-}
+  [[ "$process" == "$current" ]] || return 1
+  processes=$(ps -t "$tty" -o pid=) || return 1
+  awk -v pid="$pid" 'NF { count++; if ($1 != pid) busy=1 }
+    END { exit !(count == 1 && !busy) }' <<<"$processes"
+}
+
 action_firstmate() {
   [[ -d "$FIRSTMATE_DIR/.git" ]] \
     || fail "firstmate not found at $FIRSTMATE_DIR - run install_agent_workflow"
   need "$FIRSTMATE_AGENT"
   [[ -n "${TMUX:-}" ]] || fail 'firstmate needs tmux (its crewmates are tmux windows)'
 
-  local target
+  local target cmd windows index window name panes first=''
   target=$(firstmate_target)
   if [[ -n "$target" ]]; then
     tmux switch-client -t "${target%%:*}" \; select-window -t "$target"
     return
   fi
-  local cmd
   printf -v cmd 'exec %q' "$FIRSTMATE_AGENT"
-  new_window "$FIRSTMATE_WINDOW" "$FIRSTMATE_DIR" "$cmd"
+  target="=$FIRSTMATE_SESSION:1"
+  if tmux has-session -t "=$FIRSTMATE_SESSION" 2>/dev/null; then
+    windows=$(tmux list-windows -t "=$FIRSTMATE_SESSION" \
+      -F $'#{window_index}\t#{window_id}\t#{window_name}\t#{window_panes}') \
+      || fail 'could not inspect firstmate session'
+    while IFS=$'\t' read -r index window name panes; do
+      [[ "$index" == 1 ]] || continue
+      first=$window
+      if firstmate_idle_shell "$window" "$name" "$panes"; then
+        tmux respawn-window -k -t "$window" -c "$FIRSTMATE_DIR" "$cmd" \
+          || fail 'could not reuse firstmate shell window'
+        tmux rename-window -t "$window" "$FIRSTMATE_WINDOW" \
+          || fail 'could not name firstmate window'
+        tmux switch-client -t "$target"
+        return
+      fi
+    done <<<"$windows"
+    # Inserting before index 1 shifts occupied windows without killing processes.
+    local -a args=(new-window -d)
+    [[ -z "$first" ]] || args+=(-b)
+    tmux "${args[@]}" -t "$target" -n "$FIRSTMATE_WINDOW" -c "$FIRSTMATE_DIR" "$cmd" \
+      || fail 'could not create firstmate window'
+  else
+    tmux new-session -d -s "$FIRSTMATE_SESSION" -n "$FIRSTMATE_WINDOW" \
+      -c "$FIRSTMATE_DIR" "$cmd" || fail 'could not create firstmate session'
+  fi
+  tmux switch-client -t "$target"
 }
 
 run_action() {

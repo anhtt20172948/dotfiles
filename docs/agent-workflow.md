@@ -7,7 +7,7 @@ multi-agent orchestrator. The tools come from
 already used by aiterm and the tmux AI popup (`claude`, `codex`, `opencode`).
 
 ```
-plan / task ──► firstmate (tmux window "firstmate")
+plan / task ──► firstmate (tmux session "firstmate", window 1)
                     │ spawns one crewmate per task
                     ▼
         crewmate in a treehouse worktree ──► git push no-mistakes ──► PR

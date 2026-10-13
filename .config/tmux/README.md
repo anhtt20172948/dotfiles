@@ -177,7 +177,7 @@ to reinstall); their global configs are linked from this repo by `install.sh`
 | Push through no-mistakes | `git push no-mistakes <branch>` (offers `no-mistakes init` first) | popup |
 | no-mistakes pipelines | the no-mistakes TUI (also `prefix N`) | popup |
 | gnhf: overnight loop | `gnhf --worktree --max-iterations $AI_GNHF_MAX_ITERATIONS` (default 20) | new window |
-| firstmate | focus the `firstmate` window, or start `$AI_FIRSTMATE_AGENT` (default `claude`) in `~/.local/share/firstmate` | new window |
+| firstmate | focus an existing `firstmate` window, or start `$AI_FIRSTMATE_AGENT` (default `claude`) in `~/.local/share/firstmate` | window 1 of the `firstmate` session |
 | crew | fleet overview and fzf list of `fm-*` workers (also `prefix C`) | popup |
 
 Each action also runs directly - `ai-workflow.sh gnhf "<goal>"` - which is how
@@ -196,6 +196,11 @@ Notes:
 - AXI skills (`gh-axi`, `chrome-devtools-axi`, `lavish-axi`) are installed as
   skills only - `<tool> setup hooks` is skipped on purpose so they do not add
   SessionStart hooks on top of ECC's.
+- `prefix F` → firstmate switches into the `firstmate` session, placing the
+  orchestrator and its `fm-*` crew windows together in `prefix w`. An existing
+  firstmate window anywhere on the server is focused as before. When the session
+  already exists, an idle single-pane shell at index 1 is reused; occupied windows
+  (including all `fm-*` windows) are shifted to preserve their processes.
 - firstmate runs from its own checkout with its own `AGENTS.md`, which applies
   only inside firstmate's sessions. Global agent rules are covered in the
   [top-level README](../../README.md#installation).
