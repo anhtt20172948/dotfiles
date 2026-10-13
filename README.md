@@ -1,8 +1,8 @@
 # dotfiles
 
 Personal configuration files for an Arch Linux + Hyprland desktop. Each
-top-level entry mirrors its location in `$HOME`, and `install.sh` symlinks every
-config into place - no root access and no GNU stow needed.
+top-level entry mirrors its location in `$HOME`. `install.sh` links shared
+configs and merges the agent status-line fields - no root access or GNU stow.
 
 ## Repository layout
 
@@ -76,6 +76,18 @@ credentials stay in place. Existing instruction files receive the same backup
 treatment as other files. The repo-level `.claude/` remains project-only.
 Codex's externally managed `~/.codex/AGENTS.md` is left untouched; incorporating
 these rules there requires a later change through its managing tool.
+
+The installer also merges status-line settings into the existing
+`~/.claude/settings.json` and `~/.codex/config.toml` without changing their
+other settings. Claude renders its live model, effort, context percentages, and
+current input tokens through `.local/bin/agent-statusline-claude` (`jq` required).
+Codex uses its native footer items for model with reasoning, context used and
+remaining percentages, and context window size. Unknown values are omitted by
+Codex or shown as `unknown`/`n/a` by Claude. Python 3.11 or newer is required
+for the settings merge. To run only that merge after another linker has placed
+the scripts, use `~/.local/bin/install-agent-statusline --home "$HOME"`; add
+`--check` for a no-write preview. It prints a JSON `changed` flag and a list of
+the affected CLIs.
 
 Firstmate's dispatch config is linked as a single file. Its home and `config/`
 directory stay real so private settings and runtime state remain outside git.
