@@ -187,9 +187,9 @@ Notes:
 - AXI skills (`gh-axi`, `chrome-devtools-axi`, `lavish-axi`) are installed as
   skills only - `<tool> setup hooks` is skipped on purpose so they do not add
   SessionStart hooks on top of ECC's.
-- firstmate runs from its own checkout with its own `AGENTS.md`, which forbids
-  co-author trailers. That only applies inside firstmate's sessions; global
-  Claude/ECC rules are untouched.
+- firstmate runs from its own checkout with its own `AGENTS.md`, which applies
+  only inside firstmate's sessions. Global agent rules are covered in the
+  [top-level README](../../README.md#installation).
 - `no-mistakes`, `gnhf` and `firstmate` need `gh` logged in to open PRs.
 - All binaries, including `gnhf` (npm, `--prefix ~/.local`), go to
   `~/.local/bin`. The installer warns if another `gnhf` (e.g. an nvm global)

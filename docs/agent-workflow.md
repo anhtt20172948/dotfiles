@@ -22,7 +22,7 @@ gnhf --worktree "<goal>"   long unattended loop, one commit per iteration
 | [treehouse](https://github.com/kunchenguid/treehouse) | Pool of reusable git worktrees, so dependencies and build caches survive between tasks | Go binary, `~/.local/bin` | `.config/treehouse/config.toml` |
 | [no-mistakes](https://github.com/kunchenguid/no-mistakes) | A local git remote. Pushing to it runs review, test, docs, lint, push, PR and CI fixes in a throwaway worktree | Go binary, `~/.local/bin` | `.no-mistakes/config.yaml` |
 | [gnhf](https://github.com/kunchenguid/gnhf) | Overnight loop: small committed step per iteration, rollback on failure, waits out rate limits | npm, `--prefix ~/.local` | `.gnhf/config.yml` |
-| [firstmate](https://github.com/kunchenguid/firstmate) | One "first mate" agent that dispatches and supervises crewmates in tmux windows | git checkout, `~/.local/share/firstmate` | its own `AGENTS.md` |
+| [firstmate](https://github.com/kunchenguid/firstmate) | One "first mate" agent that dispatches and supervises crewmates in tmux windows | git checkout, `~/.local/share/firstmate` | `.local/share/firstmate/config/crew-dispatch.json` |
 | AXI skills | `gh-axi`, `chrome-devtools-axi`, `lavish` (from `lavish-axi`): agent-friendly CLIs exposed as skills | `npx skills add -g` | none |
 
 Versions are pinned at the top of
@@ -137,7 +137,8 @@ skip. Answer from the TUI (`prefix N`) or with `no-mistakes axi respond`.
 ## Notes
 
 - firstmate runs from its own checkout with its own `AGENTS.md`. Its rules
-  apply only inside its sessions.
+  apply only inside its sessions; the global agent rules are described in the
+  [README](../README.md#installation).
 - Docker is not supported yet. The likely path is a `docker exec` wrapper set
   as `agent_path_override` (no-mistakes) and `agentPathOverride` (gnhf), with
   the worktree roots bind-mounted at the same paths inside the container.

@@ -10,6 +10,7 @@ config into place - no root access and no GNU stow needed.
 ~/dotfiles/
 ├── .config/            → XDG config (symlinked to ~/.config)
 │   ├── atuin/          → shell history database + sync
+│   ├── agents/         → canonical global rules + Claude import file
 │   ├── btop/           → resource monitor (config + themes)
 │   ├── clangd/         → C/C++ language server settings
 │   ├── hypr/           → Hyprland window manager
@@ -17,9 +18,11 @@ config into place - no root access and no GNU stow needed.
 │   ├── lazydocker/     → Docker TUI
 │   ├── lazygit/        → Git TUI
 │   ├── nvim/           → Neovim (Lua, lazy.nvim)
+│   ├── opencode/       → global rules linked to agents/AGENTS.md
 │   ├── tmux/           → tmux (modular) + AI-session popups
 │   └── yazi/           → terminal file manager
 ├── .local/bin/         → user scripts placed on $PATH
+├── .local/share/firstmate/config/crew-dispatch.json → worker dispatch rules
 ├── .tmux.conf          → tmux entrypoint (sources ~/.config/tmux/*)
 ├── install.sh          → links the repo into $HOME
 ├── .gitignore
@@ -56,13 +59,26 @@ The installer folds directories the way stow does:
   `~/.dotfiles-backup/<timestamp>/` before linking; nothing is deleted.
 
 `~/.config`, `~/.local`, `~/.local/{bin,share,state}` and the agent-tool state
-dirs (`~/.no-mistakes`, `~/.gnhf`, `~/.config/treehouse`) are always kept as
+dirs (`~/.no-mistakes`, `~/.gnhf`, `~/.config/treehouse`,
+`~/.local/share/firstmate`, `~/.local/share/firstmate/config`) are always kept as
 real directories (or left as-is if they are symlinks to another disk), so apps
 and the bootstrap scripts never write into the repo. Repo-only entries (`docs/`,
 `tests/`, the repo-level `.claude/`, `.no-mistakes.yaml`, `README.md`,
 `install.sh`, git files, editor backups) are never linked. Re-running is safe:
 it prints what it linked or backed up and touches nothing that is already in
 place.
+
+Global agent rules live in `~/.config/agents/AGENTS.md`. OpenCode's
+`~/.config/opencode/AGENTS.md` links to that file. The installer also maps
+`.config/agents/CLAUDE.md` to `~/.claude/CLAUDE.md`, importing the canonical
+rules with `@~/.config/agents/AGENTS.md`; the real `~/.claude` directory and its
+credentials stay in place. Existing instruction files receive the same backup
+treatment as other files. The repo-level `.claude/` remains project-only.
+Codex's externally managed `~/.codex/AGENTS.md` is left untouched; incorporating
+these rules there requires a later change through its managing tool.
+
+Firstmate's dispatch config is linked as a single file. Its home and `config/`
+directory stay real so private settings and runtime state remain outside git.
 
 ## Configurations
 
