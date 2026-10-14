@@ -23,6 +23,7 @@ configs and merges the agent status-line fields - no root access or GNU stow.
 │   └── yazi/           → terminal file manager
 ├── .local/bin/         → user scripts placed on $PATH
 ├── .local/share/firstmate/config/crew-dispatch.json → worker dispatch rules
+├── .local/share/firstmate/data/captain.md → captain preferences for firstmate
 ├── .tmux.conf          → tmux entrypoint (sources ~/.config/tmux/*)
 ├── install.sh          → links the repo into $HOME
 ├── .gitignore
@@ -60,7 +61,7 @@ The installer folds directories the way stow does:
 
 `~/.config`, `~/.local`, `~/.local/{bin,share,state}` and the agent-tool state
 dirs (`~/.no-mistakes`, `~/.gnhf`, `~/.config/treehouse`,
-`~/.local/share/firstmate`, `~/.local/share/firstmate/config`) are always kept as
+`~/.local/share/firstmate`, `~/.local/share/firstmate/{config,data}`) are always kept as
 real directories (or left as-is if they are symlinks to another disk), so apps
 and the bootstrap scripts never write into the repo. Repo-only entries (`docs/`,
 `tests/`, the repo-level `.claude/`, `.no-mistakes.yaml`, `README.md`,
@@ -95,6 +96,9 @@ the affected CLIs.
 
 Firstmate's dispatch config is linked as a single file. Its home and `config/`
 directory stay real so private settings and runtime state remain outside git.
+Captain preferences (`data/captain.md`) are linked the same way, with `data/`
+left real for the backlog and task records. Firstmate's own later edits to
+captain preferences land in the dotfiles copy, so commit them from the repo.
 
 ## Configurations
 

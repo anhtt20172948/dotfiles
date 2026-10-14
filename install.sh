@@ -33,7 +33,7 @@ ROOT_IGNORE=(
 # một symlink vào repo.
 NO_FOLD=(
 	.config .local .local/bin .local/share .local/state
-	.local/share/firstmate .local/share/firstmate/config
+	.local/share/firstmate .local/share/firstmate/config .local/share/firstmate/data
 	.no-mistakes .gnhf .config/treehouse
 )
 
