@@ -177,7 +177,7 @@ to reinstall); their global configs are linked from this repo by `install.sh`
 | Push through no-mistakes | `git push no-mistakes <branch>` (offers `no-mistakes init` first) | popup |
 | no-mistakes pipelines | the no-mistakes TUI (also `prefix N`) | popup |
 | gnhf: overnight loop | `gnhf --worktree --max-iterations $AI_GNHF_MAX_ITERATIONS` (default 20) | new window |
-| firstmate | focus an existing `firstmate` window, or start `$AI_FIRSTMATE_AGENT` (default `claude`) in `~/.local/share/firstmate` | window 1 of the `firstmate` session |
+| firstmate | focus an existing `firstmate` window, or choose `claude` / `codex` to start in `~/.local/share/firstmate` | window 1 of the `firstmate` session |
 | crew | fleet overview and fzf list of `fm-*` workers (also `prefix C`) | popup |
 
 Each action also runs directly - `ai-workflow.sh gnhf "<goal>"` - which is how
@@ -201,6 +201,13 @@ Notes:
   firstmate window anywhere on the server is focused as before. When the session
   already exists, an idle single-pane shell at index 1 is reused; occupied windows
   (including all `fm-*` windows) are shifted to preserve their processes.
+- When starting a new first mate, an fzf picker offers installed `claude` and
+  `codex` CLIs with their all-model remaining quota from `quota-axi --json`.
+  The higher remaining percentage is selected first; ties or unknown quota default
+  to Claude. Esc cancels. A single installed CLI starts without a picker.
+  Quota lookup is capped at two seconds; missing or failed quota tooling leaves
+  the picker usable without percentages. Set `AI_FIRSTMATE_AGENT` to force a CLI
+  without asking. Existing firstmate windows always jump directly.
 - firstmate runs from its own checkout with its own `AGENTS.md`, which applies
   only inside firstmate's sessions. Global agent rules are covered in the
   [top-level README](../../README.md#installation).
