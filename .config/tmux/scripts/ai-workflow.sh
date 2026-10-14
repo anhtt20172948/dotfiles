@@ -32,8 +32,7 @@ source "$LIB_DIR/ai-lib.sh"
 FIRSTMATE_DIR=${FIRSTMATE_DIR:-$HOME/.local/share/firstmate}
 FIRSTMATE_WINDOW=firstmate
 FIRSTMATE_SESSION=firstmate
-# The first mate runs on Claude Code by default: it is the harness whose Stop
-# hook firstmate verifies first. Override with AI_FIRSTMATE_AGENT=codex etc.
+# An explicit override skips the launch picker; Claude is the quota fallback.
 FIRSTMATE_AGENT=${AI_FIRSTMATE_AGENT:-claude}
 # gnhf has no iteration cap by default; an unattended loop without one can burn
 # a whole quota window. Override per shell with AI_GNHF_MAX_ITERATIONS.
@@ -174,19 +173,79 @@ firstmate_idle_shell() {
     END { exit !(count == 1 && !busy) }' <<<"$processes"
 }
 
+# Only use quota-axi's interpreted all-model headroom, not model-specific limits.
+# Missing tooling, unreadable quota and timeouts leave Claude as the default.
+firstmate_quota() {
+  have quota-axi && have jq || return 1
+  have timeout || have gtimeout || have perl || return 1
+  local quota
+  quota=$(ai_run_limited 2 quota-axi --json 2>/dev/null) || return 1
+  jq -er '
+    def remaining($provider):
+      [.providers[]? | select(.provider == $provider)
+       | .quotaSemantics.effectiveAvailability[]?
+       | select(.scope == "all_models") | .effectivePercentRemaining
+       | select(type == "number" and . >= 0 and . <= 100)][0] // "unknown";
+    [remaining("claude"), remaining("codex")] | @tsv
+  ' <<<"$quota" 2>/dev/null
+}
+
+firstmate_choose_agent() {
+  if [[ -n "${AI_FIRSTMATE_AGENT:-}" ]]; then
+    need "$AI_FIRSTMATE_AGENT"
+    printf '%s\n' "$AI_FIRSTMATE_AGENT"
+    return
+  fi
+  local agent agents='' count=0
+  for agent in claude codex; do
+    have "$agent" || continue
+    agents="${agents:+${agents} }${agent}"
+    count=$((count + 1))
+  done
+  [[ "$count" != 0 ]] || fail 'neither claude nor codex found - run install_agent_workflow'
+  if [[ "$count" == 1 ]]; then printf '%s\n' "$agents"; return; fi
+  need fzf
+  local quota claude_remaining=unknown codex_remaining=unknown percent entries=''
+  quota=$(firstmate_quota) || quota=$'unknown\tunknown'
+  IFS=$'\t' read -r claude_remaining codex_remaining <<<"$quota"
+  if [[ "$claude_remaining" != unknown && "$codex_remaining" != unknown ]] \
+    && awk -v c="$claude_remaining" -v x="$codex_remaining" 'BEGIN { exit !(x > c) }'; then
+    agents='codex claude'
+  fi
+  for agent in $agents; do
+    case "$agent" in claude) percent=$claude_remaining ;; codex) percent=$codex_remaining ;; esac
+    entries="${entries}${agent}"$'\t'"${agent}"
+    [[ "$percent" == unknown ]] || entries="${entries}  ${percent}% remaining"
+    entries="${entries}"$'\n'
+  done
+  local selection status
+  selection=$(printf '%s' "$entries" | fzf --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
+    --no-sort --cycle --layout=reverse --margin=1,2 --border=rounded \
+    --border-label=' Firstmate Agent ' --info=hidden \
+    --header='Ctrl-j/k move  •  Enter start  •  Esc cancel' --prompt='Agent › ' \
+    --pointer='' --bind='ctrl-j:down,ctrl-k:up' \
+    --color='bg+:#313244,bg:#1e1e2e,fg:#cdd6f4,header:#89b4fa,fg+:#cdd6f4,prompt:#cba6f7,border:#6c7086,label:#cba6f7')
+  status=$?
+  case "$status" in 0) printf '%s\n' "$selection" ;; 1|130) return 0 ;; *) return "$status" ;; esac
+}
+
 action_firstmate() {
   [[ -d "$FIRSTMATE_DIR/.git" ]] \
     || fail "firstmate not found at $FIRSTMATE_DIR - run install_agent_workflow"
-  need "$FIRSTMATE_AGENT"
   [[ -n "${TMUX:-}" ]] || fail 'firstmate needs tmux (its crewmates are tmux windows)'
 
-  local target cmd windows index window name panes first=''
+  local target cmd windows index window name panes agent first=''
   target=$(firstmate_target)
   if [[ -n "$target" ]]; then
     tmux switch-client -t "${target%%:*}" \; select-window -t "$target"
     return
   fi
-  printf -v cmd 'exec %q' "$FIRSTMATE_AGENT"
+  agent=$(firstmate_choose_agent) || return $?
+  [[ -n "$agent" ]] || return 0
+  # fzf emits only the installed agent names offered above.
+  [[ -n "${AI_FIRSTMATE_AGENT:-}" || "$agent" == claude || "$agent" == codex ]] \
+    || fail 'invalid firstmate agent selection'
+  printf -v cmd 'exec %q' "$agent"
   target="=$FIRSTMATE_SESSION:1"
   if tmux has-session -t "=$FIRSTMATE_SESSION" 2>/dev/null; then
     windows=$(tmux list-windows -t "=$FIRSTMATE_SESSION" \
@@ -249,7 +308,12 @@ action_tool() {
     treehouse|worktrees) printf 'treehouse' ;;
     push|pipelines)      printf 'no-mistakes' ;;
     gnhf)                printf 'gnhf' ;;
-    firstmate)           printf '%s' "$FIRSTMATE_AGENT" ;;
+    firstmate)
+      if [[ -n "${AI_FIRSTMATE_AGENT:-}" ]] || have claude; then
+        printf '%s' "$FIRSTMATE_AGENT"
+      else
+        printf 'codex'
+      fi ;;
     crew)                printf '%s/bin/fm-fleet-view.sh' "$FIRSTMATE_DIR" ;;
   esac
 }

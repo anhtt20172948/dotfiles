@@ -6,6 +6,7 @@ TMP=$(mktemp -d)
 trap 'rm -rf -- "$TMP"' EXIT
 export HOME="$TMP/home"
 export PATH="$TMP/bin:$PATH"
+export AI_FIRSTMATE_AGENT=claude
 export TMUX=mock
 export FIRSTMATE_DIR="$TMP/first mate"
 export LOG="$TMP/tmux.log"
