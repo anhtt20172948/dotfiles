@@ -146,7 +146,7 @@ test("plugin spec binds the flow keys", function()
 	for _, k in ipairs(spec.keys) do
 		keys[k[1]] = true
 	end
-	for _, want in ipairs({ "<leader>ap", "<leader>aP", "<leader>ag", "<leader>aW", "<leader>aF" }) do
+	for _, want in ipairs({ "<leader>ap", "<leader>aP", "<leader>ag", "<leader>aW", "<leader>aF", "<leader>aR" }) do
 		assert(keys[want], "missing key " .. want)
 	end
 	assert(not keys["<leader>at"], "<leader>at belongs to supermaven")
