@@ -97,10 +97,8 @@ Tunables (environment variables):
 | `AI_FIRSTMATE_AGENT` | unset | Force an agent CLI and skip the launch picker |
 | `FIRSTMATE_DIR` | `~/.local/share/firstmate` | firstmate checkout |
 
-Starting firstmate offers installed Claude / Codex CLIs, preselecting the one
-with more all-model quota remaining according to `quota-axi`. Claude is the
-fallback when quota is unknown, and Esc cancels. A single installed CLI starts
-directly; an existing firstmate window is focused without prompting.
+Starting firstmate asks whether to run Claude or Codex; the picker is
+described in [`.config/tmux/README.md`](../.config/tmux/README.md#agent-workflow).
 
 A worktree from `<leader>aW` is leased. Return it with
 `treehouse return <path>` when done; the path is shown in the notification.
