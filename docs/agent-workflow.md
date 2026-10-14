@@ -94,8 +94,11 @@ Tunables (environment variables):
 | Variable | Default | Effect |
 |----------|---------|--------|
 | `AI_GNHF_MAX_ITERATIONS` | `20` | `--max-iterations` passed to gnhf |
-| `AI_FIRSTMATE_AGENT` | `claude` | Agent CLI the first mate runs on |
+| `AI_FIRSTMATE_AGENT` | unset | Force an agent CLI and skip the launch picker |
 | `FIRSTMATE_DIR` | `~/.local/share/firstmate` | firstmate checkout |
+
+Starting firstmate asks whether to run Claude or Codex; the picker is
+described in [`.config/tmux/README.md`](../.config/tmux/README.md#agent-workflow).
 
 A worktree from `<leader>aW` is leased. Return it with
 `treehouse return <path>` when done; the path is shown in the notification.
