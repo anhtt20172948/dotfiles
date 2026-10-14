@@ -228,16 +228,15 @@ local function crew_label(rec)
 	)
 end
 
---- Mở bản sao của worker ở tab mới (cwd riêng) kèm diffview so với base.
---- Chỉ xem: worker đang ghi vào đó.
+--- Mở diffview của bản sao worker so với base, trong tab riêng của diffview.
+--- Dùng -C thay cho tabnew + tcd để không còn tab phụ: q đóng tab diffview là
+--- về thẳng tab cũ. Chỉ xem: worker đang ghi vào đó.
 function M.crew_open(rec)
 	local sha, err = M.crew_merge_base(rec.worktree, rec.base_branch)
 	if not sha then
 		return M.notify(err, "error")
 	end
-	M.ex("tabnew")
-	M.ex("tcd " .. vim.fn.fnameescape(rec.worktree))
-	M.ex("DiffviewOpen " .. sha)
+	M.ex(("DiffviewOpen -C%s %s"):format(vim.fn.fnameescape(rec.worktree), sha))
 	M.notify(("%s\nbản sao của worker, chỉ xem, đừng sửa/lưu file ở đây"):format(rec.worktree), "warn")
 end
 
