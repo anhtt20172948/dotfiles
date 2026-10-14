@@ -52,6 +52,16 @@ install_agent_workflow               # or: ./.local/bin/install_agent_workflow
 The installer is idempotent: re-running skips anything already at the pinned
 version. `install_agent_workflow --update` reinstalls the pinned versions.
 
+Order does not matter: `install.sh` and `install_agent_workflow` can run in
+either order. If `install.sh` ran first, `~/.local/share/firstmate` already
+exists without a `.git` and holds only links into the dotfiles repo
+(`config/crew-dispatch.json`, `data/captain.md`). The installer then clones
+firstmate beside it, moves the `.git` in, and checks out the pinned commit
+without touching those links. If the directory holds anything else (a real file,
+or a link pointing outside the repo), the installer deletes and moves nothing: it
+skips the firstmate step, names the offending paths, and you move them away and
+re-run.
+
 Two things it takes care of:
 
 - **Folded state dirs.** `install.sh` keeps `~/.no-mistakes`, `~/.gnhf` and

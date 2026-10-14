@@ -16,8 +16,9 @@ NO_MISTAKES_VER="1.84.0"
 GNHF_VER="0.1.51"
 # Pin commit chứ không theo main: firstmate là repo AGENTS.md + script, main đổi
 # hằng ngày và có thể đổi hành vi của agent mà không báo.
-FIRSTMATE_REV="20dcbf91520b1816663b81873ad67d0b93b3e4d6"
+FIRSTMATE_REV="${FIRSTMATE_REV:-20dcbf91520b1816663b81873ad67d0b93b3e4d6}"
 FIRSTMATE_DIR="${FIRSTMATE_DIR:-$HOME/.local/share/firstmate}"
+FIRSTMATE_REPO="${FIRSTMATE_REPO:-https://github.com/kunchenguid/firstmate}"
 # <repo>:<tên thư mục skill> - tên skill không luôn trùng tên repo
 # (lavish-axi cài thành skill "lavish").
 AXI_SKILLS="gh-axi:gh-axi chrome-devtools-axi:chrome-devtools-axi lavish-axi:lavish"
@@ -162,11 +163,65 @@ install_axi_skills() {
 }
 
 # --- firstmate (git checkout, pin commit) -------------------
+# install.sh đã link config/ và data/ vào $FIRSTMATE_DIR trước khi clone, nên thư
+# mục có thể tồn tại mà chưa có .git và `git clone` vào đó sẽ lỗi. Entry nào
+# KHÔNG phải symlink trỏ vào repo này (file thật, link trỏ chỗ khác): in ra, mỗi
+# dòng một đường dẫn.
+foreign_entries() {
+	local dir=$1 entry
+	while IFS= read -r -d '' entry; do
+		if [[ -L "$entry" && "$(readlink -f "$entry")" == "$REPO_DIR"/* ]]; then
+			continue
+		fi
+		printf '%s\n' "$entry"
+	done < <(find "$dir" -mindepth 1 ! -type d -print0)
+}
+
+# Clone vào thư mục cạnh rồi chuyển .git sang: các link của dotfiles giữ nguyên,
+# không xoá hay ghi đè gì. Không bao giờ rm -rf $FIRSTMATE_DIR.
+adopt_firstmate_dir() {
+	local foreign
+	foreign=$(foreign_entries "$FIRSTMATE_DIR")
+	if [[ -n "$foreign" ]]; then
+		warn "$FIRSTMATE_DIR đã tồn tại, chưa có .git và chứa thứ không phải link của dotfiles, bỏ qua clone firstmate:"
+		printf '  %s\n' "${foreign//$'\n'/$'\n'  }" >&2
+		warn "dời hoặc xoá các đường dẫn trên (hoặc cả $FIRSTMATE_DIR nếu không cần), rồi chạy lại"
+		return 1
+	fi
+
+	local tmp link rel
+	tmp=$(mktemp -d "$FIRSTMATE_DIR.clone.XXXXXX")
+	if ! git clone --quiet --no-checkout "$FIRSTMATE_REPO" "$tmp/repo"; then
+		rm -rf "$tmp"
+		die "clone firstmate thất bại"
+	fi
+	# Link nằm đúng chỗ file mà firstmate track thì checkout sẽ đè mất link.
+	while IFS= read -r -d '' link; do
+		rel=${link#"$FIRSTMATE_DIR"/}
+		if [[ -n "$(git -C "$tmp/repo" ls-tree --name-only HEAD -- "$rel")" ]]; then
+			rm -rf "$tmp"
+			warn "$link trùng đường dẫn firstmate track, bỏ qua clone firstmate; dời link đó đi rồi chạy lại"
+			return 1
+		fi
+	done < <(find "$FIRSTMATE_DIR" -mindepth 1 -type l -print0)
+
+	mv "$tmp/repo/.git" "$FIRSTMATE_DIR/.git"
+	rm -rf "$tmp"
+	# Index đang trống: dựng lại từ HEAD rồi chỉ ghi file còn thiếu (checkout-index
+	# không có -f sẽ không đè gì có sẵn).
+	git -C "$FIRSTMATE_DIR" reset --quiet
+	git -C "$FIRSTMATE_DIR" checkout-index --all
+}
+
 install_firstmate() {
 	if [[ ! -d "$FIRSTMATE_DIR/.git" ]]; then
 		log "clone firstmate -> $FIRSTMATE_DIR"
 		mkdir -p "$(dirname "$FIRSTMATE_DIR")"
-		git clone --quiet https://github.com/kunchenguid/firstmate "$FIRSTMATE_DIR"
+		if [[ -d "$FIRSTMATE_DIR" ]]; then
+			adopt_firstmate_dir || return 0
+		else
+			git clone --quiet "$FIRSTMATE_REPO" "$FIRSTMATE_DIR"
+		fi
 	elif [[ "$UPDATE" == true ]]; then
 		git -C "$FIRSTMATE_DIR" fetch --quiet origin
 	fi
@@ -194,7 +249,7 @@ install_firstmate() {
 # gập các thư mục này). Chỉ gỡ symlink trỏ vào CHÍNH
 # repo này (symlink tự đặt sang chỗ khác thì giữ), tạo thư mục thật rồi link lại
 # từng file theo đúng dạng stow tạo: "../<đích của symlink gập>/<tên>".
-REPO_DIR=$(dirname "$(dirname "$(dirname "$(readlink -f "$0")")")")
+REPO_DIR=$(dirname "$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")")
 
 unfold_dir() {
 	local dir=$1 target src entry name
@@ -241,4 +296,5 @@ Xong. Bước tiếp:
 EOF
 }
 
-main "$@"
+# Cho phép test `source` file này mà không chạy cả bộ cài.
+[[ "${BASH_SOURCE[0]}" != "$0" ]] || main "$@"
