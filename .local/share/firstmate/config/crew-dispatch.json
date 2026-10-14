@@ -10,7 +10,7 @@
       "why": "Honor explicit routing requests and provide an independent perspective."
     },
     {
-      "when": "GPU and real-time video pipeline work that needs deep systems reasoning: writing or optimizing CUDA kernels, GPU memory management (unified/pinned/zero-copy, NvBufSurface), TensorRT engine building or custom plugins, DeepStream pipeline architecture, custom GStreamer elements or DeepStream plugins in C/C++, multi-stream batching, latency or throughput tuning, or C++ concurrency and lifetime design.",
+      "when": "GPU and real-time video pipeline work that needs deep systems reasoning: writing or optimizing CUDA kernels, GPU memory management (unified/pinned/zero-copy, NvBufSurface), TensorRT engine building or custom plugins, DeepStream pipeline architecture, custom GStreamer elements or DeepStream plugins in C/C++, multi-stream batching, latency or throughput tuning, C++ concurrency and lifetime design, or the architecture and data model of a new full-stack tool.",
       "use": [
         {
           "harness": "claude",
@@ -104,6 +104,30 @@
         }
       ],
       "why": "Balanced cost and quality for everyday Python and integration work."
+    },
+    {
+      "when": "Small full-stack tools with reasonably clear requirements: backend APIs and services (for example FastAPI, Flask or Node), frontend UI (for example React or Vue), MongoDB schemas, queries and indexes, CRUD features, simple auth, dashboards for monitoring pipelines or models, and their tests.",
+      "use": [
+        {
+          "harness": "claude",
+          "model": "sonnet",
+          "effort": "medium",
+          "floor": {
+            "scope": "all_models",
+            "min_percent": 15
+          }
+        },
+        {
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "floor": {
+            "scope": "all_models",
+            "min_percent": 15
+          }
+        }
+      ],
+      "why": "Everyday web tooling around the AI work; balanced cost and quality. Ambiguous architecture or data-model design for these tools falls under the deep-reasoning rule."
     },
     {
       "when": "Mechanical, deterministic, low-risk and narrowly scoped edits: DeepStream or nvinfer config file tweaks, gst-launch pipeline string changes, label files, renaming, formatting, typo fixes, simple version bumps, file gathering, or small config changes.",
