@@ -10,76 +10,124 @@
       "why": "Honor explicit routing requests and provide an independent perspective."
     },
     {
-      "when": "The task is mechanical, deterministic, low-risk, and narrowly scoped: renaming, formatting, typo fixes, simple version bumps, file gathering, or small config changes.",
-      "use": [
-        {
-          "harness": "claude",
-          "model": "haiku",
-          "effort": "low",
-          "floor": { "scope": "all_models", "min_percent": 15 }
-        },
-        {
-          "harness": "codex",
-          "model": "gpt-6.1-sol",
-          "effort": "low",
-          "floor": { "scope": "all_models", "min_percent": 15 }
-        }
-      ],
-      "why": "Minimize cost and latency for tasks requiring little reasoning; fall back to the other subscription when one runs low."
-    },
-    {
-      "when": "The task involves ambiguous architecture, complex cross-module changes, risky refactoring, concurrency, performance bottlenecks, difficult debugging, or high-impact design decisions.",
+      "when": "GPU and real-time video pipeline work that needs deep systems reasoning: writing or optimizing CUDA kernels, GPU memory management (unified/pinned/zero-copy, NvBufSurface), TensorRT engine building or custom plugins, DeepStream pipeline architecture, custom GStreamer elements or DeepStream plugins in C/C++, multi-stream batching, latency or throughput tuning, or C++ concurrency and lifetime design.",
       "use": [
         {
           "harness": "claude",
           "model": "opus",
           "effort": "high",
-          "floor": { "scope": "all_models", "min_percent": 15 }
+          "floor": {
+            "scope": "all_models",
+            "min_percent": 15
+          }
         },
         {
           "harness": "codex",
           "model": "gpt-6.1-sol",
           "effort": "high",
-          "floor": { "scope": "all_models", "min_percent": 15 }
+          "floor": {
+            "scope": "all_models",
+            "min_percent": 15
+          }
         }
       ],
-      "why": "Reserve deep reasoning for tasks where mistakes or poor design decisions are expensive; fall back to the other subscription when one runs low."
+      "why": "Hardware-adjacent C++/CUDA design where subtle mistakes cost days; reserve the strongest reasoning. This host has no NVIDIA GPU, so workers must state what still needs verification on a GPU or Jetson device."
     },
     {
-      "when": "The task is a well-specified shell, Ansible, CI/CD, automation, or scripting implementation with clear acceptance criteria, excluding trivial mechanical edits.",
+      "when": "Diagnosing hard runtime failures: segfaults, memory leaks or corruption, deadlocks, race conditions, GStreamer caps negotiation or pipeline stalls, DeepStream or nvinfer errors, CUDA errors, accuracy drift between PyTorch, ONNX and TensorRT, or any bug whose cause is unknown.",
+      "use": [
+        {
+          "harness": "claude",
+          "model": "opus",
+          "effort": "high",
+          "floor": {
+            "scope": "all_models",
+            "min_percent": 15
+          }
+        },
+        {
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "high",
+          "floor": {
+            "scope": "all_models",
+            "min_percent": 15
+          }
+        }
+      ],
+      "why": "Root-causing across Python, C++, GStreamer and CUDA layers needs deep reasoning before any fix."
+    },
+    {
+      "when": "Well-specified C++ or build-system work: CMake or Makefile changes, compiler or linker errors, pybind11 or Python binding glue, packaging, Dockerfiles for DeepStream or CUDA images, Jetson or JetPack setup scripts, CI, shell, Ansible or automation with clear acceptance criteria.",
       "use": [
         {
           "harness": "codex",
           "model": "gpt-6.1-sol",
           "effort": "medium",
-          "floor": { "scope": "all_models", "min_percent": 15 }
+          "floor": {
+            "scope": "all_models",
+            "min_percent": 15
+          }
         },
         {
           "harness": "claude",
           "model": "sonnet",
           "effort": "medium",
-          "floor": { "scope": "all_models", "min_percent": 15 }
+          "floor": {
+            "scope": "all_models",
+            "min_percent": 15
+          }
         }
       ],
-      "why": "Use Codex for bounded engineering work with testable outcomes; fall back to Claude when Codex runs low."
+      "why": "Bounded engineering with testable outcomes; Codex handles build and tooling work well."
     },
     {
-      "when": "The task is a straightforward implementation, code review, bug fix, test addition, documentation update, or moderate multi-file change with reasonably clear requirements.",
+      "when": "Python AI integration work with reasonably clear requirements: inference or pre/post-processing code, model export to ONNX, DeepStream Python bindings (pyds) probes and metadata handling, data pipelines, evaluation scripts, tests, code review, bug fixes with a known cause, documentation, or moderate multi-file changes.",
       "use": [
         {
           "harness": "claude",
           "model": "sonnet",
           "effort": "medium",
-          "floor": { "scope": "all_models", "min_percent": 15 }
+          "floor": {
+            "scope": "all_models",
+            "min_percent": 15
+          }
         },
         {
           "harness": "codex",
           "model": "gpt-6.1-sol",
           "effort": "medium",
-          "floor": { "scope": "all_models", "min_percent": 15 }
+          "floor": {
+            "scope": "all_models",
+            "min_percent": 15
+          }
         }
       ],
-      "why": "Balance cost, implementation quality, and reasoning capability; fall back to the other subscription when one runs low."
+      "why": "Balanced cost and quality for everyday Python and integration work."
+    },
+    {
+      "when": "Mechanical, deterministic, low-risk and narrowly scoped edits: DeepStream or nvinfer config file tweaks, gst-launch pipeline string changes, label files, renaming, formatting, typo fixes, simple version bumps, file gathering, or small config changes.",
+      "use": [
+        {
+          "harness": "claude",
+          "model": "haiku",
+          "effort": "low",
+          "floor": {
+            "scope": "all_models",
+            "min_percent": 15
+          }
+        },
+        {
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "low",
+          "floor": {
+            "scope": "all_models",
+            "min_percent": 15
+          }
+        }
+      ],
+      "why": "Minimize cost and latency for tasks requiring little reasoning."
     }
   ],
   "default": [
@@ -87,13 +135,19 @@
       "harness": "claude",
       "model": "sonnet",
       "effort": "medium",
-      "floor": { "scope": "all_models", "min_percent": 15 }
+      "floor": {
+        "scope": "all_models",
+        "min_percent": 15
+      }
     },
     {
       "harness": "codex",
       "model": "gpt-6.1-sol",
       "effort": "medium",
-      "floor": { "scope": "all_models", "min_percent": 15 }
+      "floor": {
+        "scope": "all_models",
+        "min_percent": 15
+      }
     }
   ]
 }
