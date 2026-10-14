@@ -16,7 +16,7 @@ linked() {
 }
 
 mkdir -p "$REPO/.config/agents" "$REPO/.config/opencode" "$REPO/.local/bin" \
-	"$REPO/.local/share/firstmate/config" "$REPO/.claude" "$HOME"
+	"$REPO/.local/share/firstmate/config" "$REPO/.local/share/firstmate/data" "$REPO/.claude" "$HOME"
 cp "$ROOT/install.sh" "$REPO/install.sh"
 cp "$ROOT/.local/bin/install-agent-statusline" "$REPO/.local/bin/install-agent-statusline"
 cp "$ROOT/.local/bin/agent-statusline-claude" "$REPO/.local/bin/agent-statusline-claude"
@@ -24,16 +24,19 @@ echo rules >"$REPO/.config/agents/AGENTS.md"
 echo '@~/.config/agents/AGENTS.md' >"$REPO/.config/agents/CLAUDE.md"
 ln -s ../agents/AGENTS.md "$REPO/.config/opencode/AGENTS.md"
 echo dispatch >"$REPO/.local/share/firstmate/config/crew-dispatch.json"
+echo captain >"$REPO/.local/share/firstmate/data/captain.md"
 echo repo-only >"$REPO/.claude/settings.json"
 
 before=$(find "$HOME" -printf '%p %y %l\n' | sort)
 out=$("$REPO/install.sh" --dry-run)
 [[ $(find "$HOME" -printf '%p %y %l\n' | sort) == "$before" ]] || fail 'dry-run changed HOME'
 grep -q '^link    ~/.local/share/firstmate/config/crew-dispatch.json ' <<<"$out" || fail 'dispatch folded in dry-run'
+grep -q '^link    ~/.local/share/firstmate/data/captain.md ' <<<"$out" || fail 'captain folded in dry-run'
 grep -q '^link    ~/.claude/CLAUDE.md ' <<<"$out" || fail 'Claude mapping missing'
 "$REPO/install.sh" >/dev/null
-for dir in .local/share/firstmate .local/share/firstmate/config .claude; do real_dir "$dir"; done
+for dir in .local/share/firstmate .local/share/firstmate/config .local/share/firstmate/data .claude; do real_dir "$dir"; done
 linked .local/share/firstmate/config/crew-dispatch.json
+linked .local/share/firstmate/data/captain.md
 linked .claude/CLAUDE.md .config/agents/CLAUDE.md
 linked .config/opencode/AGENTS.md .config/agents/AGENTS.md
 jq -e '.statusLine.type == "command" and (.statusLine.command | contains("$HOME"))' "$HOME/.claude/settings.json" >/dev/null || fail 'Claude status line missing'
@@ -82,5 +85,7 @@ ln -s "$REPO/.local/share/firstmate" "$HOME/.local/share/firstmate"
 "$REPO/install.sh" >/dev/null
 real_dir .local/share/firstmate
 real_dir .local/share/firstmate/config
+real_dir .local/share/firstmate/data
 linked .local/share/firstmate/config/crew-dispatch.json
+linked .local/share/firstmate/data/captain.md
 echo 'agent config: OK'
