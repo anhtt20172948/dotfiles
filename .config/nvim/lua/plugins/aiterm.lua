@@ -195,5 +195,15 @@ return {
 			desc = "AI flow: firstmate",
 			mode = "n",
 		},
+		{
+			-- Xem thay đổi của crew: chọn worktree của worker -> tab mới + diffview
+			-- (chỉ xem). <A-g> trong picker mở lazygit.
+			"<leader>aR",
+			function()
+				require("customize.aiterm_flow").crew_review()
+			end,
+			desc = "AI flow: review crew worktree",
+			mode = "n",
+		},
 	},
 }

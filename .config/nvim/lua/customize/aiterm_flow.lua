@@ -159,6 +159,140 @@ function M.worktree()
 	M.notify(("worktree: %s\nxong thì: treehouse return %s"):format(path, path))
 end
 
+-- crew review ------------------------------------------------------------
+
+-- ex: chạy lệnh ex (seam cho test, khỏi mở tab / diffview thật).
+function M.ex(cmd)
+	vim.cmd(cmd)
+end
+
+--- Các bản sao (worktree) của crew firstmate, đọc từ state/*.meta. CHỈ ĐỌC: không
+--- đụng state hay worktree của worker. Bỏ record mà thư mục worktree đã mất.
+---@return { id: string, worktree: string, branch: string, project: string, base_branch: string, pr: string, kind: string }[]
+function M.crew_worktrees()
+	local keys = { worktree = true, branch = true, project = true, base_branch = true, pr = true, kind = true }
+	local out = {}
+	local files = vim.fn.glob(M.config.firstmate_dir .. "/state/*.meta", false, true)
+	table.sort(files)
+	for _, file in ipairs(files) do
+		local ok, lines = pcall(vim.fn.readfile, file)
+		if ok then
+			local rec = { id = vim.fn.fnamemodify(file, ":t:r") }
+			for _, line in ipairs(lines) do
+				local k, v = line:match("^([%w_]+)=(.*)$")
+				if k and keys[k] then
+					rec[k] = v
+				end
+			end
+			if rec.worktree and rec.worktree ~= "" and vim.fn.isdirectory(rec.worktree) == 1 then
+				for k in pairs(keys) do
+					rec[k] = rec[k] or ""
+				end
+				out[#out + 1] = rec
+			end
+		end
+	end
+	return out
+end
+
+--- merge-base giữa base của task và HEAD của worktree. Base = origin/<base_branch>,
+--- không có thì origin/HEAD của repo. Chỉ lệnh đọc (không fetch).
+---@return string? sha
+---@return string? err
+function M.crew_merge_base(wt, base_branch)
+	local base
+	if base_branch and base_branch ~= "" then
+		base = "origin/" .. base_branch
+	else
+		local res = M.exec({ "git", "-C", wt, "symbolic-ref", "--short", "refs/remotes/origin/HEAD" })
+		base = res.code == 0 and vim.trim(res.stdout or "") or ""
+		if base == "" then
+			return nil, "không xác định được base (origin/HEAD) của " .. wt
+		end
+	end
+	local res = M.exec({ "git", "-C", wt, "merge-base", base, "HEAD" })
+	local sha = vim.trim(res.stdout or "")
+	if res.code ~= 0 or sha == "" then
+		return nil, ("không có merge-base với %s trong %s"):format(base, wt)
+	end
+	return sha
+end
+
+local function crew_label(rec)
+	local project = vim.fn.fnamemodify(rec.project ~= "" and rec.project or rec.worktree, ":t")
+	return ("%s · %s · %s%s"):format(
+		rec.id,
+		project,
+		rec.branch ~= "" and rec.branch or "-",
+		rec.pr ~= "" and (" · PR " .. rec.pr) or ""
+	)
+end
+
+--- Mở bản sao của worker ở tab mới (cwd riêng) kèm diffview so với base.
+--- Chỉ xem: worker đang ghi vào đó.
+function M.crew_open(rec)
+	local sha, err = M.crew_merge_base(rec.worktree, rec.base_branch)
+	if not sha then
+		return M.notify(err, "error")
+	end
+	M.ex("tabnew")
+	M.ex("tcd " .. vim.fn.fnameescape(rec.worktree))
+	M.ex("DiffviewOpen " .. sha)
+	M.notify(("%s\nbản sao của worker, chỉ xem, đừng sửa/lưu file ở đây"):format(rec.worktree), "warn")
+end
+
+local function crew_stat(rec)
+	local sha = M.crew_merge_base(rec.worktree, rec.base_branch)
+	if not sha then
+		return { "(không tính được base)" }
+	end
+	local res = M.exec({ "git", "-C", rec.worktree, "diff", "--stat", sha })
+	return vim.split(vim.trim(res.stdout or ""), "\n")
+end
+
+--- Picker các worktree của crew: <CR> mở tab + diffview, <A-g> mở lazygit.
+function M.crew_review()
+	local recs = M.crew_worktrees()
+	if #recs == 0 then
+		return M.notify("no crew running")
+	end
+	if not (_G.Snacks and Snacks.picker) then
+		return vim.ui.select(recs, { prompt = "Crew review", format_item = crew_label }, function(rec)
+			if rec then
+				M.crew_open(rec)
+			end
+		end)
+	end
+	local items = {}
+	for _, rec in ipairs(recs) do
+		items[#items + 1] = { text = crew_label(rec), rec = rec, file = rec.worktree }
+	end
+	Snacks.picker({
+		title = "Crew review",
+		items = items,
+		format = "text",
+		preview = function(ctx)
+			ctx.preview:reset()
+			ctx.preview:set_lines(crew_stat(ctx.item.rec))
+		end,
+		confirm = function(picker, item)
+			picker:close()
+			if item then
+				M.crew_open(item.rec)
+			end
+		end,
+		actions = {
+			crew_lazygit = function(picker, item)
+				picker:close()
+				if item then
+					Snacks.lazygit({ cwd = item.rec.worktree })
+				end
+			end,
+		},
+		win = { input = { keys = { ["<a-g>"] = { "crew_lazygit", mode = { "n", "i" } } } } },
+	})
+end
+
 -- doctor -----------------------------------------------------------------
 
 --- Các dòng trạng thái cho <leader>ad (nối vào doctor của aiterm).
