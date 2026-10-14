@@ -11,44 +11,89 @@
     },
     {
       "when": "The task is mechanical, deterministic, low-risk, and narrowly scoped: renaming, formatting, typo fixes, simple version bumps, file gathering, or small config changes.",
-      "use": {
-        "harness": "claude",
-        "model": "haiku",
-        "effort": "low"
-      },
-      "why": "Minimize cost and latency for tasks requiring little reasoning."
+      "use": [
+        {
+          "harness": "claude",
+          "model": "haiku",
+          "effort": "low",
+          "floor": { "scope": "all_models", "min_percent": 15 }
+        },
+        {
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "low",
+          "floor": { "scope": "all_models", "min_percent": 15 }
+        }
+      ],
+      "why": "Minimize cost and latency for tasks requiring little reasoning; fall back to the other subscription when one runs low."
     },
     {
       "when": "The task involves ambiguous architecture, complex cross-module changes, risky refactoring, concurrency, performance bottlenecks, difficult debugging, or high-impact design decisions.",
-      "use": {
-        "harness": "claude",
-        "model": "opus",
-        "effort": "high"
-      },
-      "why": "Reserve deep reasoning for tasks where mistakes or poor design decisions are expensive."
+      "use": [
+        {
+          "harness": "claude",
+          "model": "opus",
+          "effort": "high",
+          "floor": { "scope": "all_models", "min_percent": 15 }
+        },
+        {
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "high",
+          "floor": { "scope": "all_models", "min_percent": 15 }
+        }
+      ],
+      "why": "Reserve deep reasoning for tasks where mistakes or poor design decisions are expensive; fall back to the other subscription when one runs low."
     },
     {
       "when": "The task is a well-specified shell, Ansible, CI/CD, automation, or scripting implementation with clear acceptance criteria, excluding trivial mechanical edits.",
-      "use": {
-        "harness": "codex",
-        "model": "gpt-6.1-sol",
-        "effort": "medium"
-      },
-      "why": "Use Codex for bounded engineering work with testable outcomes."
+      "use": [
+        {
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "floor": { "scope": "all_models", "min_percent": 15 }
+        },
+        {
+          "harness": "claude",
+          "model": "sonnet",
+          "effort": "medium",
+          "floor": { "scope": "all_models", "min_percent": 15 }
+        }
+      ],
+      "why": "Use Codex for bounded engineering work with testable outcomes; fall back to Claude when Codex runs low."
     },
     {
       "when": "The task is a straightforward implementation, code review, bug fix, test addition, documentation update, or moderate multi-file change with reasonably clear requirements.",
-      "use": {
-        "harness": "claude",
-        "model": "sonnet",
-        "effort": "medium"
-      },
-      "why": "Balance cost, implementation quality, and reasoning capability."
+      "use": [
+        {
+          "harness": "claude",
+          "model": "sonnet",
+          "effort": "medium",
+          "floor": { "scope": "all_models", "min_percent": 15 }
+        },
+        {
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "effort": "medium",
+          "floor": { "scope": "all_models", "min_percent": 15 }
+        }
+      ],
+      "why": "Balance cost, implementation quality, and reasoning capability; fall back to the other subscription when one runs low."
     }
   ],
-  "default": {
-    "harness": "claude",
-    "model": "sonnet",
-    "effort": "medium"
-  }
+  "default": [
+    {
+      "harness": "claude",
+      "model": "sonnet",
+      "effort": "medium",
+      "floor": { "scope": "all_models", "min_percent": 15 }
+    },
+    {
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "floor": { "scope": "all_models", "min_percent": 15 }
+    }
+  ]
 }
