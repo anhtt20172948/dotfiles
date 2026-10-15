@@ -81,6 +81,21 @@ local function run()
 	local previous = vim.fn.getcwd()
 	opts.confirm(picker, { file = detached })
 	assert(vim.fn.getcwd() == previous and notices, "missing worktree must report an error without switching")
+	local nested = repo .. "/.worktrees/nested"
+	git("-C", repo, "worktree", "add", "--detach", nested)
+	vim.fn.mkdir(nested .. "/sub", "p")
+	vim.cmd.cd(nested .. "/sub")
+	mapping[2]()
+	local current_items = {}
+	for _, item in ipairs(opts.items) do
+		if item.text:find("current", 1, true) then
+			current_items[#current_items + 1] = item.file
+		end
+	end
+	assert(
+		#current_items == 1 and current_items[1] == nested,
+		"only the innermost worktree must be current, got: " .. table.concat(current_items, ", ")
+	)
 	vim.cmd.cd(tmp)
 	opts, notices = nil, nil
 	mapping[2]()

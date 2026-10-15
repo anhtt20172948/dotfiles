@@ -8,7 +8,8 @@ function M.pick()
 		return
 	end
 
-	local items = {}
+	local entries, current_entry = {}, nil
+	local current = vim.uv.fs_realpath(cwd) or cwd
 	for _, record in ipairs(vim.split(result.stdout, "\0\0", { plain = true, trimempty = true })) do
 		local fields = vim.split(record, "\0", { plain = true, trimempty = true })
 		local path = fields[1]:match("^worktree (.*)$")
@@ -23,15 +24,26 @@ function M.pick()
 			end
 		end
 		if path and not bare then
-			-- So sánh đường dẫn thật để nhận cả cwd nằm trong thư mục con.
-			local current = vim.uv.fs_realpath(cwd) or cwd
+			local entry = { path = path, branch = branch, labels = labels }
+			entries[#entries + 1] = entry
+			-- So sánh đường dẫn thật để nhận cả cwd nằm trong thư mục con; worktree lồng sâu nhất thắng.
 			local actual = vim.uv.fs_realpath(path) or path
-			if current == actual or vim.startswith(current, actual .. "/") then
-				labels[#labels + 1] = "current"
+			if
+				(current == actual or vim.startswith(current, actual .. "/"))
+				and (not current_entry or #actual > #current_entry.actual)
+			then
+				current_entry, entry.actual = entry, actual
 			end
-			local suffix = #labels > 0 and (" [" .. table.concat(labels, ", ") .. "]") or ""
-			items[#items + 1] = { file = path, text = branch .. "  " .. path .. suffix }
 		end
+	end
+	if current_entry then
+		current_entry.labels[#current_entry.labels + 1] = "current"
+	end
+
+	local items = {}
+	for _, entry in ipairs(entries) do
+		local suffix = #entry.labels > 0 and (" [" .. table.concat(entry.labels, ", ") .. "]") or ""
+		items[#items + 1] = { file = entry.path, text = entry.branch .. "  " .. entry.path .. suffix }
 	end
 
 	return Snacks.picker({
