@@ -206,8 +206,8 @@ firstmate_choose_agent() {
   local quota claude_remaining=unknown codex_remaining=unknown percent entries=''
   quota=$(firstmate_quota) || quota=$'unknown\tunknown'
   IFS=$'\t' read -r claude_remaining codex_remaining <<<"$quota"
-  if [[ "$codex_remaining" != unknown ]] \
-    && { [[ "$claude_remaining" == unknown ]] || awk -v c="$claude_remaining" -v x="$codex_remaining" 'BEGIN { exit !(x > c) }'; }; then
+  if [[ "$claude_remaining" != unknown && "$codex_remaining" != unknown ]] \
+    && awk -v c="$claude_remaining" -v x="$codex_remaining" 'BEGIN { exit !(x > c) }'; then
     agents='codex claude'
   fi
   for agent in $agents; do
@@ -223,31 +223,28 @@ firstmate_choose_agent() {
   firstmate_pick Agent "$entries"
 }
 
-# All launch pickers use the same style and validate even forced selections
-# against the offered values. Cancellation exits before any tmux mutation.
+# All launch pickers use the same style and validate selections against the
+# offered values. Cancellation exits before any tmux mutation.
 firstmate_pick() {
-  local label=$1 entries=$2 forced=${3:-} selection status value _display
-  if [[ -n "$forced" ]]; then
-    selection=$forced
-  else
-    need fzf
-    selection=$(printf '%s' "$entries" | fzf --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
-      --no-sort --cycle --layout=reverse --margin=1,2 --border=rounded \
-      --border-label=" Firstmate $label " --info=hidden \
-      --header='Ctrl-j/k move  •  Enter select  •  Esc cancel' --prompt="$label › " \
-      --pointer='' --bind='ctrl-j:down,ctrl-k:up' \
-      --color='bg+:#313244,bg:#1e1e2e,fg:#cdd6f4,header:#89b4fa,fg+:#cdd6f4,prompt:#cba6f7,border:#6c7086,label:#cba6f7')
-    status=$?
-    case "$status" in 0) ;; 1|130) return 0 ;; *) return "$status" ;; esac
-  fi
+  local label=$1 entries=$2 selection status value _display offered=''
+  need fzf
+  selection=$(printf '%s' "$entries" | fzf --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
+    --no-sort --cycle --layout=reverse --margin=1,2 --border=rounded \
+    --border-label=" Firstmate $label " --info=hidden \
+    --header='Ctrl-j/k move  •  Enter select  •  Esc cancel' --prompt="$label › " \
+    --pointer='' --bind='ctrl-j:down,ctrl-k:up' \
+    --color='bg+:#313244,bg:#1e1e2e,fg:#cdd6f4,header:#89b4fa,fg+:#cdd6f4,prompt:#cba6f7,border:#6c7086,label:#cba6f7')
+  status=$?
+  case "$status" in 0) ;; 1|130) return 0 ;; *) return "$status" ;; esac
   while IFS=$'\t' read -r value _display; do
-    if [[ -n "$value" && "$value" == "$selection" ]]; then
+    [[ -n "$value" ]] || continue
+    if [[ "$value" == "$selection" ]]; then
       printf '%s\n' "$selection"
       return
     fi
+    offered="${offered:+$offered, }$value"
   done <<<"$entries"
-  err "invalid firstmate $label selection"
-  return 1
+  fail "invalid firstmate $label selection '$selection' (offered: $offered)"
 }
 
 # Read only the top-level model string, without evaluating TOML as shell code.
@@ -271,7 +268,8 @@ firstmate_models() {
   if [[ "$agent" == claude ]]; then
     printf '%s\t%s\n' opus opus sonnet sonnet haiku haiku
   else
-    model=$(jq -er '.models[]?.slug | select(type == "string")
+    model=$(jq -er '.models[]? | select((.visibility // "list") != "hide") | .slug
+      | select(type == "string")
       | select(test("^[A-Za-z0-9][A-Za-z0-9._:/-]*$"))' <<<"$catalog" 2>/dev/null) || model=$(firstmate_config_model)
     while IFS= read -r model; do
       [[ "$model" =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]*$ && "$model" != default ]] || continue
@@ -319,10 +317,10 @@ action_firstmate() {
     catalog=$(ai_run_limited 5 codex debug models 2>/dev/null) || catalog=''
   fi
   entries=$(firstmate_models "$agent" "$catalog")
-  model=$(firstmate_pick Model "$entries" "${AI_FIRSTMATE_MODEL:-}") || return $?
+  model=$(firstmate_pick Model "$entries") || return $?
   [[ -n "$model" ]] || return 0
   entries=$(firstmate_efforts "$agent" "$model" "$catalog")
-  effort=$(firstmate_pick Effort "$entries" "${AI_FIRSTMATE_EFFORT:-}") || return $?
+  effort=$(firstmate_pick Effort "$entries") || return $?
   [[ -n "$effort" ]] || return 0
   printf -v cmd 'exec %q' "$agent"
   if [[ "$model" != default ]]; then

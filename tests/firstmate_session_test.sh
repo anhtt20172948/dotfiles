@@ -6,7 +6,7 @@ TMP=$(mktemp -d)
 trap 'rm -rf -- "$TMP"' EXIT
 export HOME="$TMP/home"
 export PATH="$TMP/bin:$PATH"
-export AI_FIRSTMATE_AGENT=claude AI_FIRSTMATE_MODEL=default AI_FIRSTMATE_EFFORT=default
+export AI_FIRSTMATE_AGENT=claude
 export TMUX=mock
 export FIRSTMATE_DIR="$TMP/first mate"
 export LOG="$TMP/tmux.log"
@@ -14,6 +14,11 @@ mkdir -p "$TMP/bin" "$HOME" "$FIRSTMATE_DIR/.git"
 cat >"$TMP/bin/claude" <<'MOCK'
 #!/usr/bin/env bash
 exit 0
+MOCK
+cat >"$TMP/bin/fzf" <<'MOCK'
+#!/usr/bin/env bash
+IFS=$'\t' read -r value _
+printf '%s\n' "$value"
 MOCK
 cat >"$TMP/bin/tmux" <<'MOCK'
 #!/usr/bin/env bash

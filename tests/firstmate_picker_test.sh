@@ -57,7 +57,7 @@ printf '%s\n' "$QUOTA_JSON"
 MOCK
 chmod +x "$TMP/bin/"{tmux,fzf,quota-axi}
 export PATH="$TMP/bin"
-unset AI_FIRSTMATE_AGENT AI_FIRSTMATE_MODEL AI_FIRSTMATE_EFFORT
+unset AI_FIRSTMATE_AGENT
 agent() { printf '#!/usr/bin/env bash\nexit 0\n' > "$TMP/bin/$1"; /bin/chmod +x "$TMP/bin/$1"; }
 agent claude
 agent codex
@@ -73,7 +73,7 @@ printf '%s\n' "$MODELS_JSON"
 MOCK
 /bin/chmod +x "$TMP/bin/codex"
 /bin/cp "$TMP/bin/codex" "$TMP/codex-mock"
-export MODELS_JSON='{"models":[{"slug":"gpt-test","supported_reasoning_levels":[{"effort":"low"},{"effort":"high"}]},{"slug":"gpt-other","supported_reasoning_levels":[{"effort":"medium"},{"effort":"xhigh"}]}]}'
+export MODELS_JSON='{"models":[{"slug":"gpt-test","supported_reasoning_levels":[{"effort":"low"},{"effort":"high"}]},{"slug":"gpt-other","supported_reasoning_levels":[{"effort":"medium"},{"effort":"xhigh"}]},{"slug":"gpt-hidden","visibility":"hide","supported_reasoning_levels":[{"effort":"low"}]}]}'
 quota() {
   export QUOTA_JSON="{\"providers\":[{\"provider\":\"claude\",\"quotaSemantics\":{\"effectiveAvailability\":[{\"scope\":\"all_models\",\"effectivePercentRemaining\":$1},{\"scope\":\"sonnet\",\"effectivePercentRemaining\":0}]}},{\"provider\":\"codex\",\"quotaSemantics\":{\"effectiveAvailability\":[{\"scope\":\"all_models\",\"effectivePercentRemaining\":$2}]}}]}"
 }
@@ -139,11 +139,11 @@ run; first claude
 /bin/grep -Fxq $'codex\tcodex  quota ?' "$PICKER" || fail 'missing tooling hid quota cell'
 /bin/mv "$TMP/quota-axi" "$TMP/bin/quota-axi"
 quota null 90
-run; first codex
+run; first claude
 quota 101 90
-run; first codex
+run; first claude
 export QUOTA_JSON='{"providers":[{"provider":"claude","windows":[{"percentRemaining":90}],"quotaSemantics":{"effectiveAvailability":[{"scope":"all_models","status":"unknown"}]}},{"provider":"codex","quotaSemantics":{"effectiveAvailability":[{"scope":"all_models","effectivePercentRemaining":10}]}}]}'
-run; first codex
+run; first claude
 /bin/grep -Fxq $'claude\tclaude  quota ?' "$PICKER" || fail 'unknown headroom displayed as raw quota'
 export QUOTA_JSON='{"providers":[]}'
 run; first claude
@@ -170,6 +170,8 @@ done
 unset CANCEL_STAGE MODEL_CHOICE EFFORT_CHOICE
 export AI_FIRSTMATE_AGENT=codex MODEL_CHOICE=gpt-test EFFORT_CHOICE=high
 run; started 'codex -m gpt-test -c model_reasoning_effort=high'
+/bin/grep -Fxq $'gpt-other\tgpt-other' "$PICKER.Model" || fail 'missing listed codex model'
+if /bin/grep -Fq gpt-hidden "$PICKER.Model"; then fail 'hidden codex model offered'; fi
 if /bin/grep -Fq xhigh "$PICKER.Effort"; then fail 'unsupported catalog effort'; fi
 export MODEL_CHOICE=gpt-other EFFORT_CHOICE=xhigh
 run; started 'codex -m gpt-other -c model_reasoning_effort=xhigh'
@@ -186,20 +188,16 @@ unset MODELS_MODE
 printf 'model = "gpt-test"\n' > "$HOME/.codex/config.toml"
 export MODEL_CHOICE=default EFFORT_CHOICE=high
 run; started 'codex -c model_reasoning_effort=high'
-unset MODEL_CHOICE EFFORT_CHOICE
-export AI_FIRSTMATE_MODEL=gpt-test AI_FIRSTMATE_EFFORT=low
-run; started 'codex -m gpt-test -c model_reasoning_effort=low'
-[[ ! -s $PICKER && ! -s $PICKER.Model && ! -s $PICKER.Effort ]] || fail 'forced values prompted'
-export AI_FIRSTMATE_MODEL='gpt-test; touch /tmp/unsafe'
-if run; then fail 'invalid forced model accepted'; fi
+export MODEL_CHOICE=gpt-test EFFORT_CHOICE=xhigh
+if run 2>"$TMP/err"; then fail 'unsupported picker effort accepted'; fi
 no_start
-export AI_FIRSTMATE_MODEL=gpt-test AI_FIRSTMATE_EFFORT=xhigh
-if run; then fail 'unsupported forced effort accepted'; fi
-no_start
-unset AI_FIRSTMATE_MODEL AI_FIRSTMATE_EFFORT
+/bin/grep -Fq "invalid firstmate Effort selection 'xhigh' (offered: default, low, high)" "$TMP/err" \
+  || fail 'invalid selection not explained'
+/bin/grep -Fq 'Press any key' "$TMP/err" || fail 'invalid selection did not pause popup'
+unset EFFORT_CHOICE
 # shellcheck disable=SC2016
 export MODEL_CHOICE='$(touch /tmp/unsafe)'
-if run; then fail 'unoffered picker model accepted'; fi
+if run 2>/dev/null; then fail 'unoffered picker model accepted'; fi
 no_start
 unset MODEL_CHOICE AI_FIRSTMATE_AGENT
 export CHOICE='bash'

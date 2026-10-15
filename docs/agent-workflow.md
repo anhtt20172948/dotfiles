@@ -105,8 +105,6 @@ Tunables (environment variables):
 |----------|---------|--------|
 | `AI_GNHF_MAX_ITERATIONS` | `20` | `--max-iterations` passed to gnhf |
 | `AI_FIRSTMATE_AGENT` | unset | Force `claude` or `codex`; skip only the agent picker |
-| `AI_FIRSTMATE_MODEL` | unset | Skip model picker with an offered model or `default` |
-| `AI_FIRSTMATE_EFFORT` | unset | Skip effort picker with an offered level or `default` |
 | `FIRSTMATE_DIR` | `~/.local/share/firstmate` | firstmate checkout |
 
 Starting firstmate offers Claude or Codex with remaining quota (or `quota ?`),
