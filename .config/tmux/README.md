@@ -202,12 +202,23 @@ Notes:
   already exists, an idle single-pane shell at index 1 is reused; occupied windows
   (including all `fm-*` windows) are shifted to preserve their processes.
 - When starting a new first mate, an fzf picker offers installed `claude` and
-  `codex` CLIs with their all-model remaining quota from `quota-axi --json`.
-  The higher remaining percentage is selected first; ties or unknown quota default
-  to Claude. Esc cancels. A single installed CLI starts without a picker.
-  Quota lookup is capped at two seconds; missing or failed quota tooling leaves
-  the picker usable without percentages. Set `AI_FIRSTMATE_AGENT` to force a CLI
-  without asking. Existing firstmate windows always jump directly.
+  `codex` CLIs. Every row shows all-model quota from `quota-axi --json` as
+  `NN% left`, or `quota ?` when missing, unreadable, stale or timed out. Lookup
+  is capped at five seconds. Higher known quota comes first; unknown never
+  outranks known, and ties prefer Claude. A single installed CLI skips this step.
+- Model and effort pickers follow, each with `default` first to preserve CLI
+  configuration. Claude offers `opus`, `sonnet`, `haiku` and efforts `low`,
+  `medium`, `high`, `xhigh`, `max`. Codex reads models and their supported efforts
+  from `codex debug models` (five-second cap); on failure it offers the top-level
+  model in `~/.codex/config.toml` and `low`, `medium`, `high`, `xhigh` efforts.
+  Esc at any step cancels without launching. Existing firstmate windows jump
+  directly without any prompts.
+- `AI_FIRSTMATE_AGENT=claude` or `codex` skips only the agent picker.
+  `AI_FIRSTMATE_MODEL` and `AI_FIRSTMATE_EFFORT` skip their respective pickers;
+  values must be from the offered lists (`default` is accepted). For example,
+  `AI_FIRSTMATE_AGENT=claude AI_FIRSTMATE_MODEL=opus AI_FIRSTMATE_EFFORT=high`
+  launches `claude --model opus --effort high`. Codex uses `-m MODEL` and
+  `-c model_reasoning_effort=LEVEL`; defaults add no flags.
 - firstmate runs from its own checkout with its own `AGENTS.md`, which applies
   only inside firstmate's sessions. Global agent rules are covered in the
   [top-level README](../../README.md#installation).
