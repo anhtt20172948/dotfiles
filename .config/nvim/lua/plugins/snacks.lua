@@ -440,6 +440,13 @@ return {
 				desc = "Recent",
 			}, -- git
 			{
+				"<leader>gw",
+				function()
+					require("customize.git_worktrees").pick()
+				end,
+				desc = "Git Worktrees",
+			},
+			{
 				"<leader>gb",
 				function()
 					Snacks.picker.git_branches()
