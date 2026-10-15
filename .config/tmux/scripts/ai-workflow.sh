@@ -32,8 +32,6 @@ source "$LIB_DIR/ai-lib.sh"
 FIRSTMATE_DIR=${FIRSTMATE_DIR:-$HOME/.local/share/firstmate}
 FIRSTMATE_WINDOW=firstmate
 FIRSTMATE_SESSION=firstmate
-# An explicit override skips the launch picker; Claude is the quota fallback.
-FIRSTMATE_AGENT=${AI_FIRSTMATE_AGENT:-claude}
 # gnhf has no iteration cap by default; an unattended loop without one can burn
 # a whole quota window. Override per shell with AI_GNHF_MAX_ITERATIONS.
 GNHF_MAX_ITERATIONS=${AI_GNHF_MAX_ITERATIONS:-20}
@@ -174,12 +172,12 @@ firstmate_idle_shell() {
 }
 
 # Only use quota-axi's interpreted all-model headroom, not model-specific limits.
-# Missing tooling, unreadable quota and timeouts leave Claude as the default.
+# Missing tooling, unreadable quota and timeouts leave explicit unknown cells.
 firstmate_quota() {
   have quota-axi && have jq || return 1
   have timeout || have gtimeout || have perl || return 1
   local quota
-  quota=$(ai_run_limited 2 quota-axi --json 2>/dev/null) || return 1
+  quota=$(ai_run_limited 5 quota-axi --json 2>/dev/null) || return 1
   jq -er '
     def remaining($provider):
       [.providers[]? | select(.provider == $provider)
@@ -215,18 +213,87 @@ firstmate_choose_agent() {
   for agent in $agents; do
     case "$agent" in claude) percent=$claude_remaining ;; codex) percent=$codex_remaining ;; esac
     entries="${entries}${agent}"$'\t'"${agent}"
-    [[ "$percent" == unknown ]] || entries="${entries}  ${percent}% remaining"
+    if [[ "$percent" == unknown ]]; then
+      entries="${entries}  quota ?"
+    else
+      entries="${entries}  ${percent}% left"
+    fi
     entries="${entries}"$'\n'
   done
-  local selection status
+  firstmate_pick Agent "$entries"
+}
+
+# All launch pickers use the same style and validate selections against the
+# offered values. Cancellation exits before any tmux mutation.
+firstmate_pick() {
+  local label=$1 entries=$2 selection status value _display offered=''
+  need fzf
   selection=$(printf '%s' "$entries" | fzf --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
     --no-sort --cycle --layout=reverse --margin=1,2 --border=rounded \
-    --border-label=' Firstmate Agent ' --info=hidden \
-    --header='Ctrl-j/k move  •  Enter start  •  Esc cancel' --prompt='Agent › ' \
+    --border-label=" Firstmate $label " --info=hidden \
+    --header='Ctrl-j/k move  •  Enter select  •  Esc cancel' --prompt="$label › " \
     --pointer='' --bind='ctrl-j:down,ctrl-k:up' \
     --color='bg+:#313244,bg:#1e1e2e,fg:#cdd6f4,header:#89b4fa,fg+:#cdd6f4,prompt:#cba6f7,border:#6c7086,label:#cba6f7')
   status=$?
-  case "$status" in 0) printf '%s\n' "$selection" ;; 1|130) return 0 ;; *) return "$status" ;; esac
+  case "$status" in 0) ;; 1|130) return 0 ;; *) return "$status" ;; esac
+  while IFS=$'\t' read -r value _display; do
+    [[ -n "$value" ]] || continue
+    if [[ "$value" == "$selection" ]]; then
+      printf '%s\n' "$selection"
+      return
+    fi
+    offered="${offered:+$offered, }$value"
+  done <<<"$entries"
+  fail "invalid firstmate $label selection '$selection' (offered: $offered)"
+}
+
+# Read only the top-level model string, without evaluating TOML as shell code.
+firstmate_config_model() {
+  [[ -r "$HOME/.codex/config.toml" ]] || return 0
+  awk '
+    /^[[:space:]]*\[/ { exit }
+    /^[[:space:]]*model[[:space:]]*=/ {
+      sub(/^[^=]*=[[:space:]]*/, "")
+      quote = substr($0, 1, 1)
+      if (quote != "\"" && quote != "\047") exit
+      value = substr($0, 2); end = index(value, quote)
+      if (end) print substr(value, 1, end - 1)
+      exit
+    }' "$HOME/.codex/config.toml"
+}
+
+firstmate_models() {
+  local agent=$1 catalog=$2 model
+  printf 'default\tdefault (CLI config)\n'
+  if [[ "$agent" == claude ]]; then
+    printf '%s\t%s\n' opus opus sonnet sonnet haiku haiku
+  else
+    model=$(jq -er '.models[]? | select((.visibility // "list") != "hide") | .slug
+      | select(type == "string")
+      | select(test("^[A-Za-z0-9][A-Za-z0-9._:/-]*$"))' <<<"$catalog" 2>/dev/null) || model=$(firstmate_config_model)
+    while IFS= read -r model; do
+      [[ "$model" =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]*$ && "$model" != default ]] || continue
+      printf '%s\t%s\n' "$model" "$model"
+    done <<<"$model"
+  fi
+}
+
+firstmate_efforts() {
+  local agent=$1 model=$2 catalog=$3 levels level
+  printf 'default\tdefault\n'
+  if [[ "$agent" == claude ]]; then
+    levels=$'low\nmedium\nhigh\nxhigh\nmax'
+  else
+    [[ "$model" != default ]] || model=$(firstmate_config_model)
+    levels=$(jq -er --arg model "$model" '
+      .models[]? | select(.slug == $model) | .supported_reasoning_levels[]?
+      | if type == "object" then .effort else . end
+      | select(type == "string" and test("^[a-z]+$"))' <<<"$catalog" 2>/dev/null) \
+      || levels=$'low\nmedium\nhigh\nxhigh'
+  fi
+  while IFS= read -r level; do
+    [[ -n "$level" && "$level" != default ]] && printf '%s\t%s\n' "$level" "$level"
+  done <<<"$levels"
 }
 
 action_firstmate() {
@@ -234,7 +301,7 @@ action_firstmate() {
     || fail "firstmate not found at $FIRSTMATE_DIR - run install_agent_workflow"
   [[ -n "${TMUX:-}" ]] || fail 'firstmate needs tmux (its crewmates are tmux windows)'
 
-  local target cmd windows index window name panes agent first=''
+  local target cmd windows index window name panes agent model effort catalog='' entries flag first=''
   target=$(firstmate_target)
   if [[ -n "$target" ]]; then
     tmux switch-client -t "${target%%:*}" \; select-window -t "$target"
@@ -243,9 +310,29 @@ action_firstmate() {
   agent=$(firstmate_choose_agent) || return $?
   [[ -n "$agent" ]] || return 0
   # fzf emits only the installed agent names offered above.
-  [[ -n "${AI_FIRSTMATE_AGENT:-}" || "$agent" == claude || "$agent" == codex ]] \
+  [[ "$agent" == claude || "$agent" == codex ]] \
     || fail 'invalid firstmate agent selection'
+  if [[ "$agent" == codex ]] && have jq \
+    && { have timeout || have gtimeout || have perl; }; then
+    catalog=$(ai_run_limited 5 codex debug models 2>/dev/null) || catalog=''
+  fi
+  entries=$(firstmate_models "$agent" "$catalog")
+  model=$(firstmate_pick Model "$entries") || return $?
+  [[ -n "$model" ]] || return 0
+  entries=$(firstmate_efforts "$agent" "$model" "$catalog")
+  effort=$(firstmate_pick Effort "$entries") || return $?
+  [[ -n "$effort" ]] || return 0
   printf -v cmd 'exec %q' "$agent"
+  if [[ "$model" != default ]]; then
+    case "$agent" in claude) flag=--model ;; codex) flag=-m ;; esac
+    printf -v cmd '%s %q %q' "$cmd" "$flag" "$model"
+  fi
+  if [[ "$effort" != default ]]; then
+    case "$agent" in
+      claude) printf -v cmd '%s --effort %q' "$cmd" "$effort" ;;
+      codex) printf -v cmd '%s -c %q' "$cmd" "model_reasoning_effort=$effort" ;;
+    esac
+  fi
   target="=$FIRSTMATE_SESSION:1"
   if tmux has-session -t "=$FIRSTMATE_SESSION" 2>/dev/null; then
     windows=$(tmux list-windows -t "=$FIRSTMATE_SESSION" \
@@ -310,7 +397,7 @@ action_tool() {
     gnhf)                printf 'gnhf' ;;
     firstmate)
       if [[ -n "${AI_FIRSTMATE_AGENT:-}" ]] || have claude; then
-        printf '%s' "$FIRSTMATE_AGENT"
+        printf '%s' "${AI_FIRSTMATE_AGENT:-claude}"
       else
         printf 'codex'
       fi ;;

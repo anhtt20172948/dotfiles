@@ -15,6 +15,11 @@ cat >"$TMP/bin/claude" <<'MOCK'
 #!/usr/bin/env bash
 exit 0
 MOCK
+cat >"$TMP/bin/fzf" <<'MOCK'
+#!/usr/bin/env bash
+IFS=$'\t' read -r value _
+printf '%s\n' "$value"
+MOCK
 cat >"$TMP/bin/tmux" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s|' "$@" >>"$LOG"
