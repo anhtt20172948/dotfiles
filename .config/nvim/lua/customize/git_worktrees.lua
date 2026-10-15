@@ -50,7 +50,7 @@ function M.pick()
 		title = "Git Worktrees",
 		items = items,
 		format = "text",
-		preview = "none",
+		layout = { preview = false },
 		confirm = function(picker, item)
 			if not item then
 				return
