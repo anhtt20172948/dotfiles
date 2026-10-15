@@ -203,4 +203,13 @@ unset MODEL_CHOICE AI_FIRSTMATE_AGENT
 export CHOICE='bash'
 if run; then fail 'unoffered agent accepted'; fi
 no_start
+unset CHOICE
+for AI_FIRSTMATE_AGENT in '' codex; do
+  export AI_FIRSTMATE_AGENT CANCEL=1
+  : > "$PICKER"
+  bash "$ROOT/.config/tmux/scripts/ai-workflow.sh" </dev/null 2>"$TMP/err" || fail 'menu failed'
+  /bin/grep '^firstmate' "$PICKER" | /bin/grep -Fq '●' || fail 'menu marked installed firstmate missing'
+  if [[ -s $TMP/err ]]; then fail "menu errored: $(/bin/cat "$TMP/err")"; fi
+done
+unset AI_FIRSTMATE_AGENT CANCEL
 printf 'firstmate picker: OK\n'

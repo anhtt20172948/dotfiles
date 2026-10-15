@@ -397,7 +397,7 @@ action_tool() {
     gnhf)                printf 'gnhf' ;;
     firstmate)
       if [[ -n "${AI_FIRSTMATE_AGENT:-}" ]] || have claude; then
-        printf '%s' "$FIRSTMATE_AGENT"
+        printf '%s' "${AI_FIRSTMATE_AGENT:-claude}"
       else
         printf 'codex'
       fi ;;
