@@ -87,11 +87,19 @@ Check the result with `<leader>ad` in Neovim (section "Agent workflow") or
 | Menu of all actions | `prefix F` | | `ai-workflow.sh` |
 | Push current branch through the gate | `prefix F` → Push | `<leader>ap` | `git push no-mistakes <branch>` |
 | Watch gate pipelines | `prefix N` | `<leader>aP` | `no-mistakes` |
+| Show / switch existing Git worktrees | | `<leader>gw` (Snacks picker; Enter switches cwd) | `git worktree list` |
 | Work in a fresh worktree | `prefix F` → New worktree shell | `<leader>aW` (opens an AI session there) | `treehouse get` |
 | Start an overnight loop | `prefix F` → gnhf | `<leader>ag` | `ai-workflow.sh gnhf "<goal>"` |
 | Talk to the first mate | `prefix F` → firstmate | `<leader>aF` | `ai-workflow.sh firstmate` |
 | Review a worker's changes (view only) | | `<leader>aR` (new tab + diffview vs base; `<A-g>` lazygit) | |
 | Check on the crew / jump to a worker | `prefix C` or `prefix F` → crew | | `ai-workflow.sh crew` |
+
+`<leader>gw` lists worktree branches and paths, marking the current, locked and
+prunable entries. Switching changes Neovim's cwd, so subsequent file pickers and
+the cwd-bound file tree use the selected worktree. Open buffers and unsaved edits
+are preserved at their original paths; their Git signs still describe those
+files. Open files from the selected worktree to edit there. This picker only
+switches existing worktrees.
 
 The tmux menu and the Neovim keys share one implementation,
 [`.config/tmux/scripts/ai-workflow.sh`](../.config/tmux/scripts/ai-workflow.sh).
