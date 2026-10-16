@@ -176,6 +176,61 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(json.loads(again.stdout), {"changed": False, "changes": []})
         self.assertEqual((self.claude.read_bytes(), self.codex.read_bytes()), after)
 
+    def test_context_settings_merge_preserves_model_effort_and_environment(self):
+        original = {"model": "opus[1m]", "effortLevel": "max",
+                    "env": {"OTHER_VAR": "keep", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "90"}}
+        self.claude.write_text(json.dumps(original))
+        self.codex.write_text('''# private settings
+model = "gpt-6-astra"
+model_reasoning_effort = "high"
+model_context_window = 272000 # previous window
+"model_auto_compact_token_limit" = 200000
+[profiles.private]
+model_context_window = 100000
+[tui]
+show_tooltips = false
+''')
+        before = (self.claude.read_bytes(), self.codex.read_bytes())
+        preview = self.install("--check")
+        self.assertEqual(preview.returncode, 0, preview.stderr)
+        self.assertEqual((self.claude.read_bytes(), self.codex.read_bytes()), before)
+        applied = self.install()
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        claude = json.loads(self.claude.read_text())
+        self.assertEqual(claude["env"], {"OTHER_VAR": "keep",
+                         "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "60",
+                         "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000"})
+        self.assertEqual(claude["model"], original["model"])
+        self.assertEqual(claude["effortLevel"], original["effortLevel"])
+        codex = tomllib.loads(self.codex.read_text())
+        self.assertEqual(codex["model_context_window"], 872000)
+        self.assertEqual(codex["model_auto_compact_token_limit"], 523200)
+        self.assertEqual(codex["model"], "gpt-6-astra")
+        self.assertEqual(codex["model_reasoning_effort"], "high")
+        self.assertEqual(codex["profiles"]["private"], {"model_context_window": 100000})
+        self.assertIn("# private settings", self.codex.read_text())
+        self.assertFalse(json.loads(self.install().stdout)["changed"])
+
+    def test_missing_settings_get_global_context_defaults(self):
+        self.claude.unlink()
+        self.codex.unlink()
+        self.assertEqual(self.install().returncode, 0)
+        claude = json.loads(self.claude.read_text())
+        self.assertEqual(claude["env"]["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "60")
+        self.assertEqual(claude["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"], "1000000")
+        self.assertNotIn("model", claude)
+        codex = tomllib.loads(self.codex.read_text())
+        self.assertEqual(codex["model_context_window"], 872000)
+        self.assertEqual(codex["model_auto_compact_token_limit"], 523200)
+        self.assertNotIn("model", codex)
+
+    def test_invalid_claude_environment_fails_without_writes(self):
+        self.claude.write_text('{"env": []}')
+        before = (self.claude.read_bytes(), self.codex.read_bytes())
+        result = self.install()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.claude.read_bytes(), self.codex.read_bytes()), before)
+
     def test_invalid_config_fails_without_partial_write(self):
         self.codex.write_text("[tui\n")
         before = (self.claude.read_bytes(), self.codex.read_bytes())
