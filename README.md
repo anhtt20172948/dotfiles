@@ -78,9 +78,24 @@ treatment as other files. The repo-level `.claude/` remains project-only.
 Codex's externally managed `~/.codex/AGENTS.md` is left untouched; incorporating
 these rules there requires a later change through its managing tool.
 
-The installer also merges status-line settings into the existing
-`~/.claude/settings.json` and `~/.codex/config.toml` without changing their
-other settings. Claude renders its live model, effort, context percentages,
+The installer also merges status-line and context settings into the existing
+`~/.claude/settings.json` and `~/.codex/config.toml`, preserving unrelated settings.
+Claude's `env` gets `CLAUDE_CODE_AUTO_COMPACT_WINDOW="1000000"` and
+`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE="60"`: a 1M auto-compact window with a 60%
+threshold (about 600k tokens, allowing for CLI output reserves). The explicit
+window avoids a smaller tuned default; the percentage applies to proactive
+compaction. Model and effort defaults are preserved, including `opus[1m]`.
+[Claude's model documentation](https://code.claude.com/docs/en/model-config#extended-context)
+explains which models support 1M, when `[1m]` is needed, and access requirements.
+Smaller models remain capped at their supported window. See the
+[Claude environment reference](https://code.claude.com/docs/en/env-vars).
+Codex gets global `model_context_window = 872000` and
+`model_auto_compact_token_limit = 523200` (60%), using the installed model
+catalog's maximum of 872k rather than an unavailable 1M window. These
+[Codex keys](https://developers.openai.com/codex/config-reference) are top-level,
+not per-model; neither setting grants a model more server-side capacity.
+
+Claude renders its live model, effort, context percentages,
 current input tokens, 5-hour and weekly rate-limit usage with reset times,
 session input/output token totals, and their average per-second rate over API
 time through `.local/bin/agent-statusline-claude` (`jq` required). Session totals
