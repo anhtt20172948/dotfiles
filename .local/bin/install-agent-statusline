@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge portable status lines into a home without replacing other CLI settings."""
+"""Merge agent status lines and context limits without replacing other CLI settings."""
 
 import argparse
 import json
@@ -15,6 +15,9 @@ import tomllib
 CODEX_ITEMS = ["model-with-reasoning", "context-used", "context-remaining", "context-window-size",
                "five-hour-limit", "weekly-limit", "total-input-tokens", "total-output-tokens"]
 CLAUDE_STATUS = {"type": "command", "command": '"$HOME/.local/bin/agent-statusline-claude"'}
+CLAUDE_ENV = {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000",
+              "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "60"}
+CODEX_CONTEXT = {"model_context_window": 872000, "model_auto_compact_token_limit": 523200}
 TOML_VALUE = "status_line = " + json.dumps(CODEX_ITEMS)
 TABLE_RE = re.compile(r"(?m)^\s*\[([^\]\n]+)\]\s*(?:#.*)?$")
 STATUS_RE = re.compile(r"(?ms)^[ \t]*status_line[ \t]*=[ \t]*(?:\[[^\]]*\]|[^\n]*)")
@@ -24,16 +27,39 @@ def claude_result(path):
     data = json.loads(path.read_text()) if path.exists() else {}
     if not isinstance(data, dict):
         raise TypeError(f"{path}: expected a JSON object")
-    if data.get("statusLine") == CLAUDE_STATUS:
+    env = data.get("env", {})
+    if not isinstance(env, dict):
+        raise TypeError(f"{path}: expected env to be a JSON object")
+    desired = {**data, "statusLine": CLAUDE_STATUS, "env": {**env, **CLAUDE_ENV}}
+    if data == desired:
         return None
-    return json.dumps({**data, "statusLine": CLAUDE_STATUS}, indent=2, ensure_ascii=False) + "\n"
+    return json.dumps(desired, indent=2, ensure_ascii=False) + "\n"
+
+
+def merge_codex_context(original):
+    # Root settings must precede every table, including arrays of tables.
+    first_table = re.search(r"(?m)^[ \t]*\[", original)
+    end = first_table.start() if first_table else len(original)
+    root, tables = original[:end], original[end:]
+    for key, value in CODEX_CONTEXT.items():
+        assignment = re.compile(r"(?m)^[ \t]*(?:" + key + r"|\"" + key
+                                + r"\"|'" + key + r"')[ \t]*=[^\n]*")
+        replacement = f"{key} = {value}"
+        if assignment.search(root):
+            root = assignment.sub(replacement, root)
+        else:
+            root = replacement + "\n" + root
+    return root + tables
 
 
 def codex_result(path):
     original = path.read_text() if path.exists() else ""
     parsed = tomllib.loads(original)
-    if parsed.get("tui", {}).get("status_line") == CODEX_ITEMS:
+    desired = {**parsed, **CODEX_CONTEXT,
+               "tui": {**parsed.get("tui", {}), "status_line": CODEX_ITEMS}}
+    if parsed == desired:
         return None
+    original = merge_codex_context(original)
     tables = list(TABLE_RE.finditer(original))
     table = next((m for m in tables if m.group(1).strip() == "tui"), None)
     if table is None:
@@ -51,9 +77,8 @@ def codex_result(path):
             body = "\n" + TOML_VALUE + body
         updated = original[:table.end()] + body + original[end:]
     after = tomllib.loads(updated)
-    desired = {**parsed, "tui": {**parsed.get("tui", {}), "status_line": CODEX_ITEMS}}
     if after != desired:
-        raise ValueError(f"{path}: status line merge would alter other settings")
+        raise ValueError(f"{path}: agent settings merge would alter other settings")
     return updated
 
 
