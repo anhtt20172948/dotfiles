@@ -85,10 +85,9 @@ Claude's `env` gets `CLAUDE_CODE_AUTO_COMPACT_WINDOW="1000000"` and
 threshold (about 600k tokens, allowing for CLI output reserves). The explicit
 window avoids a smaller tuned default; the percentage applies to proactive
 compaction. Model and effort defaults are preserved, including `opus[1m]`.
-[Claude's supported 1M models](https://code.claude.com/docs/en/model-config#extended-context)
-include Opus 4.6+ and Sonnet 4.6, Sonnet 5+, Haiku 5.5, and Fable 5/5.1;
-Opus 4.6 and Sonnet 4.6 need `[1m]` and eligible access. Smaller models remain
-capped at their supported window. See the
+[Claude's model documentation](https://code.claude.com/docs/en/model-config#extended-context)
+explains which models support 1M, when `[1m]` is needed, and access requirements.
+Smaller models remain capped at their supported window. See the
 [Claude environment reference](https://code.claude.com/docs/en/env-vars).
 Codex gets global `model_context_window = 872000` and
 `model_auto_compact_token_limit = 523200` (60%), using the installed model
