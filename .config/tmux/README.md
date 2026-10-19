@@ -17,12 +17,13 @@ Modular dotfile-based tmux configuration.
 ├── monitor.conf                → Monitor Center config
 ├── ai-popup.conf               → minimal config for persistent AI sessions
 └── scripts/
-    ├── ai-lib.sh               → shared helpers for the four ai-* scripts
+    ├── ai-lib.sh               → shared helpers for the ai-* scripts
     ├── ai-picker.sh            → fzf picker + previews for AI coding CLIs
     ├── ai-sessions.sh          → per-tool new, live and saved session picker
     ├── persistent-ai.sh        → persistent, per-project AI popup controller
     ├── ai-status.sh            → status-bar segment: live agent count
     ├── ai-workflow.sh          → agent workflow menu (treehouse/no-mistakes/gnhf/firstmate)
+    ├── ai-account.sh           → Claude account manager (prefix E)
     ├── crew-view.sh            → firstmate fleet overview and worker picker
     ├── monitor-lib.sh          → shared helpers for the two monitor scripts
     ├── monitor.sh              → system monitor launcher (fzf menu)
