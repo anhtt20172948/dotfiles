@@ -241,9 +241,10 @@ refresh shows results. If quota cannot be read at all, the menus still list ever
 account. `ai-acct status` and `:AiAccount` wait up to twelve seconds for missing
 or expired readings, then show whatever is known. Only normalized percentages,
 reset times and states are cached in `${XDG_CACHE_HOME:-~/.cache}/ai-acct`
-(directory `700`, files `600`), never tokens or raw quota diagnostics. Results
-and failures are reused for five minutes, rate limits until the vendor's retry
-time (fifteen minutes when it gives none, at most an hour); concurrent opens
+(directory `700`, files `600`), never tokens or raw quota diagnostics. Successful
+readings are reused for five minutes and rate limits until the vendor's retry
+time (fifteen minutes when it gives none, at most an hour); failed reads are
+retried on the next view. Concurrent opens
 share one refresh per account. Old readings are labeled stale while refreshing,
 and replacing a token invalidates its cached result. Requests time out after ten
 seconds and never refresh credentials. `ai-acct list --quota` appends the same
