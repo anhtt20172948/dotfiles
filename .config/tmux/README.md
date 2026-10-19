@@ -229,8 +229,8 @@ Notes:
   Old readings carry their age; a throttled usage API shows
   `could not read quota` instead of an empty bar when nothing was ever read.
   Tokens are typed hidden straight into `ai-acct`. Quota is cached and refreshed in the background so fzf never
-  waits; the first open shows `unknown`, so reopen after the refresh (caching
-  details in the linked section below).
+  waits; the first open may show `unknown` or an older reading, so reopen after
+  the refresh (caching details in the linked section below).
   **prefix Q** shows Claude/Codex quota using the active one. Running processes
   retain their token. See
   [token setup and migration](../../README.md#claude-account-switching).
