@@ -4,6 +4,8 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
 TMP=$(mktemp -d)
 trap 'rm -rf -- "$TMP"' EXIT
 export HOME="$TMP/home space" XDG_CACHE_HOME="$TMP/cache" FM_HOME="$TMP/first mate" LOG="$TMP/log"
+export XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share" XDG_STATE_HOME="$HOME/.local/state"
+export CODEX_HOME="$HOME/.codex"
 export PATH="$TMP/bin:$PATH"
 mkdir -p "$HOME/.config/claude-accounts" "$TMP/bin" "$FM_HOME"
 ACCT="$ROOT/.local/bin/ai-acct"

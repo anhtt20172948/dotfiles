@@ -5,6 +5,11 @@ vim.opt.rtp:prepend(root .. "/.config/nvim")
 local tmp = vim.fn.tempname()
 vim.fn.mkdir(tmp .. "/.config/claude-accounts", "p")
 vim.env.HOME = tmp
+vim.env.XDG_CACHE_HOME = tmp .. "/cache"
+vim.env.XDG_CONFIG_HOME = tmp .. "/.config"
+vim.env.XDG_DATA_HOME = tmp .. "/data"
+vim.env.XDG_STATE_HOME = tmp .. "/state"
+vim.env.CODEX_HOME = tmp .. "/.codex"
 local ecc = require("customize.aiterm_ecc")
 local acct = require("customize.ai_account")
 acct.setup()
@@ -124,8 +129,8 @@ quota_fails = true
 acct.menu()
 assert(vim.deep_equal(last(10).cmd, { "ai-acct", "use", "a" }))
 assert(vim.deep_equal(offered, {
-	"Use a",
-	"Use work (active)",
+	"Use a  ◌ unknown",
+	"Use work (active)  ◌ unknown",
 	"+ Add account",
 	"Replace token",
 	"Rename account",

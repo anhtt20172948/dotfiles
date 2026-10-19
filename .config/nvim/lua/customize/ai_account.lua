@@ -35,7 +35,7 @@ end
 -- { name, active } from ai-acct, the single owner of account names.
 local function accounts(with_quota)
 	local ok, result = pcall(function()
-		return vim.system(with_quota and { "ai-acct", "list", "--quota" } or { "ai-acct", "list" }, { text = true }):wait()
+		return vim.system(with_quota and { "ai-acct", "list", "--quota" } or { "ai-acct", "list" }, { text = true }):wait(with_quota and 1000 or nil)
 	end)
 	if not ok or result.code ~= 0 then
 		return with_quota and accounts() or {}
@@ -171,7 +171,7 @@ function M.menu()
 			action = "use",
 			name = account.name,
 			text = "Use " .. account.name .. (account.active and " (active)" or "")
-				.. (account.quota and "  " .. account.quota or ""),
+				.. "  " .. (account.quota or "◌ unknown"),
 		}
 	end
 	items[#items + 1] = { action = "add", text = "+ Add account" }

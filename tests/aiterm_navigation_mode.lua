@@ -37,7 +37,7 @@ step(function()
 			vim.keymap.set("n", spec[1], spec[2])
 		end
 	end
-	vim.opt.rtp:append(vim.fn.stdpath("data") .. "/lazy/vim-tmux-navigator")
+	vim.opt.rtp:append(root .. "/tests/fixtures/vim-tmux-navigator")
 	vim.cmd("runtime plugin/tmux_navigator.vim")
 	check(vim.g.loaded_tmux_navigator == 1, "vim-tmux-navigator must load for mapping regression test")
 	if nav_spec.config then

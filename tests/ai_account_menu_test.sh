@@ -21,9 +21,11 @@ printf '%s\n' "$choice"
 MOCK
 cat > "$TMP/bin/quota-axi" <<'MOCK'
 #!/bin/sh
-printf '{"providers":[]}\n'
+printf '{"providers":[{"provider":"claude","state":{"status":"fresh"},"windows":[]},{"provider":"codex","state":{"status":"fresh"},"windows":[]}]}\n'
 MOCK
 chmod +x "$TMP/bin/fzf" "$TMP/bin/quota-axi"
+export XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share" XDG_STATE_HOME="$HOME/.local/state"
+export CODEX_HOME="$HOME/.codex"
 export PATH="$TMP/bin:$PATH"
 MENU="$ROOT/.config/tmux/scripts/ai-account.sh"
 dir=$HOME/.config/claude-accounts
@@ -49,9 +51,27 @@ grep -Fq $'use:work\tUse work (active)  ◌ unknown' "$MENU_LOG" || fail 'active
 grep -Fq $'use:home\tUse home  ◌ unknown' "$MENU_LOG" || fail 'inactive account entry'
 # Accounts stay switchable when quota cannot be read.
 XDG_CACHE_HOME=/dev/null/cache menu use:home < /dev/null
-grep -Fqx $'use:work\tUse work (active)' "$MENU_LOG" || fail 'quota failure hid accounts'
+grep -Fqx $'use:work\tUse work (active)  ◌ unknown' "$MENU_LOG" || fail 'quota failure hid accounts'
 [[ $(cat "$dir/active") == home ]] || fail 'use without quota'
 menu use:work < /dev/null
+
+# Exercise the real menu and account switch with a failed, absent or stuck helper.
+mkdir -p "$TMP/helper-bin"
+cp "$ROOT/.local/bin/ai-acct" "$TMP/helper-bin/ai-acct"
+ln -sf "$TMP/helper-bin/ai-acct" "$TMP/bin/ai-acct"
+for mode in failure missing hang; do
+  case "$mode" in
+    failure) printf 'raise SystemExit(1)\n' > "$TMP/helper-bin/ai-acct-quota" ;;
+    missing) rm -f "$TMP/helper-bin/ai-acct-quota" ;;
+    hang) printf 'import time\ntime.sleep(60)\n' > "$TMP/helper-bin/ai-acct-quota" ;;
+  esac
+  menu use:home < /dev/null
+  grep -Fqx $'use:home\tUse home  ◌ unknown' "$MENU_LOG" || fail "$mode helper hid quota state"
+  [[ $(cat "$dir/active") == home ]] || fail "$mode helper prevented account switch"
+  menu use:work < /dev/null
+  [[ $(cat "$dir/active") == work ]] || fail "$mode helper prevented switching back"
+done
+ln -sf "$ROOT/.local/bin/ai-acct" "$TMP/bin/ai-acct"
 
 printf 'synthetic-new\n' | menu edit work
 [[ $(cat "$dir/work.token") == synthetic-new ]] || fail 'edit token'

@@ -1,4 +1,5 @@
 """Exercise the real CLI with synthetic credentials and an offline quota binary."""
+import errno
 import json
 import os
 import pty
@@ -41,6 +42,12 @@ assert name in ('work', 'personal', 'limited', 'unknown', 'codex')
 assert provider != 'codex' or not token
 with open(Path(os.environ['HOME']) / 'calls', 'a') as f:
     f.write(json.dumps({'name': name, 'argv': sys.argv[1:]}) + '\\n')
+gate = os.environ.get('FAKE_GATE')
+if gate:
+    deadline = time.monotonic() + 30
+    while not Path(gate).exists():
+        assert time.monotonic() < deadline, 'test gate never released'
+        time.sleep(.05)
 time.sleep(float(os.environ.get('FAKE_DELAY', '0')))
 p = {'provider': provider, 'state': {'status': 'fresh', 'stale': False}, 'windows': []}
 if name == 'limited':
@@ -60,11 +67,29 @@ print(json.dumps({'providers': [p]}))
         fake.chmod(0o700)
         self.env = {**os.environ, 'HOME': str(self.home),
                     'XDG_CACHE_HOME': str(self.home / 'cache'),
+                    'XDG_CONFIG_HOME': str(self.home / '.config'),
+                    'XDG_DATA_HOME': str(self.home / 'data'),
+                    'XDG_STATE_HOME': str(self.home / 'state'),
+                    'CODEX_HOME': str(self.home / '.codex'),
                     'PATH': str(bindir) + ':' + os.environ['PATH'],
                     'CLAUDE_CODE_OAUTH_TOKEN': 'synthetic-inherited',
                     'ANTHROPIC_API_KEY': 'synthetic-api',
                     'CLAUDE_CONFIG_DIR': '/wrong',
                     'QUOTA_AXI_CLAUDE_PROFILES': '/wrong', 'TZ': 'UTC'}
+        self.addCleanup(self.drain_workers)
+
+    def drain_workers(self):
+        self.release_reads()
+        subprocess.run([str(ACCT), 'status'], env={**self.env, 'FAKE_DELAY': '0'},
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+
+    def block_reads(self):
+        gate = self.home / 'release'
+        gate.unlink(missing_ok=True)
+        self.env['FAKE_GATE'] = str(gate)
+
+    def release_reads(self):
+        (self.home / 'release').touch()
 
     def run_cli(self, *args, timeout=15):
         result = subprocess.run([str(ACCT), *args], env=self.env,
@@ -133,12 +158,26 @@ print(json.dumps({'providers': [p]}))
                 result = subprocess.run([str(ACCT), 'status'], env=env, stdout=slave,
                                         stderr=subprocess.PIPE, timeout=15)
                 self.assertEqual(result.returncode, 0)
-                output = os.read(master, 8192).decode()
+                os.close(slave)
+                slave = None
+                chunks = []
+                while True:
+                    try:
+                        chunk = os.read(master, 8192)
+                    except OSError as error:
+                        if error.errno != errno.EIO:
+                            raise
+                        break
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                output = b''.join(chunks).decode()
                 self.assertEqual('\x1b[' in output, not no_color)
                 self.assertNotIn('synthetic-', output)
             finally:
                 os.close(master)
-                os.close(slave)
+                if slave is not None:
+                    os.close(slave)
 
     def test_real_fzf_menu_uses_cached_bars(self):
         self.run_cli('status')
@@ -156,13 +195,13 @@ print(json.dumps({'providers': [p]}))
         self.assertNotIn('synthetic-', menu + result.stdout + result.stderr)
 
     def test_slow_menu_is_immediate_and_deduplicated(self):
-        delay = 3
-        self.env['FAKE_DELAY'] = str(delay)
-        start = time.monotonic()
+        # Reads cannot finish until explicitly released. Menu opens must finish
+        # while the gate is closed, with a generous outer deadlock timeout.
+        self.block_reads()
         for _ in range(3):
-            self.assertIn('unknown', self.run_cli('list', '--quota'))
-        self.assertLess(time.monotonic() - start, delay)
+            self.assertIn('unknown', self.run_cli('list', '--quota', timeout=5))
         self.poll(lambda: len(self.names_called()) == 4, 'menu refreshes did not start')
+        self.release_reads()
         self.assertIn('75% left', self.run_cli('status'))
         self.assertEqual(sorted(self.names_called()),
                          ['codex', 'limited', 'personal', 'unknown', 'work'])
@@ -183,22 +222,29 @@ print(json.dumps({'providers': [p]}))
         path = self.home / 'cache/ai-acct/claude-work.json'
         record = json.loads(path.read_text())
         path.write_text(json.dumps({'identity': record['identity'], 'time': 'x'}))
+        self.block_reads()
         self.assertIn('work\tactive\t◌ unknown', self.run_cli('list', '--quota'))
+        self.release_reads()
         self.assertIn('75% left', self.run_cli('status'))
 
     def test_expiry_rate_backoff_and_token_replacement(self):
         self.run_cli('status')
         cache = self.home / 'cache/ai-acct'
+        self.block_reads()
         # Expire ordinary entries; the rate limit stays backed off until retryAfter.
         for path in cache.glob('*.json'):
             record = json.loads(path.read_text())
             path.write_text(json.dumps({**record, 'time': time.time() - 360}))
         output = self.run_cli('list', '--quota')
         self.assertIn('(stale)', output)
-        self.poll(lambda: self.names_called().count('work') == 2, 'stale entry was not refreshed')
+        self.release_reads()
+        self.run_cli('status')
+        self.assertEqual(self.names_called().count('work'), 2)
         self.assertEqual(self.names_called().count('limited'), 1)
+        self.block_reads()
         (self.accounts / 'work.token').write_text('synthetic-personal')
         self.assertIn('unknown', self.run_cli('list', '--quota').splitlines()[-1])
+        self.release_reads()
         work = self.section(self.run_cli('status'), '✦ Claude work (active)')
         self.assertIn('25% left', work[0])
 

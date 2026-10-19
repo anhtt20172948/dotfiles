@@ -60,7 +60,7 @@ run_test() {
 	# link) và require() nạp code ở đó thay vì code của checkout/worktree này.
 	local cfg
 	cfg=$(mktemp -d)
-	local failed=0 t
+	local failed=0 t case_dir
 	for t in tests/*.lua; do
 		local -a cmd
 		# Test bất đồng bộ cần event loop -> luafile; -l thoát trước khi timer chạy.
@@ -69,23 +69,31 @@ run_test() {
 		else
 			cmd=(nvim --headless -u NONE -i NONE -l "$t" "$ROOT")
 		fi
-		if XDG_CONFIG_HOME="$cfg" TMUX='' timeout 120 "${cmd[@]}" >/dev/null 2>&1; then
+		case_dir="$cfg/lua-${t##*/}"
+		mkdir -p "$case_dir/home" "$case_dir/config" "$case_dir/cache" "$case_dir/data" "$case_dir/state"
+		if HOME="$case_dir/home" XDG_CONFIG_HOME="$case_dir/config" XDG_CACHE_HOME="$case_dir/cache" \
+			XDG_DATA_HOME="$case_dir/data" XDG_STATE_HOME="$case_dir/state" CODEX_HOME="$case_dir/home/.codex" \
+			TMUX='' timeout 120 "${cmd[@]}" >/dev/null 2>&1; then
 			echo "ok   $t"
 		else
 			echo "FAIL $t (rerun: TMUX= ${cmd[*]})"
 			failed=1
 		fi
 	done
-	rm -rf "$cfg"
 	for t in tests/*_test.sh; do
 		[[ -f "$t" ]] || continue
-		if timeout 120 bash "$t" >/dev/null 2>&1; then
+		case_dir="$cfg/shell-${t##*/}"
+		mkdir -p "$case_dir/home" "$case_dir/config" "$case_dir/cache" "$case_dir/data" "$case_dir/state"
+		if HOME="$case_dir/home" XDG_CONFIG_HOME="$case_dir/config" XDG_CACHE_HOME="$case_dir/cache" \
+			XDG_DATA_HOME="$case_dir/data" XDG_STATE_HOME="$case_dir/state" CODEX_HOME="$case_dir/home/.codex" \
+			timeout 120 bash "$t" >/dev/null 2>&1; then
 			echo "ok   $t"
 		else
 			echo "FAIL $t (rerun: bash $t)"
 			failed=1
 		fi
 	done
+	rm -rf "$cfg"
 	return "$failed"
 }
 

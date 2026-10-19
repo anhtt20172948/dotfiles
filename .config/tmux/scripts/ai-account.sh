@@ -61,12 +61,16 @@ pick() {
 # in one place. Quota is optional: switching must work without it.
 account_entries() {
   local listing name state quota label
-  listing=$(ai-acct list --quota 2>/dev/null) || listing=$(ai-acct list) || return 1
+  if have timeout || have gtimeout || have perl; then
+    listing=$(ai_run_limited 1 ai-acct list --quota 2>/dev/null) || listing=$(ai-acct list) || return 1
+  else
+    listing=$(ai-acct list) || return 1
+  fi
   while IFS='|' read -r name state quota; do
     [[ -n "$name" ]] || continue
     label=$name
     [[ "$state" != active ]] || label+=' (active)'
-    [[ -z "$quota" ]] || label+="  $quota"
+    label+="  ${quota:-◌ unknown}"
     printf '%s\t%s\n' "$name" "$label"
   done <<<"${listing//$'\t'/|}"
 }

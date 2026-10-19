@@ -265,7 +265,9 @@ copied or deleted by this workflow.
 
 In tmux, **prefix Q** opens the quota TUI with the active token and **prefix E**
 opens the account menu with per-account quota bars: use, add, replace token,
-rename or remove. In Neovim,
+rename or remove. If the quota helper fails, is missing, or does not answer
+within one second, the menus still list and switch accounts with an explicit
+`unknown` quota state. In Neovim,
 `<leader>au` opens the same menu, `:AiAccount` shows quota, and
 `:AiAccount use|add|edit|rename|remove [NAME]` (or `:AiAccount NAME`) runs one
 action; tokens are entered with hidden input and sent to `ai-acct` on stdin.
