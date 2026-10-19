@@ -1,0 +1,265 @@
+#!/usr/bin/env python3
+"""Sanitized quota views: menus never block, status waits briefly.
+Credentials stay in ai-acct's child env."""
+import datetime as dt
+import fcntl
+import json
+import math
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import time
+
+ACCT = Path(__file__).resolve().with_name('ai-acct')
+CACHE = Path(os.environ.get('XDG_CACHE_HOME', str(Path.home() / '.cache'))) / 'ai-acct'
+TTL = 300
+RATE_TTL = 900
+MAX_RATE_TTL = 3600
+WAIT = 12
+UNKNOWN = {'state': 'unknown', 'percent': None, 'reset': None, 'windows': []}
+
+
+def identity(provider, name):
+    if provider == 'codex':
+        path = Path(os.environ.get('CODEX_HOME', str(Path.home() / '.codex'))) / 'auth.json'
+    else:
+        path = Path.home() / '.config/claude-accounts' / (name + '.token')
+    try:
+        stat = path.stat()
+        return [str(path), stat.st_ino, stat.st_mtime_ns, stat.st_ctime_ns,
+                stat.st_size, stat.st_mode]
+    except OSError:
+        return [str(path), None]
+
+
+def cached(path, key):
+    try:
+        record = json.loads(path.read_text())
+        if (record['identity'] == key and isinstance(record['quota'].get('windows'), list)
+                and isinstance(record['time'], (int, float))):
+            return record
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return None
+
+
+def fresh(record):
+    ttl = TTL
+    if record['quota'].get('state') == 'rate-limited':
+        retry = reset_time(record['quota'].get('retry'))
+        ttl = RATE_TTL if retry is None else min(max(
+            dt.datetime.fromisoformat(retry).timestamp() - record['time'], TTL), MAX_RATE_TTL)
+    return 0 <= time.time() - record['time'] < ttl
+
+
+def number(value):
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value) and 0 <= value <= 100)
+
+
+def reset_time(value):
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace('Z', '+00:00'))
+        return parsed.isoformat() if parsed.tzinfo else None
+    except ValueError:
+        return None
+
+
+def label(window):
+    text = window.get('label')
+    if not isinstance(text, str) or not text.isprintable() or not text.strip():
+        text = window.get('kind', '')
+    return str(text).strip()[:16] or 'quota'
+
+
+def normalize(data, provider):
+    entry = next(p for p in data['providers'] if p['provider'] == provider)
+    state = entry.get('state', {})
+    if state.get('status') == 'rate_limited' or state.get('retryAfter'):
+        return {**UNKNOWN, 'state': 'rate-limited', 'retry': reset_time(state.get('retryAfter'))}
+    if state.get('status') != 'fresh':
+        raise ValueError('no fresh reading')
+    shown = [{'label': label(w), 'percent': w['percentRemaining'],
+              'reset': reset_time(w.get('resetsAt'))}
+             for w in entry.get('windows', []) if number(w.get('percentRemaining'))]
+    windows = [w for w in entry.get('windows', [])
+               if w.get('kind') in ('session', 'weekly', 'monthly', 'credits')
+               and number(w.get('percentRemaining'))]
+    semantics = entry.get('quotaSemantics', {}).get('effectiveAvailability')
+    if semantics is not None:
+        scope = next((s for s in semantics if s.get('scope') == 'all_models'), {})
+        percent = scope.get('effectivePercentRemaining')
+        if scope.get('status') == 'unknown' or not number(percent):
+            return {**UNKNOWN, 'windows': shown}
+        limiting = next((w for w in windows if w.get('id') in scope.get('limitingWindowIds', [])), {})
+    elif windows:
+        limiting = min(windows, key=lambda w: w['percentRemaining'])
+        percent = limiting['percentRemaining']
+    else:
+        return {**UNKNOWN, 'windows': shown}
+    return {'state': 'known', 'percent': percent,
+            'reset': reset_time(limiting.get('resetsAt')), 'windows': shown}
+
+
+def child_env():
+    return {k: v for k, v in os.environ.items() if k not in (
+        'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'CLAUDE_CONFIG_DIR',
+        'QUOTA_AXI_CLAUDE_PROFILES')}
+
+
+def refresh(provider, name, path):
+    # OS lock is released even on timeout/crash; overlapping menus make one read.
+    with path.with_suffix('.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            # Another refresh is in flight; exit when it finishes so waiters see it.
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            return
+        key = identity(provider, name)
+        previous = cached(path, key)
+        if previous and fresh(previous):
+            return
+        try:
+            result = subprocess.run([str(ACCT), '_quota', provider, name],
+                                    env=child_env(), stdout=subprocess.PIPE,
+                                    stderr=subprocess.DEVNULL, timeout=WAIT - 2, text=True)
+            # Some providers return useful rate-limit JSON with a nonzero exit.
+            quota = normalize(json.loads(result.stdout), provider)
+        except (OSError, ValueError, KeyError, TypeError, StopIteration,
+                subprocess.TimeoutExpired):
+            # Failures are not cached, so the next view retries instead of
+            # showing unknown for a whole TTL.
+            return
+        if identity(provider, name) != key:
+            return
+        record = {'identity': key, 'time': time.time(), 'quota': quota}
+        fd, tmp = tempfile.mkstemp(dir=CACHE, prefix='.quota-')
+        try:
+            with os.fdopen(fd, 'w') as out:
+                json.dump(record, out)
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+
+
+def cache_path(provider, name):
+    return CACHE / (provider + '-' + name + '.json')
+
+
+def read_quota(provider, name):
+    record = cached(cache_path(provider, name), identity(provider, name))
+    return (record['quota'] if record else UNKNOWN), bool(record and not fresh(record))
+
+
+def is_fresh(provider, name):
+    record = cached(cache_path(provider, name), identity(provider, name))
+    return bool(record and fresh(record))
+
+
+def start_refresh(provider, name):
+    if is_fresh(provider, name):
+        return None
+    return subprocess.Popen([sys.executable, str(Path(__file__).resolve()),
+                             '_refresh', provider, name], env=child_env(),
+                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def wait_fresh(targets):
+    # The full view waits a bounded time; refreshes keep running after a timeout.
+    pending = [p for p in (start_refresh(*t) for t in targets) if p]
+    deadline = time.monotonic() + WAIT
+    while pending and time.monotonic() < deadline:
+        time.sleep(0.1)
+        pending = [p for p in pending if p.poll() is None]
+
+
+def bar(percent):
+    filled = round(percent / 10)
+    text = '█' * filled + '░' * (10 - filled)
+    if sys.stdout.isatty() and 'NO_COLOR' not in os.environ:
+        color = 32 if percent >= 50 else 33 if percent >= 20 else 31
+        text = f'\033[{color}m{text}\033[0m'
+    return f'{text} {percent:3.0f}% left'
+
+
+def when(value):
+    value = reset_time(value)
+    if not value:
+        return ''
+    return dt.datetime.fromisoformat(value).astimezone().strftime('%b %d %H:%M %Z')
+
+
+def unavailable(quota):
+    if quota.get('state') == 'rate-limited':
+        retry = when(quota.get('retry'))
+        return '◌ rate-limited' + (f' (retry after {retry})' if retry else ' (retry later)')
+    return '◌ unknown'
+
+
+def render(quota, stale=False):
+    percent = quota.get('percent')
+    if quota.get('state') != 'known' or not number(percent):
+        return unavailable(quota)
+    return bar(percent) + ('  (stale)' if stale else '')
+
+
+def render_full(title, quota, stale):
+    windows = [w for w in quota.get('windows') or [] if isinstance(w, dict)
+               and isinstance(w.get('label'), str) and number(w.get('percent'))]
+    if not windows:
+        return [title, '    ' + unavailable(quota)]
+    lines = [title + ('  (stale; refreshing)' if stale else '')]
+    for window in windows:
+        reset = when(window.get('reset'))
+        lines.append(f'    {window["label"]:<16} {bar(window["percent"])}'
+                     + (f'  ↻ {reset}' if reset else ''))
+    return lines
+
+
+def main():
+    os.umask(0o077)
+    CACHE.mkdir(mode=0o700, parents=True, exist_ok=True)
+    CACHE.chmod(0o700)
+    if sys.argv[1] == '_refresh':
+        provider, name = sys.argv[2:]
+        # Only names emitted by ai-acct list can become cache paths.
+        if provider not in ('claude', 'codex') or not name or len(name) > 32:
+            return
+        if not name[0].isascii() or not all(c in 'abcdefghijklmnopqrstuvwxyz0123456789_-' for c in name):
+            return
+        refresh(provider, name, cache_path(provider, name))
+        return
+    listing = subprocess.run([str(ACCT), 'list'], stdout=subprocess.PIPE, text=True)
+    if listing.returncode:
+        sys.exit(listing.returncode)
+    rows = [line.split('\t') for line in listing.stdout.splitlines()]
+    targets = [('claude', name) for name, _ in rows]
+    if sys.argv[1] == 'list':
+        for (name, state), target in zip(rows, targets):
+            start_refresh(*target)
+            print(f'{name}\t{state}\t{render(*read_quota(*target))}')
+        return
+    targets.append(('codex', 'default'))
+    wait_fresh(targets)
+    for (name, state), target in zip(rows, targets):
+        title = '✦ Claude ' + name + (' (active)' if state == 'active' else '')
+        print('\n'.join(render_full(title, *read_quota(*target))))
+    if not rows:
+        print('Claude account: unconfigured')
+    print('\n'.join(render_full('◆ Codex', *read_quota('codex', 'default'))))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError):
+        # Never forward raw subprocess diagnostics or arbitrary JSON fields.
+        print('ai-acct: quota unavailable (check cache permissions)', file=sys.stderr)
+        sys.exit(1)

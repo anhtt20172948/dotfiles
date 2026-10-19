@@ -3,7 +3,9 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
 TMP=$(mktemp -d)
 trap 'rm -rf -- "$TMP"' EXIT
-export HOME="$TMP/home space" FM_HOME="$TMP/first mate" LOG="$TMP/log"
+export HOME="$TMP/home space" XDG_CACHE_HOME="$TMP/cache" FM_HOME="$TMP/first mate" LOG="$TMP/log"
+export XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share" XDG_STATE_HOME="$HOME/.local/state"
+export CODEX_HOME="$HOME/.codex"
 export PATH="$TMP/bin:$PATH"
 mkdir -p "$HOME/.config/claude-accounts" "$TMP/bin" "$FM_HOME"
 ACCT="$ROOT/.local/bin/ai-acct"
@@ -73,8 +75,7 @@ grep -Fqx -- "-p review this|$PWD" "$LOG"
 python3 -I -c 'import sys, yaml; sys.exit(yaml.safe_load(open(sys.argv[1]))["agent_path_override"]["claude"] != "ai-acct-claude")' \
   "$ROOT/.no-mistakes/config.yaml" || fail 'no-mistakes override'
 "$ACCT" status >> "$TMP/out"
-grep -Fq 'Claude account: b' "$TMP/out"
-grep -Fqx 'quota|--provider claude,codex' "$LOG"
+grep -Fq 'Claude b (active)' "$TMP/out"
 EXPECTED_TOKEN=synthetic-a "$ACCT" use a
 [ "$(cat "$HOME/.config/claude-accounts/active")" = a ] || fail 'selector a'
 EXPECTED_TOKEN=synthetic-a "$ACCT" resume

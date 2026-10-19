@@ -57,18 +57,22 @@ pick() {
   return 1
 }
 
-# NAME<TAB>NAME [(active)] lines, from ai-acct so the name rules live in one place.
+# NAME<TAB>NAME [(active)] [QUOTA] lines, from ai-acct so the name rules live
+# in one place. Quota is optional: switching must work without it.
 account_entries() {
-  local listing name state
-  listing=$(ai-acct list) || return 1
-  while IFS=$'\t' read -r name state; do
+  local listing name state quota label
+  if have timeout || have gtimeout || have perl; then
+    listing=$(ai_run_limited 1 ai-acct list --quota 2>/dev/null) || listing=$(ai-acct list) || return 1
+  else
+    listing=$(ai-acct list) || return 1
+  fi
+  while IFS='|' read -r name state quota; do
     [[ -n "$name" ]] || continue
-    if [[ "$state" == active ]]; then
-      printf '%s\t%s (active)\n' "$name" "$name"
-    else
-      printf '%s\t%s\n' "$name" "$name"
-    fi
-  done <<<"$listing"
+    label=$name
+    [[ "$state" != active ]] || label+=' (active)'
+    label+="  ${quota:-◌ unknown}"
+    printf '%s\t%s\n' "$name" "$label"
+  done <<<"${listing//$'\t'/|}"
 }
 
 pick_account() {

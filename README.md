@@ -204,7 +204,7 @@ fresh machine needs no root to get a working userland:
 accounts use one shared `~/.claude` directory and `~/.claude.json`, so history and
 `claude --continue` survive an account switch. Codex keeps its single account.
 Install with `./install.sh`, keep `~/.local/bin` on `PATH`, and install `jq`,
-`claude`, `quota-axi`, and optionally tmux.
+`claude`, `quota-axi`, Python 3, and optionally tmux.
 
 1. Add each account with `ai-acct add NAME` (or **prefix E** / `<leader>au`).
    Names use lowercase letters, digits, `-` and `_`. The token is typed hidden
@@ -226,8 +226,30 @@ Install with `./install.sh`, keep `~/.local/bin` on `PATH`, and install `jq`,
 Switching inside tmux also updates its global environment for future panes
 and clears legacy config/API-key overrides. A switch cannot update the parent
 shell's environment: use `ai-acct exec claude`, `ai-acct resume`, or a new zsh
-shell to launch immediately with the selected token. `ai-acct status` shows the
-active account and queries Claude and Codex quota with that token.
+shell to launch immediately with the selected token. `ai-acct status` shows every
+Claude account with an active marker and an icon, then one remaining-quota bar
+and reset time per quota window (session, week, ...), plus Codex the same way.
+Bars are green/yellow/red on a terminal; piped output and Neovim notifications
+have no ANSI colors (`NO_COLOR` also disables color). Unknown or rate-limited
+readings show a label instead of a fabricated bar.
+
+Quota reads run in parallel background processes, each Claude token supplied only
+through its own child environment using the same validation as `ai-acct exec`.
+Opening a menu never waits for a quota request: it shows one compact bar for the
+most limiting window, the first open shows `unknown`, and reopening after the
+refresh shows results. If quota cannot be read at all, the menus still list every
+account. `ai-acct status` and `:AiAccount` wait up to twelve seconds for missing
+or expired readings, then show whatever is known. Only normalized percentages,
+reset times and states are cached in `${XDG_CACHE_HOME:-~/.cache}/ai-acct`
+(directory `700`, files `600`), never tokens or raw quota diagnostics. Successful
+readings are reused for five minutes and rate limits until the vendor's retry
+time (fifteen minutes when it gives none, at most an hour); failed reads are
+retried on the next view. Concurrent opens
+share one refresh per account. Old readings are labeled stale while refreshing,
+and replacing a token invalidates its cached result. Requests time out after ten
+seconds and never refresh credentials. `ai-acct list --quota` appends the same
+compact display as a third tab-separated column; plain `ai-acct list` is
+unchanged.
 
 The no-mistakes daemon runs under systemd and never reads `.zshenv`, so
 `.no-mistakes/config.yaml` points its Claude agent at `ai-acct-claude`
@@ -243,7 +265,10 @@ old secondary directory is no longer used; no history or credentials are
 copied or deleted by this workflow.
 
 In tmux, **prefix Q** opens the quota TUI with the active token and **prefix E**
-opens the account menu: use, add, replace token, rename or remove. In Neovim,
+opens the account menu with per-account quota bars: use, add, replace token,
+rename or remove. If the quota helper fails, is missing, or does not answer
+within one second, the menus still list and switch accounts with an explicit
+`unknown` quota state. In Neovim,
 `<leader>au` opens the same menu, `:AiAccount` shows quota, and
 `:AiAccount use|add|edit|rename|remove [NAME]` (or `:AiAccount NAME`) runs one
 action; tokens are entered with hidden input and sent to `ai-acct` on stdin.
