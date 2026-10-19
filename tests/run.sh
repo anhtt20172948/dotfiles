@@ -17,6 +17,7 @@ export PATH="$HOME/.local/bin:$PATH"
 # install_neovim, install_linux_x86_64) và hypr chưa sạch -> thêm vào khi sửa.
 LINT_FILES=(
 	.config/tmux/scripts/*.sh
+	.local/bin/ai-acct
 	.local/bin/agent-statusline-claude
 	.local/bin/install_agent_workflow
 	.local/bin/install_zsh

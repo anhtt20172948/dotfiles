@@ -641,4 +641,13 @@ function M.count(tool)
 	return vim.tbl_count(M.commands(tool))
 end
 
+-- Account UI lives separately so ECC discovery stays focused.
+function M.account_status()
+	return require("customize.ai_account").status()
+end
+
+function M.setup_account()
+	require("customize.ai_account").setup()
+end
+
 return M

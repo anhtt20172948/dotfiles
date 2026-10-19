@@ -32,3 +32,13 @@ tmp/
 .claude/skills/*
 !.claude/skills/dotfiles-patterns/
 .treehouse/
+# Local account credentials must never be versioned.
+.claude-b/
+.credentials.json
+.claude.json
+*.token
+*.tokens
+*.token.json
+*.tokens.json
+.env
+.env.*

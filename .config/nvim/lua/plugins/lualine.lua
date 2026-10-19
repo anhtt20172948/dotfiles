@@ -107,6 +107,7 @@ return {
 				lualine_c = { diff, filetype, filename },
 
 				lualine_x = {
+					{ require("customize.aiterm_ecc").account_status },
 					{
 						function()
 							-- local clients = vim.lsp.get_active_clients({ bufnr = 0 })
