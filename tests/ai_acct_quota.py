@@ -174,6 +174,9 @@ print(json.dumps({'providers': [p]}))
         self.assertLess(time.monotonic() - start, 20)
         self.assertEqual(self.section(output, '✦ Claude work (active)'), ['    ◌ unknown'])
         self.assertEqual(self.section(output, '◆ Codex'), ['    ◌ unknown'])
+        # A timed-out read is not cached: once the endpoint recovers, status retries.
+        self.env['FAKE_DELAY'] = '0'
+        self.assertIn('75% left', self.section(self.run_cli('status'), '✦ Claude work (active)')[0])
 
     def test_malformed_cache_is_a_miss(self):
         self.run_cli('status')

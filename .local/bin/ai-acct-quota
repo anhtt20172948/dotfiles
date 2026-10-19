@@ -82,7 +82,7 @@ def normalize(data, provider):
     if state.get('status') == 'rate_limited' or state.get('retryAfter'):
         return {**UNKNOWN, 'state': 'rate-limited', 'retry': reset_time(state.get('retryAfter'))}
     if state.get('status') != 'fresh':
-        return UNKNOWN
+        raise ValueError('no fresh reading')
     shown = [{'label': label(w), 'percent': w['percentRemaining'],
               'reset': reset_time(w.get('resetsAt'))}
              for w in entry.get('windows', []) if number(w.get('percentRemaining'))]
@@ -117,12 +117,13 @@ def refresh(provider, name, path):
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
+            # Another refresh is in flight; exit when it finishes so waiters see it.
+            fcntl.flock(lock, fcntl.LOCK_EX)
             return
         key = identity(provider, name)
         previous = cached(path, key)
         if previous and fresh(previous):
             return
-        quota = UNKNOWN
         try:
             result = subprocess.run([str(ACCT), '_quota', provider, name],
                                     env=child_env(), stdout=subprocess.PIPE,
@@ -131,7 +132,9 @@ def refresh(provider, name, path):
             quota = normalize(json.loads(result.stdout), provider)
         except (OSError, ValueError, KeyError, TypeError, StopIteration,
                 subprocess.TimeoutExpired):
-            pass
+            # Failures are not cached, so the next view retries instead of
+            # showing unknown for a whole TTL.
+            return
         if identity(provider, name) != key:
             return
         record = {'identity': key, 'time': time.time(), 'quota': quota}
@@ -161,21 +164,20 @@ def is_fresh(provider, name):
 
 def start_refresh(provider, name):
     if is_fresh(provider, name):
-        return False
-    subprocess.Popen([sys.executable, str(Path(__file__).resolve()),
-                      '_refresh', provider, name], env=child_env(),
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, start_new_session=True)
-    return True
+        return None
+    return subprocess.Popen([sys.executable, str(Path(__file__).resolve()),
+                             '_refresh', provider, name], env=child_env(),
+                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, start_new_session=True)
 
 
 def wait_fresh(targets):
     # The full view waits a bounded time; refreshes keep running after a timeout.
-    pending = [t for t in targets if start_refresh(*t)]
+    pending = [p for p in (start_refresh(*t) for t in targets) if p]
     deadline = time.monotonic() + WAIT
     while pending and time.monotonic() < deadline:
         time.sleep(0.1)
-        pending = [t for t in pending if not is_fresh(*t)]
+        pending = [p for p in pending if p.poll() is None]
 
 
 def bar(percent):
