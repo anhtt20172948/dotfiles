@@ -226,26 +226,45 @@ Install with `./install.sh`, keep `~/.local/bin` on `PATH`, and install `jq`,
 Switching inside tmux also updates its global environment for future panes
 and clears legacy config/API-key overrides. A switch cannot update the parent
 shell's environment: use `ai-acct exec claude`, `ai-acct resume`, or a new zsh
-shell to launch immediately with the selected token. `ai-acct status` shows every
-Claude account with an active marker and an icon, then one remaining-quota bar
-and reset time per quota window (session, week, ...), plus Codex the same way.
-Bars are green/yellow/red on a terminal; piped output and Neovim notifications
-have no ANSI colors (`NO_COLOR` also disables color). Unknown or rate-limited
-readings show a label instead of a fabricated bar.
+shell to launch immediately with the selected token. `ai-acct status` draws one
+framed box per Claude account (active marker and icon in the title), with one
+remaining-quota bar and reset time per quota window (session, week, ...), plus
+Codex the same way. Bars are green/yellow/red by level on a terminal; piped
+output and Neovim notifications have no ANSI colors (`NO_COLOR` also disables
+color; `AI_ACCT_COLOR=1` forces it for pipes, as the tmux menu does for fzf).
+
+Each account shows the best reading available, newest first: a fresh
+`quota-axi` reading, otherwise the newest of the last good `quota-axi` reading
+and the rate limits Claude Code last passed to the statusline for that account.
+Anything not fresh is labeled with its age (`stale, 2h ago`, `via statusline,
+4m ago`), and a fallback window that reset since that reading shows full
+instead of its old percentage, never counting as the limiting window (the box
+labels it `reset since last reading`). Only when nothing was ever read does the
+account show `could not read quota - usage API limited until HH:MM` (the usage
+API is throttled; this says nothing about how much quota is left) or `unknown`.
+
+`agent-statusline-claude` records those rate limits on every render, offline and
+best-effort: it finds the account whose stored token equals the process's
+`CLAUDE_CODE_OAUTH_TOKEN` (not the active selector, so older sessions still land
+on their own account) and writes `claude-NAME.limits.json` (mode `600`) holding
+the percentages, reset times and a one-way SHA-256 fingerprint of the token,
+never the token. Replacing the token discards the capture.
 
 Quota reads run in parallel background processes, each Claude token supplied only
 through its own child environment using the same validation as `ai-acct exec`.
 Opening a menu never waits for a quota request: it shows one compact bar for the
-most limiting window, the first open shows `unknown`, and reopening after the
-refresh shows results. If quota cannot be read at all, the menus still list every
-account. `ai-acct status` and `:AiAccount` wait up to twelve seconds for missing
-or expired readings, then show whatever is known. Only normalized percentages,
-reset times and states are cached in `${XDG_CACHE_HOME:-~/.cache}/ai-acct`
-(directory `700`, files `600`), never tokens or raw quota diagnostics. Successful
+most limiting window of the best reading on hand, an explicit label when nothing
+has ever been read, and reopening after the refresh shows results. If quota cannot
+be read at all, the menus still list every account, with names padded so the
+bars line up. `ai-acct status` and `:AiAccount` wait up to twelve seconds for
+missing or expired readings, then show whatever is known. Only normalized
+percentages, reset times, states and one-way token fingerprints are cached in
+`${XDG_CACHE_HOME:-~/.cache}/ai-acct` (directory `700`, files `600`), never
+tokens or raw quota diagnostics. Successful
 readings are reused for five minutes and rate limits until the vendor's retry
 time (fifteen minutes when it gives none, at most an hour); failed reads are
-retried on the next view. Concurrent opens
-share one refresh per account. Old readings are labeled stale while refreshing,
+retried on the next view. A throttled answer keeps the previous good reading
+beside it so the bars survive. Concurrent opens share one refresh per account,
 and replacing a token invalidates its cached result. Requests time out after ten
 seconds and never refresh credentials. `ai-acct list --quota` appends the same
 compact display as a third tab-separated column; plain `ai-acct list` is

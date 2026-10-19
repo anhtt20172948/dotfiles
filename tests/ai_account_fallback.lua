@@ -45,7 +45,7 @@ for _, mode in ipairs({ "failure", "missing", "hang" }) do
 	notified = ""
 	acct.menu()
 	assert(offered[1] == "Use a (active)  ◌ unknown", mode .. ": missing active/unknown label")
-	assert(offered[2] == "Use work  ◌ unknown", mode .. ": missing inactive/unknown label")
+	assert(offered[2] == "Use work        ◌ unknown", mode .. ": missing inactive/unknown label")
 	assert(vim.wait(5000, function()
 		return notified ~= "" and vim.fn.readfile(tmp .. "/.config/claude-accounts/active")[1] == "work"
 	end), mode .. ": switching did not complete: " .. notified)

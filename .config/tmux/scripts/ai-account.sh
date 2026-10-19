@@ -39,7 +39,7 @@ pause() {
 pick() {
   local label=$1 entries=$2 selection status value _display
   have fzf || { err "'fzf' not found"; return 1; }
-  selection=$(printf '%s' "$entries" | fzf --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
+  selection=$(printf '%s' "$entries" | fzf --ansi --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
     --no-sort --cycle --layout=reverse --margin=1,2 --border=rounded \
     --border-label=" Claude $label " --info=hidden \
     --header='Ctrl-j/k move  •  Enter select  •  Esc close' --prompt="$label › " \
@@ -58,11 +58,12 @@ pick() {
 }
 
 # NAME<TAB>NAME [(active)] [QUOTA] lines, from ai-acct so the name rules live
-# in one place. Quota is optional: switching must work without it.
+# in one place. Quota is optional: switching must work without it. Names are
+# padded so the quota bars line up; the quota keeps its ANSI colors for fzf.
 account_entries() {
-  local listing name state quota label
+  local listing name state quota label rows='' width=0
   if have timeout || have gtimeout || have perl; then
-    listing=$(ai_run_limited 1 ai-acct list --quota 2>/dev/null) || listing=$(ai-acct list) || return 1
+    listing=$(ai_run_limited 1 env AI_ACCT_COLOR=1 ai-acct list --quota 2>/dev/null) || listing=$(ai-acct list) || return 1
   else
     listing=$(ai-acct list) || return 1
   fi
@@ -70,9 +71,13 @@ account_entries() {
     [[ -n "$name" ]] || continue
     label=$name
     [[ "$state" != active ]] || label+=' (active)'
-    label+="  ${quota:-◌ unknown}"
-    printf '%s\t%s\n' "$name" "$label"
+    rows+="$name|$label|${quota:-◌ unknown}"$'\n'
+    (( ${#label} <= width )) || width=${#label}
   done <<<"${listing//$'\t'/|}"
+  while IFS='|' read -r name label quota; do
+    [[ -n "$name" ]] || continue
+    printf '%s\t%-*s  %s\n' "$name" "$width" "$label" "$quota"
+  done <<<"$rows"
 }
 
 pick_account() {

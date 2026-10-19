@@ -116,7 +116,7 @@ end
 acct.menu()
 assert(vim.deep_equal(last(9).cmd, { "ai-acct", "use", "a" }))
 assert(vim.deep_equal(offered, {
-	"Use a  ███████░░░ 75% left",
+	"Use a" .. string.rep(" ", 14) .. "███████░░░ 75% left",
 	"Use work (active)  ◌ rate-limited",
 	"+ Add account",
 	"Replace token",
@@ -129,7 +129,7 @@ quota_fails = true
 acct.menu()
 assert(vim.deep_equal(last(10).cmd, { "ai-acct", "use", "a" }))
 assert(vim.deep_equal(offered, {
-	"Use a  ◌ unknown",
+	"Use a" .. string.rep(" ", 14) .. "◌ unknown",
 	"Use work (active)  ◌ unknown",
 	"+ Add account",
 	"Replace token",
