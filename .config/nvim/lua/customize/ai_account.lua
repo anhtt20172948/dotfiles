@@ -166,11 +166,17 @@ end
 function M.menu()
 	local items = {}
 	local list = accounts(true)
-	for _, account in ipairs(list) do
+	local labels, width = {}, 0
+	for i, account in ipairs(list) do
+		labels[i] = "Use " .. account.name .. (account.active and " (active)" or "")
+		width = math.max(width, vim.fn.strdisplaywidth(labels[i]))
+	end
+	for i, account in ipairs(list) do
+		-- Pad names so the quota bars line up, like the tmux menu.
 		items[#items + 1] = {
 			action = "use",
 			name = account.name,
-			text = "Use " .. account.name .. (account.active and " (active)" or "")
+			text = labels[i] .. string.rep(" ", width - vim.fn.strdisplaywidth(labels[i]))
 				.. "  " .. (account.quota or "◌ unknown"),
 		}
 	end

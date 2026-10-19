@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Sanitized quota views: menus never block, status waits briefly.
-Credentials stay in ai-acct's child env."""
+Credentials stay in ai-acct's child env; the only parent-side use of a token
+file is a one-way fingerprint to match statusline captures to their account."""
 import datetime as dt
 import fcntl
+import hashlib
 import json
 import math
 import os
@@ -18,6 +20,10 @@ TTL = 300
 RATE_TTL = 900
 MAX_RATE_TTL = 3600
 WAIT = 12
+BAR = 20
+COMPACT_BAR = 10
+# Claude Code's statusline rate_limits windows, named like quota-axi's.
+STATUSLINE_WINDOWS = (('five_hour', 'session'), ('seven_day', 'week'))
 UNKNOWN = {'state': 'unknown', 'percent': None, 'reset': None, 'windows': []}
 
 
@@ -32,6 +38,15 @@ def identity(provider, name):
                 stat.st_size, stat.st_mode]
     except OSError:
         return [str(path), None]
+
+
+def fingerprint(token):
+    # Must match agent-statusline-claude; one-way, so captures never hold a token.
+    return hashlib.sha256(b'ai-acct-statusline:' + token.encode()).hexdigest()
+
+
+def usable(quota):
+    return isinstance(quota, dict) and bool(quota.get('windows'))
 
 
 def cached(path, key):
@@ -124,6 +139,7 @@ def refresh(provider, name, path):
         previous = cached(path, key)
         if previous and fresh(previous):
             return
+        good = last_good(previous)
         try:
             result = subprocess.run([str(ACCT), '_quota', provider, name],
                                     env=child_env(), stdout=subprocess.PIPE,
@@ -138,6 +154,9 @@ def refresh(provider, name, path):
         if identity(provider, name) != key:
             return
         record = {'identity': key, 'time': time.time(), 'quota': quota}
+        # A throttled or empty answer must not erase the last real reading.
+        if not usable(quota) and good:
+            record['good'] = good
         fd, tmp = tempfile.mkstemp(dir=CACHE, prefix='.quota-')
         try:
             with os.fdopen(fd, 'w') as out:
@@ -148,13 +167,73 @@ def refresh(provider, name, path):
                 os.unlink(tmp)
 
 
+def last_good(record):
+    """Newest reading with windows from a cache record, as {'time', 'quota'}."""
+    if not record:
+        return None
+    if usable(record['quota']):
+        return {'time': record['time'], 'quota': record['quota']}
+    good = record.get('good')
+    if (isinstance(good, dict) and usable(good.get('quota'))
+            and isinstance(good.get('time'), (int, float))):
+        return good
+    return None
+
+
 def cache_path(provider, name):
     return CACHE / (provider + '-' + name + '.json')
 
 
+def statusline_path(name):
+    return CACHE / ('claude-' + name + '.limits.json')
+
+
+def statusline_reading(name):
+    """Rate limits Claude Code gave the statusline of a process using this account."""
+    try:
+        token = (Path.home() / '.config/claude-accounts' / (name + '.token')).read_text().rstrip('\n')
+        record = json.loads(statusline_path(name).read_text())
+        taken = record['time']
+        if (record['fingerprint'] != fingerprint(token) or not isinstance(taken, (int, float))
+                or isinstance(taken, bool) or not -60 <= time.time() - taken):
+            return None
+        windows = []
+        for kind, text in STATUSLINE_WINDOWS:
+            window = record['windows'].get(kind)
+            if not isinstance(window, dict) or not number(window.get('used')):
+                continue
+            reset = window.get('resets_at')
+            when_reset = (dt.datetime.fromtimestamp(reset, dt.timezone.utc).isoformat()
+                          if isinstance(reset, (int, float)) and not isinstance(reset, bool)
+                          and 0 < reset < 1e11 else None)
+            windows.append({'label': text, 'percent': 100 - window['used'], 'reset': when_reset})
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, UnicodeError):
+        return None
+    if not windows:
+        return None
+    limiting = min(windows, key=lambda w: w['percent'])
+    quota = {'state': 'known', 'percent': limiting['percent'],
+             'reset': limiting['reset'], 'windows': windows}
+    return {'time': taken, 'quota': quota}
+
+
 def read_quota(provider, name):
+    """Best available reading: {'quota', 'note'}; note says where old data came from."""
     record = cached(cache_path(provider, name), identity(provider, name))
-    return (record['quota'] if record else UNKNOWN), bool(record and not fresh(record))
+    if record and fresh(record) and record['quota'].get('state') != 'rate-limited':
+        return {'quota': record['quota'], 'note': ''}
+    candidates = []
+    older = last_good(record)
+    if older:
+        candidates.append((older['time'], older['quota'], 'stale'))
+    if provider == 'claude':
+        live = statusline_reading(name)
+        if live:
+            candidates.append((live['time'], live['quota'], 'via statusline'))
+    if candidates:
+        taken, quota, source = max(candidates, key=lambda c: c[0])
+        return {'quota': quota, 'note': f'{source}, {ago(time.time() - taken)}'}
+    return {'quota': record['quota'] if record else UNKNOWN, 'note': ''}
 
 
 def is_fresh(provider, name):
@@ -180,13 +259,41 @@ def wait_fresh(targets):
         pending = [p for p in pending if p.poll() is None]
 
 
+def color_enabled():
+    if 'NO_COLOR' in os.environ:
+        return False
+    # Menus capture the listing through a pipe, then show it in an ANSI-aware fzf.
+    return sys.stdout.isatty() or os.environ.get('AI_ACCT_COLOR') == '1'
+
+
+STYLES = {'green': 32, 'yellow': 33, 'red': 31, 'dim': 90, 'bold': 1}
+
+
+def paint(text, style):
+    if not style or not color_enabled():
+        return text
+    return f'\033[{STYLES[style]}m{text}\033[0m'
+
+
+def level(percent):
+    return 'green' if percent >= 50 else 'yellow' if percent >= 20 else 'red'
+
+
+def bar_cells(percent, width):
+    filled = round(percent / 100 * width)
+    return [('█' * filled, level(percent)), ('░' * (width - filled), 'dim')]
+
+
+def percent_cell(percent):
+    return (f'{percent:3.0f}% left', level(percent))
+
+
+def compose(cells):
+    return ''.join(paint(text, style) for text, style in cells)
+
+
 def bar(percent):
-    filled = round(percent / 10)
-    text = '█' * filled + '░' * (10 - filled)
-    if sys.stdout.isatty() and 'NO_COLOR' not in os.environ:
-        color = 32 if percent >= 50 else 33 if percent >= 20 else 31
-        text = f'\033[{color}m{text}\033[0m'
-    return f'{text} {percent:3.0f}% left'
+    return compose(bar_cells(percent, COMPACT_BAR) + [(' ', None), percent_cell(percent)])
 
 
 def when(value):
@@ -196,31 +303,87 @@ def when(value):
     return dt.datetime.fromisoformat(value).astimezone().strftime('%b %d %H:%M %Z')
 
 
+def ago(seconds):
+    minutes = max(int(seconds), 0) // 60
+    if minutes < 1:
+        return 'just now'
+    if minutes < 60:
+        return f'{minutes}m ago'
+    if minutes < 48 * 60:
+        return f'{minutes // 60}h ago'
+    return f'{minutes // 1440}d ago'
+
+
+def until(value):
+    value = reset_time(value)
+    if not value or dt.datetime.fromisoformat(value).timestamp() <= time.time():
+        return ''
+    moment = dt.datetime.fromisoformat(value).astimezone()
+    same_day = moment.date() == dt.datetime.now().astimezone().date()
+    return moment.strftime('%H:%M' if same_day else '%b %d %H:%M %Z')
+
+
 def unavailable(quota):
+    """Say the quota could not be read; never imply the account is out of quota."""
     if quota.get('state') == 'rate-limited':
-        retry = when(quota.get('retry'))
-        return '◌ rate-limited' + (f' (retry after {retry})' if retry else ' (retry later)')
+        retry = until(quota.get('retry'))
+        return '◌ could not read quota - usage API limited' + (f' until {retry}' if retry else '')
     return '◌ unknown'
 
 
-def render(quota, stale=False):
+def render(view):
+    quota, note = view['quota'], view['note']
     percent = quota.get('percent')
     if quota.get('state') != 'known' or not number(percent):
         return unavailable(quota)
-    return bar(percent) + ('  (stale)' if stale else '')
+    return bar(percent) + (paint(f'  ({note})', 'dim') if note else '')
 
 
-def render_full(title, quota, stale):
-    windows = [w for w in quota.get('windows') or [] if isinstance(w, dict)
-               and isinstance(w.get('label'), str) and number(w.get('percent'))]
+def usable_windows(quota):
+    return [w for w in quota.get('windows') or [] if isinstance(w, dict)
+            and isinstance(w.get('label'), str) and number(w.get('percent'))]
+
+
+def box(titles_and_rows):
+    """Frame every account with one shared width so the boxes line up."""
+    def plain(cells):
+        return ''.join(text for text, _ in cells)
+    inner = max(max([len(plain(row)) + 2 for row in rows] + [len(plain(title)) + 3])
+                for title, rows in titles_and_rows)
+    edge = lambda text: (text, 'dim')
+    lines = []
+    for title, rows in titles_and_rows:
+        fill = '─' * (inner - 3 - len(plain(title)))
+        lines.append(compose([edge('╭─ '), *title, edge(' ' + fill + '╮')]))
+        for row in rows:
+            pad = ' ' * (inner - 2 - len(plain(row)))
+            lines.append(compose([edge('│ '), *row, (pad, None), edge(' │')]))
+        lines.append(compose([edge('╰' + '─' * inner + '╯')]))
+    return lines
+
+
+def account_box(title, view, labels):
+    quota, note = view['quota'], view['note']
+    windows = usable_windows(quota)
+    heading = [(title, 'bold')]
     if not windows:
-        return [title, '    ' + unavailable(quota)]
-    lines = [title + ('  (stale; refreshing)' if stale else '')]
+        return heading, [[(unavailable(quota), 'yellow')]]
+    rows = []
     for window in windows:
         reset = when(window.get('reset'))
-        lines.append(f'    {window["label"]:<16} {bar(window["percent"])}'
-                     + (f'  ↻ {reset}' if reset else ''))
-    return lines
+        rows.append([(window['label'].ljust(labels), None), (' ', None),
+                     *bar_cells(window['percent'], BAR), (' ', None),
+                     percent_cell(window['percent'])]
+                    + ([('  ', None), (f'↻ {reset}', 'dim')] if reset else []))
+    if note:
+        rows.append([(f'⟳ {note}', 'yellow')])
+    return heading, rows
+
+
+def render_full(entries):
+    labels = max([len(w['label']) for _, view in entries
+                  for w in usable_windows(view['quota'])] + [4])
+    return box([account_box(title, view, labels) for title, view in entries])
 
 
 def main():
@@ -244,16 +407,16 @@ def main():
     if sys.argv[1] == 'list':
         for (name, state), target in zip(rows, targets):
             start_refresh(*target)
-            print(f'{name}\t{state}\t{render(*read_quota(*target))}')
+            print(f'{name}\t{state}\t{render(read_quota(*target))}')
         return
     targets.append(('codex', 'default'))
     wait_fresh(targets)
-    for (name, state), target in zip(rows, targets):
-        title = '✦ Claude ' + name + (' (active)' if state == 'active' else '')
-        print('\n'.join(render_full(title, *read_quota(*target))))
+    entries = [('✦ Claude ' + name + (' (active)' if state == 'active' else ''), read_quota(*target))
+               for (name, state), target in zip(rows, targets)]
     if not rows:
         print('Claude account: unconfigured')
-    print('\n'.join(render_full('◆ Codex', *read_quota('codex', 'default'))))
+    entries.append(('◆ Codex', read_quota('codex', 'default')))
+    print('\n'.join(render_full(entries)))
 
 
 if __name__ == '__main__':
