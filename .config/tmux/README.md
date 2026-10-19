@@ -224,7 +224,11 @@ Notes:
   jump directly without any prompts.
 - `AI_FIRSTMATE_AGENT=claude` or `codex` skips only the agent picker.
 - **prefix E** (`ai-account.sh`) uses, adds, replaces the token of, renames or
-  removes Claude accounts; tokens are typed hidden straight into `ai-acct`.
+  removes Claude accounts; each account line includes its remaining-quota bar
+  and the selected account is marked active. Tokens are typed hidden straight
+  into `ai-acct`. Quota is cached and refreshed in the background so fzf never
+  waits; the first open shows `unknown`, so reopen after the refresh (caching
+  details in the linked section below).
   **prefix Q** shows Claude/Codex quota using the active one. Running processes
   retain their token. See
   [token setup and migration](../../README.md#claude-account-switching).

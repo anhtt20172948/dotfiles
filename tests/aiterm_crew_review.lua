@@ -118,32 +118,30 @@ test("crew_review falls back to vim.ui.select and opens the choice", function()
 	assert(cmds[1] == "DiffviewOpen -C" .. vim.fn.fnameescape(wt) .. " " .. base_sha, vim.inspect(cmds))
 end)
 
--- Chạy diffview thật (nếu đã cài qua lazy): đóng review phải về đúng tab/cwd cũ.
-local diffview = vim.fn.expand("~/.local/share/nvim/lazy/diffview.nvim")
-if vim.fn.isdirectory(diffview) == 1 then
-	test("closing a real crew review returns to the starting tab and cwd", function()
-		vim.opt.runtimepath:append(diffview)
-		vim.cmd("runtime! plugin/diffview.lua")
-		require("diffview").setup({ use_icons = false })
-		flow.ex = vim.cmd
-		local start_tab, start_cwd, start_count =
-			vim.api.nvim_get_current_tabpage(), vim.fn.getcwd(), #vim.api.nvim_list_tabpages()
-		flow.crew_open(flow.crew_worktrees()[1])
-		assert(#vim.api.nvim_list_tabpages() == start_count + 1, "diffview should add exactly one tab")
-		assert(vim.api.nvim_get_current_tabpage() ~= start_tab)
-		local lib = require("diffview.lib")
-		vim.wait(5000, function()
-			local view = lib.get_current_view()
-			return view ~= nil and view.ready
-		end)
-		vim.cmd("DiffviewClose")
-		vim.wait(2000, function()
-			return #vim.api.nvim_list_tabpages() == start_count
-		end)
-		assert(#vim.api.nvim_list_tabpages() == start_count, "tab count must match the start")
-		assert(vim.api.nvim_get_current_tabpage() == start_tab and vim.fn.getcwd() == start_cwd)
+-- Chạy diffview thật (bản ghim trong tests/fixtures): đóng review phải về đúng tab/cwd cũ.
+local diffview = root .. "/tests/fixtures/diffview.nvim"
+test("closing a real crew review returns to the starting tab and cwd", function()
+	vim.opt.runtimepath:append(diffview)
+	vim.cmd("runtime! plugin/diffview.lua")
+	require("diffview").setup({ use_icons = false })
+	flow.ex = vim.cmd
+	local start_tab, start_cwd, start_count =
+		vim.api.nvim_get_current_tabpage(), vim.fn.getcwd(), #vim.api.nvim_list_tabpages()
+	flow.crew_open(flow.crew_worktrees()[1])
+	assert(#vim.api.nvim_list_tabpages() == start_count + 1, "diffview should add exactly one tab")
+	assert(vim.api.nvim_get_current_tabpage() ~= start_tab)
+	local lib = require("diffview.lib")
+	vim.wait(5000, function()
+		local view = lib.get_current_view()
+		return view ~= nil and view.ready
 	end)
-end
+	vim.cmd("DiffviewClose")
+	vim.wait(2000, function()
+		return #vim.api.nvim_list_tabpages() == start_count
+	end)
+	assert(#vim.api.nvim_list_tabpages() == start_count, "tab count must match the start")
+	assert(vim.api.nvim_get_current_tabpage() == start_tab and vim.fn.getcwd() == start_cwd)
+end)
 
 test("the worker copy is untouched", function()
 	assert(git(wt, "status", "--porcelain") == "")

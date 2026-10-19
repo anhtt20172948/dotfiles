@@ -1,9 +1,15 @@
 -- Run with: nvim --headless -u NONE -i NONE -l tests/ai_account.lua <repo-root>
 local root = assert(arg[1])
-package.path = root .. "/.config/nvim/lua/?.lua;" .. package.path
+-- The repo copy must win over an installed ~/.config/nvim on the runtimepath.
+vim.opt.rtp:prepend(root .. "/.config/nvim")
 local tmp = vim.fn.tempname()
 vim.fn.mkdir(tmp .. "/.config/claude-accounts", "p")
 vim.env.HOME = tmp
+vim.env.XDG_CACHE_HOME = tmp .. "/cache"
+vim.env.XDG_CONFIG_HOME = tmp .. "/.config"
+vim.env.XDG_DATA_HOME = tmp .. "/data"
+vim.env.XDG_STATE_HOME = tmp .. "/state"
+vim.env.CODEX_HOME = tmp .. "/.codex"
 local ecc = require("customize.aiterm_ecc")
 local acct = require("customize.ai_account")
 acct.setup()
@@ -25,11 +31,18 @@ assert(ecc.account_status() == "AI:?")
 
 -- ai-acct is mocked: async calls are recorded, `list` answers synchronously.
 local calls = {}
+local quota_fails = false
 vim.system = function(cmd, opts, cb)
 	if cmd[2] == "list" then
 		return {
 			wait = function()
-				return { code = 0, stdout = "a\t\nwork\tactive\n", stderr = "" }
+				if cmd[3] == "--quota" and quota_fails then
+					return { code = 1, stdout = "", stderr = "ai-acct: quota unavailable" }
+				end
+				local output = cmd[3] == "--quota"
+					and "a\t\t███████░░░ 75% left\nwork\tactive\t◌ rate-limited\n"
+					or "a\t\nwork\tactive\n"
+				return { code = 0, stdout = output, stderr = "" }
 			end,
 		}
 	end
@@ -103,8 +116,21 @@ end
 acct.menu()
 assert(vim.deep_equal(last(9).cmd, { "ai-acct", "use", "a" }))
 assert(vim.deep_equal(offered, {
-	"Use a",
-	"Use work (active)",
+	"Use a  ███████░░░ 75% left",
+	"Use work (active)  ◌ rate-limited",
+	"+ Add account",
+	"Replace token",
+	"Rename account",
+	"Remove account",
+}))
+
+-- Accounts stay selectable when the quota listing fails.
+quota_fails = true
+acct.menu()
+assert(vim.deep_equal(last(10).cmd, { "ai-acct", "use", "a" }))
+assert(vim.deep_equal(offered, {
+	"Use a  ◌ unknown",
+	"Use work (active)  ◌ unknown",
 	"+ Add account",
 	"Replace token",
 	"Rename account",

@@ -12,6 +12,7 @@ Thumbs.db
 *.log
 tmp/
 .cache/
+__pycache__/
 
 # Shell history and session files
 .history

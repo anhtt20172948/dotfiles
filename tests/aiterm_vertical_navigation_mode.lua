@@ -25,7 +25,7 @@ step(function()
 	-- Use a fake tmux socket: load the plugin's real global terminal maps without
 	-- allowing a failed mapping to navigate the user's actual tmux session.
 	vim.env.TMUX = "/tmp/aiterm-navigation-test-tmux,1,0"
-	vim.opt.rtp:append(vim.fn.stdpath("data") .. "/lazy/vim-tmux-navigator")
+	vim.opt.rtp:append(root .. "/tests/fixtures/vim-tmux-navigator")
 	vim.cmd("runtime plugin/tmux_navigator.vim")
 	check(vim.g.loaded_tmux_navigator == 1, "vim-tmux-navigator must load for terminal-map regression test")
 	check(vim.fn.maparg("<C-j>", "t") ~= "" and vim.fn.maparg("<C-k>", "t") ~= "", "navigator terminal mappings must be active")

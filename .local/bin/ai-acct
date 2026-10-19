@@ -11,8 +11,8 @@ fail() { printf 'ai-acct: %s\n' "$*" >&2; exit 1; }
 usage() {
     cat <<'HELP'
 Usage: ai-acct [COMMAND]
-  status            Show the active Claude account and Claude/Codex quota.
-  list              List accounts as NAME<TAB>active|empty.
+  status            Show every quota window of each Claude account and Codex.
+  list [--quota]    List NAME<TAB>active|empty; append quota with --quota.
   use NAME          Select an account for future launches and tmux panes.
   add NAME          Add an account; the token is read from stdin (hidden on a TTY).
   edit NAME         Replace an account token, read like add.
@@ -127,17 +127,26 @@ case "${1:-status}" in
     --help|-h) usage ;;
     status)
         [ "$#" -le 1 ] || fail 'status takes no arguments.'
-        read_active
-        if [ -n "$account" ]; then
-            load_token
-            printf 'Claude account: %s\n' "$account"
-        else
-            printf 'Claude account: unconfigured\n'
-        fi
-        exec quota-axi --provider claude,codex
+        helper=$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0")")/ai-acct-quota
+        exec python3 "$helper" status
+        ;;
+    _quota)
+        # Internal read-only child boundary: tokens are loaded exactly as for exec.
+        [ "$#" -eq 3 ] || fail 'Invalid quota request.'
+        unset CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CONFIG_DIR ANTHROPIC_API_KEY QUOTA_AXI_CLAUDE_PROFILES
+        case "$2" in
+            claude) need_account "$3"; account=$3; load_token ;;
+            codex) ;;
+            *) fail 'Invalid quota provider.' ;;
+        esac
+        exec quota-axi --provider "$2" --json --max-age 5m --no-credential-refresh
         ;;
     list)
-        [ "$#" -eq 1 ] || fail 'list takes no arguments.'
+        if [ "$#" -eq 2 ] && [ "$2" = --quota ]; then
+            helper=$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0")")/ai-acct-quota
+            exec python3 "$helper" list
+        fi
+        [ "$#" -eq 1 ] || fail 'Use: ai-acct list [--quota]'
         read_active
         for file in "$accounts"/*.token; do
             [ -f "$file" ] || continue
