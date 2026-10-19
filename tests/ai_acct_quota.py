@@ -1,4 +1,5 @@
 """Exercise the real CLI with synthetic credentials and an offline quota binary."""
+import datetime as dt
 import errno
 import json
 import os
@@ -60,6 +61,9 @@ if name not in ('limited', 'unknown') and os.environ.get('FAKE_LIMIT') != name:
 if name == 'work' and os.environ.get('FAKE_LIMIT') != name:
     p['windows'].append({'id': 'week', 'label': 'week', 'kind': 'weekly', 'percentRemaining': 90, 'resetsAt': '2099-10-24T08:00:00Z'})
     p['quotaSemantics'] = {'effectiveAvailability': [{'scope': 'all_models', 'status': 'known', 'effectivePercentRemaining': 75, 'limitingWindowIds': ['session']}]}
+if os.environ.get('FAKE_EMPTY') == name:
+    p['windows'] = []
+    p.pop('quotaSemantics', None)
 if name == 'unknown':
     p['windows'] = [{'id': 'session', 'label': 'session', 'kind': 'session', 'percentRemaining': 90}]
     p['quotaSemantics'] = {'effectiveAvailability': [{'scope': 'all_models', 'status': 'unknown'}]}
@@ -327,6 +331,47 @@ print(json.dumps({'providers': [p]}))
         self.assertEqual(box[2], '⟳ stale, 6m ago')
         self.assertEqual(self.listed('work'), '████████░░  75% left  (stale, 6m ago)')
         self.assertIn('good', json.loads(cache.read_text()))
+
+    def test_fresh_reading_without_windows_keeps_the_last_good_one(self):
+        self.run_cli('status')
+        cache = self.home / 'cache/ai-acct/claude-work.json'
+        record = json.loads(cache.read_text())
+        cache.write_text(json.dumps({**record, 'time': time.time() - 360}))
+        self.env['FAKE_EMPTY'] = 'work'
+        box = self.section(self.run_cli('status'), '✦ Claude work (active)')
+        self.assertEqual(json.loads(cache.read_text())['quota']['windows'], [])
+        self.assertRegex(box[0], r'^session +█{15}░{5}  75% left')
+        self.assertEqual(box[2], '⟳ stale, 6m ago')
+        self.assertEqual(self.listed('work'), '████████░░  75% left  (stale, 6m ago)')
+        self.capture('synthetic-work', {'five_hour': {'used_percentage': 50}})
+        self.assertEqual(self.listed('work'), '█████░░░░░  50% left  (via statusline, just now)')
+
+    def test_statusline_windows_reset_since_capture_show_full(self):
+        clock = 4_000_000_000
+        self.env['AI_ACCT_NOW'] = str(clock - 3 * 3600)
+        self.capture('synthetic-limited', {'five_hour': {'used_percentage': 95, 'resets_at': clock - 3600},
+                                           'seven_day': {'used_percentage': 30, 'resets_at': clock + 86400}})
+        path = self.home / 'cache/ai-acct/claude-limited.limits.json'
+        path.write_text(json.dumps({**json.loads(path.read_text()), 'time': clock - 3 * 3600}))
+        self.assertEqual(self.listed('limited'), '░░░░░░░░░░   5% left  (via statusline, just now)')
+        self.env['AI_ACCT_NOW'] = str(clock)
+        self.assertEqual(self.listed('limited'), '███████░░░  70% left  (via statusline, 3h ago)')
+        box = self.section(self.run_cli('status'), '✦ Claude limited')
+        self.assertRegex(box[0], r'^session +█{20} 100% left  ↻ reset since last reading$')
+        self.assertRegex(box[1], r'^week +█{14}░{6}  70% left  ↻ ')
+        self.assertEqual(box[2], '⟳ via statusline, 3h ago')
+
+    def test_stale_windows_reset_since_reading_show_full(self):
+        # The fake's session resets 2099-10-19T12:00Z and its week 2099-10-24T08:00Z.
+        day = lambda d: str(dt.datetime(2099, 10, d, tzinfo=dt.timezone.utc).timestamp())
+        self.env['AI_ACCT_NOW'] = day(19)
+        self.run_cli('status')
+        self.block_reads()
+        self.env['AI_ACCT_NOW'] = day(20)
+        self.assertEqual(self.listed('work'), '█████████░  90% left  (stale, 24h ago)')
+        self.env['AI_ACCT_NOW'] = day(25)
+        self.assertEqual(self.listed('work'), '██████████ 100% left  (stale, 6d ago)')
+        self.release_reads()
 
     def test_statusline_capture_is_tied_to_the_token_that_made_it(self):
         self.run_cli('status')
