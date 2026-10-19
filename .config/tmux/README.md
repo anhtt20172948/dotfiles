@@ -217,17 +217,16 @@ Notes:
   `medium`, `high`, `xhigh`, `max`. Codex reads visible models and their supported
   efforts from `codex debug models` (five-second cap); on failure it offers the top-level
   model in `~/.codex/config.toml` and `low`, `medium`, `high`, `xhigh` efforts.
-  Esc at any step cancels without launching. Existing firstmate windows jump
-  directly without any prompts.
-- `AI_FIRSTMATE_AGENT=claude` or `codex` skips only the agent picker.
-  See [token setup and migration](../../README.md#claude-account-switching).
-  **prefix E** (`ai-account.sh`) uses, adds, replaces the token of, renames or
-  removes Claude accounts; tokens are typed hidden straight into `ai-acct`.
-  **prefix Q** shows Claude/Codex quota using the active one. Running processes
-  retain their token.
   Choosing `opus` and `high` launches `claude --model opus --effort high`.
   Codex uses `-m MODEL` and `-c model_reasoning_effort=LEVEL`; defaults add no
-  flags.
+  flags. Esc at any step cancels without launching. Existing firstmate windows
+  jump directly without any prompts.
+- `AI_FIRSTMATE_AGENT=claude` or `codex` skips only the agent picker.
+- **prefix E** (`ai-account.sh`) uses, adds, replaces the token of, renames or
+  removes Claude accounts; tokens are typed hidden straight into `ai-acct`.
+  **prefix Q** shows Claude/Codex quota using the active one. Running processes
+  retain their token. See
+  [token setup and migration](../../README.md#claude-account-switching).
 - firstmate runs from its own checkout with its own `AGENTS.md`, which applies
   only inside firstmate's sessions. Global agent rules are covered in the
   [top-level README](../../README.md#installation).

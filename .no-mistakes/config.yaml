@@ -8,7 +8,7 @@
 agent: [claude, codex, opencode]
 
 # Daemon chạy bằng systemd, không đọc .zshenv: Claude đi qua ai-acct để mỗi lần
-# chạy agent đều nạp token của tài khoản đang chọn (ai-acct use a|b), không cần
+# chạy agent đều nạp token của tài khoản đang chọn (ai-acct use NAME), không cần
 # restart daemon khi đổi tài khoản.
 agent_path_override:
   claude: ai-acct-claude
