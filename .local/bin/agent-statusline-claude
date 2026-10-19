@@ -19,14 +19,23 @@ session_totals() {
   ' "$1"
 }
 
+fingerprint() {
+  local hash
+  hash=$(printf 'ai-acct-statusline:%s' "$1" | { sha256sum 2>/dev/null || shasum -a 256; })
+  printf '%s' "${hash%% *}"
+}
+
 # Best-effort, offline: remember the rate limits Claude Code hands us for the
 # account this process runs as, so ai-acct can show them while the usage API is
-# throttled. The account is found by comparing the process token with each
-# stored token; only a one-way fingerprint is written, never the token.
+# throttled. Claude Code strips CLAUDE_CODE_OAUTH_TOKEN from statusline commands,
+# so the account is found by matching the AI_ACCT_FINGERPRINT that ai-acct and
+# .zshenv export with each stored token's fingerprint; never the active selector,
+# so older sessions still land on their own account. Only the fingerprint is written.
 capture_limits() {
-  local token=${CLAUDE_CODE_OAUTH_TOKEN:-} accounts=$HOME/.config/claude-accounts
+  local want=${AI_ACCT_FINGERPRINT:-} accounts=$HOME/.config/claude-accounts
   local cache=${XDG_CACHE_HOME:-$HOME/.cache}/ai-acct file name hash limits tmp
-  [[ -n $token && -d $accounts ]] || return 0
+  [[ -z ${CLAUDE_CODE_OAUTH_TOKEN:-} ]] || want=$(fingerprint "$CLAUDE_CODE_OAUTH_TOKEN")
+  [[ $want =~ ^[0-9a-f]{64}$ && -d $accounts ]] || return 0
   limits=$(jq -c '
     def used: if type == "object" and (.used_percentage | type) == "number"
                  and .used_percentage >= 0 and .used_percentage <= 100
@@ -38,11 +47,11 @@ capture_limits() {
     | with_entries(select(.value != null))
     | if length == 0 then empty else . end' <<<"$input") && [[ -n $limits ]] || return 0
   for file in "$accounts"/*.token; do
-    [[ -f $file && $(<"$file") == "$token" ]] || continue
+    [[ -f $file ]] || continue
+    hash=$(fingerprint "$(<"$file")")
+    [[ $hash == "$want" ]] || continue
     name=${file##*/}
     name=${name%.token}
-    hash=$(printf 'ai-acct-statusline:%s' "$token" | { sha256sum 2>/dev/null || shasum -a 256; })
-    hash=${hash%% *}
     umask 077
     mkdir -p "$cache" && chmod 700 "$cache" || return 0
     tmp=$(mktemp "$cache/.limits-XXXXXX") || return 0

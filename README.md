@@ -244,9 +244,11 @@ account show `could not read quota - usage API limited until HH:MM` (the usage
 API is throttled; this says nothing about how much quota is left) or `unknown`.
 
 `agent-statusline-claude` records those rate limits on every render, offline and
-best-effort: it finds the account whose stored token equals the process's
-`CLAUDE_CODE_OAUTH_TOKEN` (not the active selector, so older sessions still land
-on their own account) and writes `claude-NAME.limits.json` (mode `600`) holding
+best-effort: Claude Code strips `CLAUDE_CODE_OAUTH_TOKEN` from statusline
+commands, so `ai-acct` and `.zshenv` also export `AI_ACCT_FINGERPRINT`, a one-way
+fingerprint of the same token. The statusline finds the account whose stored token
+has that fingerprint (not the active selector, so older sessions still land on
+their own account; sessions started before this existed need a relaunch) and writes `claude-NAME.limits.json` (mode `600`) holding
 the percentages, reset times and a one-way SHA-256 fingerprint of the token,
 never the token. Replacing the token discards the capture.
 
