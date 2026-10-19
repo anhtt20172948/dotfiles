@@ -2,21 +2,21 @@
 local root = assert(arg[1])
 package.path = root .. "/.config/nvim/lua/?.lua;" .. package.path
 local tmp = vim.fn.tempname()
-vim.fn.mkdir(tmp .. "/config", "p")
-vim.env.FM_HOME = tmp
+vim.fn.mkdir(tmp .. "/.config/claude-accounts", "p")
+vim.env.HOME = tmp
 local ecc = require("customize.aiterm_ecc")
 local acct = require("customize.ai_account")
 acct.setup()
 assert(vim.fn.exists(":AiAccount") == 2)
-assert(ecc.account_status() == "AI:A")
-vim.fn.writefile({ vim.env.HOME .. "/.claude-b" }, tmp .. "/config/claude-account")
+assert(ecc.account_status() == "AI:-")
+vim.fn.writefile({ "b" }, tmp .. "/.config/claude-accounts/active")
 acct.refresh()
 assert(ecc.account_status() == "AI:B")
-vim.fn.writefile({ "ordinary" }, tmp .. "/config/claude-account")
+vim.fn.writefile({ "a" }, tmp .. "/.config/claude-accounts/active")
 assert(ecc.account_status() == "AI:B", "statusline should use cached value")
 vim.api.nvim_exec_autocmds("FocusGained", {})
 assert(ecc.account_status() == "AI:A")
-vim.fn.writefile({ "invalid" }, tmp .. "/config/claude-account")
+vim.fn.writefile({ "invalid" }, tmp .. "/.config/claude-accounts/active")
 acct.refresh()
 assert(ecc.account_status() == "AI:?")
 local calls = {}

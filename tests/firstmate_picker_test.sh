@@ -8,16 +8,20 @@ trap '/bin/rm -rf -- "$TMP"' EXIT
 export HOME="$TMP/home" FIRSTMATE_DIR="$TMP/firstmate" TMUX=mock
 export LOG="$TMP/tmux.log" PICKER="$TMP/picker" QUOTA_LOG="$TMP/quota.log"
 mkdir -p "$TMP/bin" "$HOME" "$FIRSTMATE_DIR/.git"
-for tool in bash dirname readlink realpath awk jq timeout cat sleep; do
+for tool in bash dirname readlink realpath awk jq timeout cat sleep mktemp stat mv rm; do
   ln -s "$(command -v "$tool")" "$TMP/bin/$tool"
 done
 cat > "$TMP/bin/tmux" <<'MOCK'
 #!/usr/bin/env bash
-printf '%s|' "$@" >> "$LOG"
+if [[ $1 != set-environment ]]; then printf '%s|' "$@" >> "$LOG"; fi
 printf '\n' >> "$LOG"
 case "$1" in
   list-windows) [[ ${EXISTING:-0} != 1 ]] || printf 'firstmate:1\tfirstmate\n' ;;
   has-session) exit 1 ;;
+  set-environment)
+    if [[ $3 == CLAUDE_CODE_OAUTH_TOKEN ]]; then
+      [[ $4 == synthetic-b || $4 == synthetic-a ]] || exit 89
+    fi ;;
   new-session|switch-client) ;;
   *) exit 90 ;;
 esac
@@ -26,7 +30,7 @@ cat > "$TMP/bin/fzf" <<'MOCK'
 #!/usr/bin/env bash
 stage=Agent
 for arg in "$@"; do
-  case "$arg" in '--prompt=Model › ') stage=Model ;; '--prompt=Effort › ') stage=Effort ;; esac
+  case "$arg" in '--prompt=Account › ') stage=Account ;; '--prompt=Model › ') stage=Model ;; '--prompt=Effort › ') stage=Effort ;; esac
 done
 file=$PICKER
 [[ $stage == Agent ]] || file="$PICKER.$stage"
@@ -34,6 +38,7 @@ printf '%s\n' "$@" > "$file.args"
 cat > "$file"
 [[ ${CANCEL_STAGE:-} != "$stage" && ${CANCEL:-0} != 1 ]] || exit 130
 case "$stage" in
+  Account) choice=${ACCOUNT_CHOICE:-} ;;
   Agent) choice=${CHOICE:-} ;;
   Model) choice=${MODEL_CHOICE:-} ;;
   Effort) choice=${EFFORT_CHOICE:-} ;;
@@ -57,7 +62,8 @@ printf '%s\n' "$QUOTA_JSON"
 MOCK
 chmod +x "$TMP/bin/"{tmux,fzf,quota-axi}
 export PATH="$TMP/bin"
-unset AI_FIRSTMATE_AGENT
+unset AI_FIRSTMATE_AGENT AI_FIRSTMATE_ACCOUNT
+/bin/ln -s "$ROOT/.local/bin/ai-acct" "$TMP/bin/ai-acct"
 agent() { printf '#!/usr/bin/env bash\nexit 0\n' > "$TMP/bin/$1"; /bin/chmod +x "$TMP/bin/$1"; }
 agent claude
 agent codex
@@ -79,7 +85,7 @@ quota() {
 }
 fail() { printf 'FAIL: %s\n' "$*" >&2; /bin/cat "$LOG" "$PICKER" >&2; exit 1; }
 run() {
-  : > "$LOG"; : > "$QUOTA_LOG"; : > "$PICKER"; : > "$PICKER.args"; : > "$PICKER.Model"; : > "$PICKER.Effort"
+  : > "$LOG"; : > "$QUOTA_LOG"; : > "$PICKER"; : > "$PICKER.args"; : > "$PICKER.Model"; : > "$PICKER.Effort"; : > "$PICKER.Account"
   bash "$ROOT/.config/tmux/scripts/ai-workflow.sh" firstmate </dev/null
 }
 started() { /bin/grep -Fq "|exec $1|" "$LOG" || fail "did not start $1"; }
@@ -212,4 +218,43 @@ for AI_FIRSTMATE_AGENT in '' codex; do
   if [[ -s $TMP/err ]]; then fail "menu errored: $(/bin/cat "$TMP/err")"; fi
 done
 unset AI_FIRSTMATE_AGENT CANCEL
+# Token selection is shared by the tmux and Neovim launcher entry point.
+/bin/mkdir -p "$HOME/.config/claude-accounts"
+printf 'synthetic-a\n' > "$HOME/.config/claude-accounts/a.token"
+printf 'synthetic-b\n' > "$HOME/.config/claude-accounts/b.token"
+/bin/chmod 600 "$HOME/.config/claude-accounts/"*.token
+printf 'a\n' > "$HOME/.config/claude-accounts/active"
+export AI_FIRSTMATE_AGENT=claude ACCOUNT_CHOICE=b
+run; started 'ai-acct exec claude'
+[[ $(/bin/cat "$HOME/.config/claude-accounts/active") == b ]] || fail 'account not switched'
+/bin/grep -Fxq $'a\tClaude account A (active)' "$PICKER.Account" || fail 'missing active marker'
+/bin/grep -Fxq $'b\tClaude account B' "$PICKER.Account" || fail 'missing account B'
+for CANCEL_STAGE in Account Model Effort; do
+  printf 'a\n' > "$HOME/.config/claude-accounts/active"
+  export CANCEL_STAGE
+  run; no_start
+  [[ $(/bin/cat "$HOME/.config/claude-accounts/active") == a ]] || fail 'cancel switched account'
+done
+unset CANCEL_STAGE ACCOUNT_CHOICE
+export AI_FIRSTMATE_ACCOUNT=b
+run; started 'ai-acct exec claude'
+[[ ! -s $PICKER.Account ]] || fail 'account override prompted'
+export AI_FIRSTMATE_ACCOUNT=invalid
+if run; then fail 'invalid account override accepted'; fi
+no_start
+export AI_FIRSTMATE_ACCOUNT=b AI_FIRSTMATE_AGENT=codex
+run; started codex
+[[ ! -s $PICKER.Account ]] || fail 'codex prompted for Claude account'
+unset AI_FIRSTMATE_ACCOUNT
+export AI_FIRSTMATE_AGENT=claude
+/bin/rm "$HOME/.config/claude-accounts/b.token"
+export ACCOUNT_CHOICE=b
+if run; then fail 'missing token selection accepted'; fi
+no_start
+unset ACCOUNT_CHOICE
+run; started 'ai-acct exec claude'
+if /bin/grep -Fq 'Claude account B' "$PICKER.Account"; then fail 'offered missing token'; fi
+/bin/rm "$HOME/.config/claude-accounts/a.token"
+run; started claude
+[[ ! -s $PICKER.Account ]] || fail 'no-token launch prompted'
 printf 'firstmate picker: OK\n'

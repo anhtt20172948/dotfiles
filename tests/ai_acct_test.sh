@@ -5,53 +5,86 @@ TMP=$(mktemp -d)
 trap 'rm -rf -- "$TMP"' EXIT
 export HOME="$TMP/home space" FM_HOME="$TMP/first mate" LOG="$TMP/log"
 export PATH="$TMP/bin:$PATH"
-mkdir -p "$HOME/.claude" "$TMP/bin"
+mkdir -p "$HOME/.config/claude-accounts" "$TMP/bin" "$FM_HOME"
 ACCT="$ROOT/.local/bin/ai-acct"
+export ACCT
 cat > "$TMP/bin/claude" <<'MOCK'
 #!/bin/sh
-[ "${CLAUDE_CODE_OAUTH_TOKEN+x}" != x ] || exit 80
+[ "${CLAUDE_CONFIG_DIR+x}" != x ] || exit 80
 [ "${ANTHROPIC_API_KEY+x}" != x ] || exit 81
-printf '%s|%s|%s\n' "$CLAUDE_CONFIG_DIR" "$*" "$PWD" >> "$LOG"
-exit "${AUTH_RC:-0}"
+[ "$CLAUDE_CODE_OAUTH_TOKEN" = "${EXPECTED_TOKEN:-synthetic-b}" ] || exit 82
+printf '%s|%s\n' "$*" "$PWD" >> "$LOG"
 MOCK
 cat > "$TMP/bin/tmux" <<'MOCK'
 #!/bin/sh
-printf 'tmux|%s\n' "$*" >> "$LOG"
+case "$*" in
+  'set-environment -g CLAUDE_CODE_OAUTH_TOKEN '*)
+    [ "$4" = "${EXPECTED_TOKEN:-synthetic-b}" ] || exit 83
+    printf 'tmux|token updated\n' >> "$LOG" ;;
+  *) printf 'tmux|%s\n' "$*" >> "$LOG" ;;
+esac
 MOCK
 cat > "$TMP/bin/quota-axi" <<'MOCK'
 #!/bin/sh
-printf '%s|%s\n' "$QUOTA_AXI_CLAUDE_PROFILES" "$*" >> "$LOG"
+[ "${CLAUDE_CONFIG_DIR+x}" != x ] || exit 84
+[ "$CLAUDE_CODE_OAUTH_TOKEN" = "${EXPECTED_TOKEN:-synthetic-b}" ] || exit 85
+printf 'quota|%s\n' "$*" >> "$LOG"
 MOCK
 chmod +x "$TMP/bin/"*
 fail() { echo "FAIL: $*" >&2; exit 1; }
-"$ACCT" setup b
-"$ACCT" setup b
-for item in projects todos plans file-history settings.json CLAUDE.md agents skills rules commands plugins; do
-  [ "$(readlink "$HOME/.claude-b/$item")" = "$HOME/.claude/$item" ] || fail "link $item"
+printf 'synthetic-a\n' > "$HOME/.config/claude-accounts/a.token"
+printf 'synthetic-b\n' > "$HOME/.config/claude-accounts/b.token"
+chmod 600 "$HOME/.config/claude-accounts/"*.token
+printf '{"existing":42,"hasCompletedOnboarding":false}\n' > "$HOME/.claude.json"
+export CLAUDE_CODE_OAUTH_TOKEN=stale ANTHROPIC_API_KEY=stale CLAUDE_CONFIG_DIR=/stale TMUX=mock
+"$ACCT" use b > "$TMP/out"
+[ "$(cat "$HOME/.config/claude-accounts/active")" = b ] || fail 'selector b'
+[ ! -e "$FM_HOME/config/claude-account" ] || fail 'created pin'
+[ ! -e "$HOME/.claude-b" ] || fail 'created separate profile'
+jq -e '.existing == 42 and .hasCompletedOnboarding == true' "$HOME/.claude.json" >/dev/null
+[ "$(stat -c %a "$HOME/.claude.json")" = 600 ] || fail 'onboarding permissions'
+grep -Fqx 'tmux|token updated' "$LOG"
+"$ACCT" resume
+grep -Fqx -- "--continue|$FM_HOME" "$LOG"
+"$ACCT" exec claude --model opus
+grep -Fqx -- "--model opus|$PWD" "$LOG"
+"$ACCT" status >> "$TMP/out"
+grep -Fq 'Claude account: B' "$TMP/out"
+grep -Fqx 'quota|--provider claude,codex' "$LOG"
+EXPECTED_TOKEN=synthetic-a "$ACCT" use a
+[ "$(cat "$HOME/.config/claude-accounts/active")" = a ] || fail 'selector a'
+EXPECTED_TOKEN=synthetic-a "$ACCT" resume
+# Non-interactive startup reloads the selector, replacing inherited credentials.
+ZDOTDIR="$TMP/zdot"; export ZDOTDIR
+mkdir -p "$ZDOTDIR"
+ln -s "$ROOT/.zshenv" "$ZDOTDIR/.zshenv"
+zsh -c '[[ $CLAUDE_CODE_OAUTH_TOKEN == synthetic-a && -z ${CLAUDE_CONFIG_DIR+x} && -z ${ANTHROPIC_API_KEY+x} ]]' || fail 'zsh startup a'
+printf 'b\n' > "$HOME/.config/claude-accounts/active"
+zsh -c '[[ $CLAUDE_CODE_OAUTH_TOKEN == synthetic-b ]]' || fail 'zsh startup b'
+for bad in invalid ../a; do
+  if "$ACCT" use "$bad"; then fail 'accepted invalid name'; fi
 done
-[ -z "$(ls -A "$HOME/.claude")" ] || fail 'modified account A'
-rm "$HOME/.claude-b/projects"
-mkdir "$HOME/.claude-b/projects"
-if "$ACCT" setup b; then fail 'accepted real directory'; fi
-[ -d "$HOME/.claude-b/projects" ] || fail 'removed real directory'
-rmdir "$HOME/.claude-b/projects"
-"$ACCT" setup b
-export CLAUDE_CODE_OAUTH_TOKEN=fixture ANTHROPIC_API_KEY=fixture TMUX=mock
-"$ACCT" use b
-[ "$(cat "$FM_HOME/config/claude-account")" = "$HOME/.claude-b" ] || fail 'pin b'
-grep -Fqx "tmux|set-environment -g CLAUDE_CONFIG_DIR $HOME/.claude-b" "$LOG"
-AUTH_RC=1 "$ACCT" use a && fail 'accepted unsigned account'
-[ "$(cat "$FM_HOME/config/claude-account")" = "$HOME/.claude-b" ] || fail 'changed pin on failure'
-"$ACCT" resume
-grep -Fqx "$HOME/.claude-b|--continue|$FM_HOME" "$LOG"
-"$ACCT" login b
-"$ACCT" use a
-[ "$(cat "$FM_HOME/config/claude-account")" = ordinary ] || fail 'pin a'
-grep -Fqx 'tmux|set-environment -gu CLAUDE_CONFIG_DIR' "$LOG"
-"$ACCT" resume
-grep -Fqx "$HOME/.claude|--continue|$FM_HOME" "$LOG"
-QUOTA_AXI_CLAUDE_PROFILES=/other "$ACCT" status
-grep -Fqx "/other:$HOME/.claude-b|--provider claude,codex" "$LOG"
-"$ACCT" --help
-if "$ACCT" use invalid; then fail 'invalid account'; fi
+rm "$HOME/.config/claude-accounts/a.token"
+if "$ACCT" use a; then fail 'accepted missing token'; fi
+[ "$(cat "$HOME/.config/claude-accounts/active")" = b ] || fail 'changed selector on failure'
+printf '\n' > "$HOME/.config/claude-accounts/a.token"
+chmod 600 "$HOME/.config/claude-accounts/a.token"
+if "$ACCT" use a; then fail 'accepted empty token'; fi
+printf 'synthetic-a\n' > "$HOME/.config/claude-accounts/a.token"
+chmod 644 "$HOME/.config/claude-accounts/a.token"
+if "$ACCT" use a; then fail 'accepted public token'; fi
+chmod 600 "$HOME/.config/claude-accounts/a.token"
+printf 'not json\n' > "$HOME/.claude.json"
+if "$ACCT" use a; then fail 'overwrote malformed config'; fi
+[ "$(cat "$HOME/.claude.json")" = 'not json' ] || fail 'damaged config'
+[ "$(cat "$HOME/.config/claude-accounts/active")" = b ] || fail 'changed selector on config failure'
+rm "$HOME/.claude.json"
+EXPECTED_TOKEN=synthetic-a "$ACCT" use a
+jq -e '.hasCompletedOnboarding == true' "$HOME/.claude.json" >/dev/null
+# Nothing configured: preserve ordinary shell behavior and report it explicitly.
+rm "$HOME/.config/claude-accounts/active"
+zsh -c '[[ $CLAUDE_CODE_OAUTH_TOKEN == stale ]]' || fail 'changed unconfigured shell'
+"$ACCT" --help >/dev/null
+if "$ACCT" login b; then fail 'legacy login accepted'; fi
+if grep -Eq 'synthetic-[ab]' "$LOG" "$TMP/out"; then fail 'token leaked'; fi
 printf 'ai-acct: OK\n'

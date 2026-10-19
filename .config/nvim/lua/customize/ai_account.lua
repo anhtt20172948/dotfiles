@@ -1,23 +1,21 @@
 -- Refresh on user events, never spawn a process during statusline redraws.
 local M = {}
-local label = "AI:A"
+local label = "AI:-"
 local initialized = false
 
 function M.refresh()
 	local home = vim.env.HOME
-	local fm_home = vim.env.FM_HOME
-	if not fm_home or fm_home == "" then
-		fm_home = home .. "/.local/share/firstmate"
-	end
-	local path = fm_home .. "/config/claude-account"
-	local value = "ordinary"
+	local path = home .. "/.config/claude-accounts/active"
+	local value = ""
 	if vim.uv.fs_stat(path) then
 		local ok, lines = pcall(vim.fn.readfile, path, "", 1)
 		value = ok and lines[1] or ""
 	end
-	if value == "ordinary" then
+	if value == "" then
+		label = "AI:-"
+	elseif value == "a" then
 		label = "AI:A"
-	elseif value == home .. "/.claude-b" then
+	elseif value == "b" then
 		label = "AI:B"
 	else
 		label = "AI:?"
@@ -65,7 +63,7 @@ function M.setup()
 		complete = function()
 			return { "a", "b" }
 		end,
-		desc = "Show quota or select Claude account for Firstmate workers",
+		desc = "Show quota or select the Claude token for future launches",
 	})
 end
 
