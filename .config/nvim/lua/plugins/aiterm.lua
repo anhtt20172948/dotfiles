@@ -13,6 +13,8 @@ vim.api.nvim_create_autocmd("User", {
 	end,
 })
 
+require("customize.aiterm_ecc").setup_account()
+
 return {
 	"folke/snacks.nvim",
 	keys = {

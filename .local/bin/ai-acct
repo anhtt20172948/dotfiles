@@ -1,0 +1,115 @@
+#!/bin/sh
+# Account credentials stay local; only shared Claude state is linked.
+set -eu
+fm_home=${FM_HOME:-$HOME/.local/share/firstmate}
+profile_b=$HOME/.claude-b
+pin=$fm_home/config/claude-account
+shared='projects todos plans file-history settings.json CLAUDE.md agents skills rules commands plugins'
+fail() { printf 'ai-acct: %s\n' "$*" >&2; exit 1; }
+usage() {
+    cat <<'HELP'
+Usage: ai-acct [status | setup b | login b | use a|b | resume | --help]
+  status   Show both Claude accounts and Codex quota plus the worker account.
+  setup b  Link shared state from ~/.claude into ~/.claude-b, without replacing files.
+  login b  Open Claude for account B; run /login once there.
+  use a|b  Verify sign-in and select the account for future Firstmate workers.
+  resume   Continue the main Claude session in ${FM_HOME:-~/.local/share/firstmate}.
+Credentials remain separate. Running workers retain their account until relaunched.
+HELP
+}
+active() {
+    value=ordinary
+    if [ -e "$pin" ]; then
+        value=$(cat "$pin") || fail 'Cannot read account pin.'
+    fi
+    case "$value" in
+        ordinary) account=A; profile=$HOME/.claude ;;
+        "$profile_b") account=B; profile=$profile_b ;;
+        /*) account=custom; profile=$value ;;
+        *) fail 'Invalid account pin; select one with ai-acct use a|b.' ;;
+    esac
+}
+claude_clean() (
+    unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY
+    CLAUDE_CONFIG_DIR=$profile
+    export CLAUDE_CONFIG_DIR
+    exec claude "$@"
+)
+case "${1:-status}" in
+    --help|-h) usage ;;
+    status)
+        [ "$#" -le 1 ] || fail 'status takes no arguments.'
+        active
+        printf 'Firstmate worker account: %s\n' "$account"
+        case :${QUOTA_AXI_CLAUDE_PROFILES:-}: in
+            *:"$profile_b":*) ;;
+            *) QUOTA_AXI_CLAUDE_PROFILES=${QUOTA_AXI_CLAUDE_PROFILES:+$QUOTA_AXI_CLAUDE_PROFILES:}$profile_b ;;
+        esac
+        export QUOTA_AXI_CLAUDE_PROFILES
+        # Match the pin and avoid an inherited token masking file credentials.
+        unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY
+        CLAUDE_CONFIG_DIR=$profile
+        export CLAUDE_CONFIG_DIR
+        exec quota-axi --provider claude,codex
+        ;;
+    setup)
+        [ "$#" -eq 2 ] && [ "$2" = b ] || fail 'Use: ai-acct setup b'
+        [ ! -L "$profile_b" ] || fail "$profile_b is a symlink; refusing to change it."
+        # Preflight every destination before making any links, including dangling links.
+        for item in $shared; do
+            dest=$profile_b/$item
+            if [ -e "$dest" ] || [ -L "$dest" ]; then
+                [ -L "$dest" ] && [ "$(readlink "$dest")" = "$HOME/.claude/$item" ] ||
+                    fail "$dest already exists; move it aside yourself before setup."
+            fi
+        done
+        mkdir -p "$profile_b"
+        for item in $shared; do
+            dest=$profile_b/$item
+            [ -L "$dest" ] || ln -s "$HOME/.claude/$item" "$dest"
+        done
+        printf 'Account B shared state ready. Next: ai-acct login b\n'
+        ;;
+    login)
+        [ "$#" -eq 2 ] && [ "$2" = b ] || fail 'Use: ai-acct login b'
+        [ -d "$profile_b" ] || fail 'Run ai-acct setup b first.'
+        profile=$profile_b
+        printf 'Account B: run /login in Claude, then exit and run ai-acct use b.\n'
+        claude_clean
+        ;;
+    use)
+        [ "$#" -eq 2 ] || fail 'Use: ai-acct use a|b'
+        case "$2" in
+            a) profile=$HOME/.claude; value=ordinary ;;
+            b) profile=$profile_b; value=$profile_b ;;
+            *) fail 'Use: ai-acct use a|b' ;;
+        esac
+        [ -d "$profile" ] || fail 'Profile missing; run ai-acct setup b and ai-acct login b for account B.'
+        claude_clean auth status >/dev/null 2>&1 || fail 'Account is not signed in; run Claude /login for this account first.'
+        mkdir -p "$fm_home/config"
+        tmp=$(mktemp "$fm_home/config/.claude-account.XXXXXX")
+        trap 'rm -f "$tmp"' EXIT
+        trap 'exit 1' HUP INT TERM
+        printf '%s\n' "$value" > "$tmp"
+        mv -f "$tmp" "$pin"
+        # A server may be running even when this shell is outside tmux.
+        if command -v tmux >/dev/null 2>&1 && tmux list-sessions >/dev/null 2>&1; then
+            if [ "$2" = a ]; then
+                tmux set-environment -gu CLAUDE_CONFIG_DIR || fail 'Pin saved, but tmux environment update failed.'
+            else
+                tmux set-environment -g CLAUDE_CONFIG_DIR "$profile" || fail 'Pin saved, but tmux environment update failed.'
+            fi
+        fi
+        printf 'Selected account %s. Run ai-acct resume so the main Firstmate session uses the same account.\nRunning workers keep their old account until relaunched.\n' "$2"
+        ;;
+    resume)
+        [ "$#" -eq 1 ] || fail 'resume takes no arguments.'
+        active
+        cd "$fm_home" || fail 'Firstmate home does not exist.'
+        unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY
+        CLAUDE_CONFIG_DIR=$profile
+        export CLAUDE_CONFIG_DIR
+        exec claude --continue
+        ;;
+    *) usage >&2; exit 2 ;;
+esac

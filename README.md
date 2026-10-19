@@ -197,3 +197,34 @@ fresh machine needs no root to get a working userland:
 - See [.config/tmux/README.md](.config/tmux/README.md) for the extra CLI tools
   its popups and AI-session scripts depend on (`fzf`, `fd`, `rg`, `bat`, `jq`,
   `sqlite3`, `sesh`, …).
+
+### Claude account switching
+
+`ai-acct` shows quota for Claude A (`~/.claude`), Claude B (`~/.claude-b`),
+and Codex (`~/.codex`), plus the account pinned for Firstmate workers.
+Install these dotfiles with `./install.sh` and keep `~/.local/bin` on `PATH`.
+Requires `claude`, `quota-axi`, and optionally tmux.
+
+1. Run `ai-acct setup b` to link shared history, settings, and extensions from A.
+   It leaves A untouched and refuses existing conflicting files in B. The
+   `.credentials.json` and `.claude.json` files stay separate; never commit them.
+2. Run `ai-acct login b`, enter `/login` for the second account, then exit Claude.
+   Account A must also be signed in through Claude's `/login` in `~/.claude`.
+3. Run `ai-acct use b` (or `ai-acct use a`) to verify sign-in and atomically
+   update `${FM_HOME:-$HOME/.local/share/firstmate}/config/claude-account`.
+4. Exit the existing main Claude session, then run `ai-acct resume` to continue
+   it from the Firstmate home on the selected account. Running workers keep
+   their previous account until relaunched; switching is explicit, not automatic.
+
+Login, switching, quota status, and resume ignore inherited Claude token/API-key
+variables so the selected profile's local credentials are used. No credentials
+are copied by setup. Existing shared links can point to files not created yet.
+The zsh environment includes B in `QUOTA_AXI_CLAUDE_PROFILES`, preserving other
+configured profile paths.
+
+In tmux, **prefix Q** opens the quota TUI and **prefix U** opens the account
+menu. These avoid existing **prefix A** (latest AI session) and **prefix S**
+(synchronize panes). In Neovim, `:AiAccount` shows quota and `:AiAccount a|b`
+switches workers. The statusline shows `AI:A` or `AI:B` from the pin file,
+refreshed on focus/buffer/terminal events without running shell commands during
+redraws (`AI:?` means an unknown pin).
