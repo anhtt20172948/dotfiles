@@ -137,7 +137,7 @@ orchestrator on top of the AI CLIs (treehouse, no-mistakes, gnhf, firstmate).
 Install with `install_agent_workflow`; tmux `prefix F` / `prefix C`, Neovim
 `<leader>ap` / `<leader>ag` / `<leader>aW` / `<leader>aF` / `<leader>aR`. See
 [docs/agent-workflow.md](docs/agent-workflow.md). The first mate launcher shows
-remaining quota and offers model and effort choices before starting a new session.
+remaining quota and offers Claude account, model and effort choices before starting a new session.
 
 ## Remote helper scripts
 
@@ -200,31 +200,62 @@ fresh machine needs no root to get a working userland:
 
 ### Claude account switching
 
-`ai-acct` shows quota for Claude A (`~/.claude`), Claude B (`~/.claude-b`),
-and Codex (`~/.codex`), plus the account pinned for Firstmate workers.
-Install these dotfiles with `./install.sh` and keep `~/.local/bin` on `PATH`.
-Requires `claude`, `quota-axi`, and optionally tmux.
+`ai-acct` manages named, long-lived Claude OAuth tokens and selects one. All
+accounts use one shared `~/.claude` directory and `~/.claude.json`, so history and
+`claude --continue` survive an account switch. Codex keeps its single account.
+Install with `./install.sh`, keep `~/.local/bin` on `PATH`, and install `jq`,
+`claude`, `quota-axi`, and optionally tmux.
 
-1. Run `ai-acct setup b` to link shared history, settings, and extensions from A.
-   It leaves A untouched and refuses existing conflicting files in B. The
-   `.credentials.json` and `.claude.json` files stay separate; never commit them.
-2. Run `ai-acct login b`, enter `/login` for the second account, then exit Claude.
-   Account A must also be signed in through Claude's `/login` in `~/.claude`.
-3. Run `ai-acct use b` (or `ai-acct use a`) to verify sign-in and atomically
-   update `${FM_HOME:-$HOME/.local/share/firstmate}/config/claude-account`.
-4. Exit the existing main Claude session, then run `ai-acct resume` to continue
-   it from the Firstmate home on the selected account. Running workers keep
-   their previous account until relaunched; switching is explicit, not automatic.
+1. Add each account with `ai-acct add NAME` (or **prefix E** / `<leader>au`).
+   Names use lowercase letters, digits, `-` and `_`. The token is typed hidden
+   or piped on stdin, never passed as an argument, and stored outside this
+   repository as `~/.config/claude-accounts/NAME.token` (directory `700`, file
+   `600`). `ai-acct edit NAME` replaces a token, `ai-acct rename OLD NEW` keeps
+   the selection, and `ai-acct remove NAME` deletes it (removing the active one
+   clears the selection). `ai-acct list` shows them. Never put tokens in shell
+   commands, logs, or version control. Do not use Claude `/login`.
+2. Run `ai-acct use NAME`. This validates the local token file,
+   atomically writes `~/.config/claude-accounts/active`, and sets
+   `"hasCompletedOnboarding": true` in the shared `~/.claude.json`, preserving
+   other settings. It does not make an authentication request.
+3. Exit the main Claude process and run `ai-acct resume` to continue it from
+   `${FM_HOME:-$HOME/.local/share/firstmate}` with the selected account.
+   Already-running processes keep their token; new zsh shells, including
+   non-interactive worker shells, load the active token through `.zshenv`.
 
-Login, switching, quota status, and resume ignore inherited Claude token/API-key
-variables so the selected profile's local credentials are used. No credentials
-are copied by setup. Existing shared links can point to files not created yet.
-The zsh environment includes B in `QUOTA_AXI_CLAUDE_PROFILES`, preserving other
-configured profile paths.
+Switching inside tmux also updates its global environment for future panes
+and clears legacy config/API-key overrides. A switch cannot update the parent
+shell's environment: use `ai-acct exec claude`, `ai-acct resume`, or a new zsh
+shell to launch immediately with the selected token. `ai-acct status` shows the
+active account and queries Claude and Codex quota with that token.
 
-In tmux, **prefix Q** opens the quota TUI and **prefix U** opens the account
-menu. These avoid existing **prefix A** (latest AI session) and **prefix S**
-(synchronize panes). In Neovim, `:AiAccount` shows quota and `:AiAccount a|b`
-switches workers. The statusline shows `AI:A` or `AI:B` from the pin file,
-refreshed on focus/buffer/terminal events without running shell commands during
-redraws (`AI:?` means an unknown pin).
+The no-mistakes daemon runs under systemd and never reads `.zshenv`, so
+`.no-mistakes/config.yaml` points its Claude agent at `ai-acct-claude`
+(`ai-acct exec claude`). Every pipeline agent launch reads the active account,
+so a switch applies to the next review step without restarting the daemon.
+
+For migration from the previous login profiles, remove the old
+`${FM_HOME:-$HOME/.local/share/firstmate}/config/claude-account` pin yourself
+before launching Firstmate. A pin makes Firstmate discard the token and use
+stored login credentials. Stop exporting `CLAUDE_CONFIG_DIR` and remove any
+custom `QUOTA_AXI_CLAUDE_PROFILES` entry for the old secondary profile. The
+old secondary directory is no longer used; no history or credentials are
+copied or deleted by this workflow.
+
+In tmux, **prefix Q** opens the quota TUI with the active token and **prefix E**
+opens the account menu: use, add, replace token, rename or remove. In Neovim,
+`<leader>au` opens the same menu, `:AiAccount` shows quota, and
+`:AiAccount use|add|edit|rename|remove [NAME]` (or `:AiAccount NAME`) runs one
+action; tokens are entered with hidden input and sent to `ai-acct` on stdin.
+The statusline shows `AI:NAME` from the selector, refreshed on
+focus/buffer/terminal events without spawning a process during redraws
+(`AI:-` means unconfigured; `AI:?` means invalid).
+
+Starting Firstmate through tmux **prefix F** or Neovim uses the same picker:
+agent, Claude account, model, then effort. The account step lists every
+account with the active one first; with none installed it reports
+the missing setup instead of launching. `AI_FIRSTMATE_AGENT=claude|codex`
+bypasses only the agent picker. Cancelling any picker leaves the account
+unchanged. Existing Firstmate windows are focused without prompting or
+switching; restart the main session to change its token. Rate-limit switching
+remains manual.

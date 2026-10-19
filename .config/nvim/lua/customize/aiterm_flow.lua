@@ -133,7 +133,13 @@ function M.firstmate()
 		M.notify("firstmate cần tmux: crewmate là các window tmux", "warn")
 		return
 	end
-	M.spawn({ M.config.script, "firstmate" }, vim.fn.getcwd())
+	-- Các picker fzf (agent/account/model/effort) cần terminal: chạy trong popup
+	-- tmux như prefix F, vim.system không có tty.
+	local cwd = vim.fn.getcwd()
+	M.spawn({
+		"tmux", "display-popup", "-d", cwd, "-w", "70%", "-h", "60%", "-b", "rounded",
+		"-T", " 󰚩 firstmate ", "-E", M.config.script, "firstmate",
+	}, cwd)
 end
 
 --- Thuê một worktree từ pool treehouse rồi mở session AI mới trong đó.

@@ -223,6 +223,25 @@ firstmate_choose_agent() {
   firstmate_pick Agent "$entries"
 }
 
+# No per-account config directories: token selection keeps Claude history shared.
+firstmate_choose_account() {
+  local listing account state active_entry='' entries=''
+  listing=$(ai-acct list) || fail 'could not list Claude accounts'
+  # The active account comes first so Enter keeps the current token.
+  while IFS=$'\t' read -r account state; do
+    [[ -n "$account" ]] || continue
+    if [[ "$state" == active ]]; then
+      active_entry="${account}"$'\t'"Claude account ${account} (active)"$'\n'
+    else
+      entries="${entries}${account}"$'\t'"Claude account ${account}"$'\n'
+    fi
+  done <<<"$listing"
+  entries="${active_entry}${entries}"
+  [[ -n "$entries" ]] \
+    || fail 'no Claude accounts - add one with prefix E or ai-acct add NAME'
+  firstmate_pick Account "$entries"
+}
+
 # All launch pickers use the same style and validate selections against the
 # offered values. Cancellation exits before any tmux mutation.
 firstmate_pick() {
@@ -301,7 +320,7 @@ action_firstmate() {
     || fail "firstmate not found at $FIRSTMATE_DIR - run install_agent_workflow"
   [[ -n "${TMUX:-}" ]] || fail 'firstmate needs tmux (its crewmates are tmux windows)'
 
-  local target cmd windows index window name panes agent model effort catalog='' entries flag first=''
+  local target cmd windows index window name panes agent account model effort catalog='' entries flag first=''
   target=$(firstmate_target)
   if [[ -n "$target" ]]; then
     tmux switch-client -t "${target%%:*}" \; select-window -t "$target"
@@ -312,6 +331,10 @@ action_firstmate() {
   # fzf emits only the installed agent names offered above.
   [[ "$agent" == claude || "$agent" == codex ]] \
     || fail 'invalid firstmate agent selection'
+  if [[ "$agent" == claude ]]; then
+    account=$(firstmate_choose_account) || return $?
+    [[ -n "$account" ]] || return 0
+  fi
   if [[ "$agent" == codex ]] && have jq \
     && { have timeout || have gtimeout || have perl; }; then
     catalog=$(ai_run_limited 5 codex debug models 2>/dev/null) || catalog=''
@@ -332,6 +355,13 @@ action_firstmate() {
       claude) printf -v cmd '%s --effort %q' "$cmd" "$effort" ;;
       codex) printf -v cmd '%s -c %q' "$cmd" "model_reasoning_effort=$effort" ;;
     esac
+  fi
+  if [[ "$agent" == claude ]]; then
+    need ai-acct
+    # Commit the account only after every picker succeeds. Resolve its token
+    # inside the new pane, even if that pane does not run zsh startup.
+    ai-acct use "$account" >&2 || fail 'could not select Claude account'
+    cmd="exec ai-acct exec ${cmd#exec }"
   fi
   target="=$FIRSTMATE_SESSION:1"
   if tmux has-session -t "=$FIRSTMATE_SESSION" 2>/dev/null; then
