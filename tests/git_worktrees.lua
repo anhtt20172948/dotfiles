@@ -34,12 +34,9 @@ local function run()
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "keep unsaved edits" })
 	local opts, notices
 	local worktrees = require("customize.git_worktrees")
-	local opened, diffs = {}, {}
+	local opened = {}
 	worktrees.open_files = function(path)
 		opened[#opened + 1] = path
-	end
-	worktrees.ex = function(cmd)
-		diffs[#diffs + 1] = cmd
 	end
 	local home = tmp .. "/home"
 	vim.fn.mkdir(home, "p")
@@ -133,7 +130,21 @@ local function run()
 	git("-C", repo, "worktree", "add", "--detach", pool_main1)
 	git("-C", repo, "worktree", "add", "-b", "fm/task-two", pool_main2)
 	git("-C", other, "worktree", "add", "-b", "fm/other-task", pool_other)
-	vim.fn.writefile({ "wip" }, pool_main2 .. "/wip.txt")
+	vim.fn.writefile({ "tracked" }, pool_main2 .. "/tracked.txt")
+	git("-C", pool_main2, "add", "tracked.txt")
+	git(
+		"-C",
+		pool_main2,
+		"-c",
+		"user.name=Test",
+		"-c",
+		"user.email=test@example.com",
+		"commit",
+		"-qm",
+		"tracked"
+	)
+	vim.fn.writefile({ "untracked" }, pool_main1 .. "/untracked.txt")
+	vim.fn.writefile({ "modified" }, pool_main2 .. "/tracked.txt")
 	local state = home .. "/.local/share/firstmate/state"
 	vim.fn.mkdir(state, "p")
 	vim.fn.writefile({ "window=x", "worktree=" .. pool_main2, "branch=fm/task-two" }, state .. "/task-two.meta")
@@ -158,9 +169,9 @@ local function run()
 	assert(by_path[pool_other] and by_path[pool_main1] and by_path[pool_main2], "treehouse worktrees must be listed")
 	assert(not by_path[pool .. "/" .. current_name .. "-abc123/3/not-a-worktree"], "non-git dirs must be skipped")
 	assert(by_path[pool_main2]:find(current_name .. "  fm/task-two", 1, true), "label must show repo and branch")
-	assert(by_path[pool_main2]:find("dirty", 1, true), "dirty worktree must be marked")
+	assert(by_path[pool_main2]:find("dirty", 1, true), "modified tracked file must mark dirty")
 	assert(by_path[pool_main2]:find("task task-two", 1, true), "owning firstmate task must be shown")
-	assert(not by_path[pool_main1]:find("dirty", 1, true), "clean worktree must not be marked dirty")
+	assert(not by_path[pool_main1]:find("dirty", 1, true), "untracked-only worktree must not be marked dirty")
 	assert(by_path[pool_main1]:find("detached " .. git("-C", pool_main1, "rev-parse", "--short=7", "HEAD"), 1, true))
 	assert(not by_path[pool_main1]:find("task ", 1, true), "unowned worktree has no task id")
 	assert(by_path[pool_other]:find("other  fm/other-task", 1, true), "other repo name comes from the pool dir")
@@ -185,19 +196,6 @@ local function run()
 	assert(opened[#opened] == pool_main2)
 	assert(git("-C", vim.fn.getcwd(), "rev-parse", "--show-toplevel") == vim.uv.fs_realpath(pool_main2))
 
-	-- Diff so với base: -C <worktree> <merge-base>, không đổi cwd.
-	git("-C", repo, "remote", "add", "origin", repo)
-	git("-C", repo, "update-ref", "refs/remotes/origin/main", git("-C", repo, "rev-parse", "HEAD"))
-	git("-C", repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-	vim.cmd.cd(repo)
-	opts.actions.worktree_diff(picker, pool_item)
-	assert(
-		#diffs == 1 and diffs[1]:find("DiffviewOpen -C" .. pool_main2, 1, true),
-		"diff action must open Diffview: " .. vim.inspect(diffs)
-	)
-	assert(diffs[1]:find(git("-C", pool_main2, "merge-base", "origin/main", "HEAD"), 1, true))
-	assert(vim.fn.getcwd() == repo, "diff action must not change cwd")
-	assert(opts.win.input.keys["<a-d>"], "diff action must be bound in the picker")
 	assert(git("-C", pool_main2, "status", "--porcelain") == before, "picker must leave worktrees untouched")
 
 	vim.cmd.cd(tmp)

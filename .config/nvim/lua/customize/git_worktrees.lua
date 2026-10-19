@@ -4,13 +4,9 @@
 -- state của firstmate; `status` dùng --no-optional-locks để khỏi làm mới index.
 local M = {}
 
--- Seam cho test (giống aiterm_flow): mở file picker / lệnh ex.
+-- Seam cho test (giống aiterm_flow): mở file picker.
 function M.open_files(path)
 	Snacks.picker.files({ cwd = path })
-end
-
-function M.ex(cmd)
-	vim.cmd(cmd)
 end
 
 local function home()
@@ -83,7 +79,6 @@ local function treehouse_entries()
 				branch = "detached",
 				labels = {},
 				repo = pool:gsub("%-%x%x%x%x%x%x$", ""),
-				treehouse = true,
 			}
 		end
 	end
@@ -108,13 +103,14 @@ local function task_ids()
 	return ids
 end
 
---- Nhánh (hoặc sha ngắn khi detached) và trạng thái dirty, qua một lệnh status
---- chỉ đọc cho mỗi worktree; chạy song song rồi mới chờ.
+--- Nhánh (hoặc sha ngắn khi detached) và trạng thái dirty (chỉ file đã track, bỏ
+--- qua untracked để khỏi quét cả cây), qua một lệnh status chỉ đọc cho mỗi
+--- worktree; chạy song song rồi mới chờ.
 local function fill_status(entries)
 	local jobs = {}
 	for i, entry in ipairs(entries) do
 		jobs[i] = vim.system(
-			{ "git", "--no-optional-locks", "-C", entry.path, "status", "--porcelain=v2", "--branch" },
+			{ "git", "--no-optional-locks", "-C", entry.path, "status", "--porcelain=v2", "--branch", "--untracked-files=no" },
 			{ text = true }
 		)
 	end
@@ -128,7 +124,7 @@ local function fill_status(entries)
 			elseif head then
 				entry.branch = head
 			end
-			entry.dirty = res.stdout:find("\n[12u?] ") ~= nil
+			entry.dirty = res.stdout:find("\n[12u] ") ~= nil
 		elseif entry.branch == "detached" and entry.sha then
 			entry.branch = "detached " .. entry.sha:sub(1, 7)
 		end
@@ -148,9 +144,7 @@ local function build_entries(cwd)
 	end
 	for _, entry in ipairs(treehouse_entries()) do
 		entry.actual = realpath(entry.path)
-		if by_path[entry.actual] then
-			by_path[entry.actual].treehouse = true
-		else
+		if not by_path[entry.actual] then
 			entries = entries or {}
 			entries[#entries + 1] = entry
 			by_path[entry.actual] = entry
@@ -206,19 +200,6 @@ local function label(entry)
 	return ("%s  %s  %s%s"):format(entry.repo or "?", entry.branch, entry.path, suffix)
 end
 
---- Diffview của worktree so với base (merge-base với origin/HEAD), qua -C: không
---- đổi cwd và không ghi gì vào worktree.
-function M.diff(entry)
-	if vim.fn.isdirectory(entry.path) == 0 then
-		return vim.notify("Worktree is missing: " .. entry.path, vim.log.levels.ERROR)
-	end
-	local sha, err = require("customize.aiterm_flow").crew_merge_base(entry.path)
-	if not sha then
-		return vim.notify(err, vim.log.levels.WARN)
-	end
-	M.ex(("DiffviewOpen -C%s %s"):format(vim.fn.fnameescape(entry.path), sha))
-end
-
 function M.open(entry)
 	-- Không xóa buffer: giữ nguyên cả các thay đổi chưa lưu.
 	local ok, err = pcall(vim.cmd.cd, entry.path)
@@ -252,16 +233,6 @@ function M.pick()
 			picker:close()
 			M.open(item.entry)
 		end,
-		actions = {
-			worktree_diff = function(picker, item)
-				if not item then
-					return
-				end
-				picker:close()
-				M.diff(item.entry)
-			end,
-		},
-		win = { input = { keys = { ["<a-d>"] = { "worktree_diff", mode = { "n", "i" } } } } },
 	})
 end
 
