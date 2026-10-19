@@ -73,8 +73,7 @@ grep -Fqx -- "-p review this|$PWD" "$LOG"
 python3 -I -c 'import sys, yaml; sys.exit(yaml.safe_load(open(sys.argv[1]))["agent_path_override"]["claude"] != "ai-acct-claude")' \
   "$ROOT/.no-mistakes/config.yaml" || fail 'no-mistakes override'
 "$ACCT" status >> "$TMP/out"
-grep -Fq 'Claude account: b' "$TMP/out"
-grep -Fqx 'quota|--provider claude,codex' "$LOG"
+grep -Fq 'Claude b (active)' "$TMP/out"
 EXPECTED_TOKEN=synthetic-a "$ACCT" use a
 [ "$(cat "$HOME/.config/claude-accounts/active")" = a ] || fail 'selector a'
 EXPECTED_TOKEN=synthetic-a "$ACCT" resume

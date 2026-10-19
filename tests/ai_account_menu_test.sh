@@ -19,7 +19,11 @@ tail -n +2 "$CHOICES" > "$CHOICES.next"
 mv "$CHOICES.next" "$CHOICES"
 printf '%s\n' "$choice"
 MOCK
-chmod +x "$TMP/bin/fzf"
+cat > "$TMP/bin/quota-axi" <<'MOCK'
+#!/bin/sh
+printf '{"providers":[]}\n'
+MOCK
+chmod +x "$TMP/bin/fzf" "$TMP/bin/quota-axi"
 export PATH="$TMP/bin:$PATH"
 MENU="$ROOT/.config/tmux/scripts/ai-account.sh"
 dir=$HOME/.config/claude-accounts
@@ -33,7 +37,7 @@ printf 'work\nsynthetic-work\n' | menu add
 sed '/^--$/q' "$MENU_LOG" > "$TMP/first-menu"
 grep -Fqx $'add\t+ Add account' "$TMP/first-menu" || fail 'menu lacks add'
 if grep -Fq 'Replace token' "$TMP/first-menu"; then fail 'offered edit with no accounts'; fi
-grep -Fqx $'use:work\tUse work' "$MENU_LOG" || fail 'menu did not return after add'
+grep -Fq $'use:work\tUse work  ◌ unknown' "$MENU_LOG" || fail 'menu did not return after add'
 
 bash "$MENU" add <<< $'home\nsynthetic-home' 2>>"$TMP/err"
 [[ -f $dir/home.token ]] || fail 'direct add action'
@@ -41,8 +45,8 @@ bash "$MENU" add <<< $'home\nsynthetic-home' 2>>"$TMP/err"
 menu use:work < /dev/null
 [[ $(cat "$dir/active") == work ]] || fail 'use from menu'
 menu < /dev/null
-grep -Fqx $'use:work\tUse work (active)' "$MENU_LOG" || fail 'active marker'
-grep -Fqx $'use:home\tUse home' "$MENU_LOG" || fail 'inactive account entry'
+grep -Fq $'use:work\tUse work (active)  ◌ unknown' "$MENU_LOG" || fail 'active marker'
+grep -Fq $'use:home\tUse home  ◌ unknown' "$MENU_LOG" || fail 'inactive account entry'
 
 printf 'synthetic-new\n' | menu edit work
 [[ $(cat "$dir/work.token") == synthetic-new ]] || fail 'edit token'

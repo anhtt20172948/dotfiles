@@ -59,16 +59,16 @@ pick() {
 
 # NAME<TAB>NAME [(active)] lines, from ai-acct so the name rules live in one place.
 account_entries() {
-  local listing name state
-  listing=$(ai-acct list) || return 1
-  while IFS=$'\t' read -r name state; do
+  local listing name state quota
+  listing=$(ai-acct list --quota) || return 1
+  while IFS='|' read -r name state quota; do
     [[ -n "$name" ]] || continue
     if [[ "$state" == active ]]; then
-      printf '%s\t%s (active)\n' "$name" "$name"
+      printf '%s\t%s (active)  %s\n' "$name" "$name" "$quota"
     else
-      printf '%s\t%s\n' "$name" "$name"
+      printf '%s\t%s  %s\n' "$name" "$name" "$quota"
     fi
-  done <<<"$listing"
+  done <<<"${listing//$'\t'/|}"
 }
 
 pick_account() {

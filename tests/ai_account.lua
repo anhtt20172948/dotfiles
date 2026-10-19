@@ -29,7 +29,10 @@ vim.system = function(cmd, opts, cb)
 	if cmd[2] == "list" then
 		return {
 			wait = function()
-				return { code = 0, stdout = "a\t\nwork\tactive\n", stderr = "" }
+				local output = cmd[3] == "--quota"
+					and "a\t\t███████░░░ 75% left\nwork\tactive\t◌ rate-limited\n"
+					or "a\t\nwork\tactive\n"
+				return { code = 0, stdout = output, stderr = "" }
 			end,
 		}
 	end
@@ -103,8 +106,8 @@ end
 acct.menu()
 assert(vim.deep_equal(last(9).cmd, { "ai-acct", "use", "a" }))
 assert(vim.deep_equal(offered, {
-	"Use a",
-	"Use work (active)",
+	"Use a  ███████░░░ 75% left",
+	"Use work (active)  ◌ rate-limited",
 	"+ Add account",
 	"Replace token",
 	"Rename account",

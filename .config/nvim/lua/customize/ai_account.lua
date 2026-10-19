@@ -33,18 +33,21 @@ function M.status()
 end
 
 -- { name, active } from ai-acct, the single owner of account names.
-local function accounts()
+local function accounts(with_quota)
 	local ok, result = pcall(function()
-		return vim.system({ "ai-acct", "list" }, { text = true }):wait()
+		return vim.system(with_quota and { "ai-acct", "list", "--quota" } or { "ai-acct", "list" }, { text = true }):wait()
 	end)
 	if not ok or result.code ~= 0 then
 		return {}
 	end
 	local list = {}
 	for line in vim.gsplit(result.stdout or "", "\n", { trimempty = true }) do
-		local name, state = line:match("^([^\t]+)\t?(.*)$")
+		local name, state, quota = line:match("^([^\t]+)\t([^\t]*)\t(.*)$")
+		if not name then
+			name, state = line:match("^([^\t]+)\t?(.*)$")
+		end
 		if name then
-			list[#list + 1] = { name = name, active = state == "active" }
+			list[#list + 1] = { name = name, active = state == "active", quota = quota }
 		end
 	end
 	return list
@@ -162,12 +165,13 @@ end
 -- Mirrors tmux prefix E.
 function M.menu()
 	local items = {}
-	local list = accounts()
+	local list = accounts(true)
 	for _, account in ipairs(list) do
 		items[#items + 1] = {
 			action = "use",
 			name = account.name,
-			text = "Use " .. account.name .. (account.active and " (active)" or ""),
+			text = "Use " .. account.name .. (account.active and " (active)" or "")
+				.. (account.quota and "  " .. account.quota or ""),
 		}
 	end
 	items[#items + 1] = { action = "add", text = "+ Add account" }
