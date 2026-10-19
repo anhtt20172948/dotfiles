@@ -206,12 +206,12 @@ Notes:
   `NN% left`, or `quota ?` when missing, unreadable, stale or timed out. Lookup
   is capped at five seconds. The higher remaining percentage comes first; ties
   or unknown quota default to Claude. A single installed CLI skips this step.
-- For Claude, an account picker follows when local
-  `~/.config/claude-accounts/{a,b}.token` files exist. It shows A/B and marks
-  the active selector. Selection updates the selector and tmux environment
-  only after all pickers finish; the pane loads the token at launch without
-  putting it in its command string. Both accounts share Claude history/config.
-  Codex and installations without token files skip the account step.
+- For Claude, an account picker follows. It offers the local
+  `~/.config/claude-accounts/{a,b}.token` files and marks the active selector;
+  when none are installed it reports the missing setup instead of launching.
+  Selection updates the selector and tmux environment only after all pickers
+  finish; the pane loads the token at launch without putting it in its command
+  string. Both accounts share Claude history/config.
 - Model and effort pickers follow, each with `default` first to preserve CLI
   configuration. Claude offers `opus`, `sonnet`, `haiku` and efforts `low`,
   `medium`, `high`, `xhigh`, `max`. Codex reads visible models and their supported
@@ -220,8 +220,7 @@ Notes:
   Esc at any step cancels without launching. Existing firstmate windows jump
   directly without any prompts.
 - `AI_FIRSTMATE_AGENT=claude` or `codex` skips only the agent picker.
-  `AI_FIRSTMATE_ACCOUNT=a` or `b` skips only the Claude account picker and
-  requires that token file. See [token setup and migration](../../README.md#claude-account-switching).
+  See [token setup and migration](../../README.md#claude-account-switching).
   **prefix U** switches the active token for future launches; **prefix Q**
   shows Claude/Codex quota using it. Running processes retain their token.
   Choosing `opus` and `high` launches `claude --model opus --effort high`.

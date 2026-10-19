@@ -234,15 +234,9 @@ firstmate_choose_account() {
     [[ "$account" != "$active" ]] || label="$label (active)"
     entries="${entries}${account}"$'\t'"${label}"$'\n'
   done
-  if [[ -n "${AI_FIRSTMATE_ACCOUNT:-}" ]]; then
-    case "$AI_FIRSTMATE_ACCOUNT" in a|b) ;; *) fail 'AI_FIRSTMATE_ACCOUNT must be a or b' ;; esac
-    [[ -f "$accounts/$AI_FIRSTMATE_ACCOUNT.token" ]] || fail 'selected Claude account token is missing'
-    printf '%s\n' "$AI_FIRSTMATE_ACCOUNT"
-  elif [[ -n "$entries" ]]; then
-    firstmate_pick Account "$entries"
-  else
-    printf 'unconfigured\n'
-  fi
+  [[ -n "$entries" ]] \
+    || fail 'no Claude account tokens - install ~/.config/claude-accounts/{a,b}.token'
+  firstmate_pick Account "$entries"
 }
 
 # All launch pickers use the same style and validate selections against the
@@ -323,7 +317,7 @@ action_firstmate() {
     || fail "firstmate not found at $FIRSTMATE_DIR - run install_agent_workflow"
   [[ -n "${TMUX:-}" ]] || fail 'firstmate needs tmux (its crewmates are tmux windows)'
 
-  local target cmd windows index window name panes agent account=unconfigured model effort catalog='' entries flag first=''
+  local target cmd windows index window name panes agent account model effort catalog='' entries flag first=''
   target=$(firstmate_target)
   if [[ -n "$target" ]]; then
     tmux switch-client -t "${target%%:*}" \; select-window -t "$target"
@@ -359,7 +353,7 @@ action_firstmate() {
       codex) printf -v cmd '%s -c %q' "$cmd" "model_reasoning_effort=$effort" ;;
     esac
   fi
-  if [[ "$agent" == claude && "$account" != unconfigured ]]; then
+  if [[ "$agent" == claude ]]; then
     need ai-acct
     # Commit the account only after every picker succeeds. Resolve its token
     # inside the new pane, even if that pane does not run zsh startup.

@@ -242,9 +242,9 @@ process during redraws (`AI:-` means unconfigured; `AI:?` means invalid).
 
 Starting Firstmate through tmux **prefix F** or Neovim uses the same picker:
 agent, Claude account, model, then effort. The account step shows available
-local token files and marks the active account. Codex and installations without
-any token files skip it. `AI_FIRSTMATE_ACCOUNT=a|b` bypasses only the account
-picker, and `AI_FIRSTMATE_AGENT=claude|codex` bypasses only the agent picker.
-Cancelling any picker leaves the account unchanged. Existing Firstmate windows
-are focused without prompting or switching; restart the main session to change
-its token. Rate-limit switching remains manual.
+local token files and marks the active account; with none installed it reports
+the missing setup instead of launching. `AI_FIRSTMATE_AGENT=claude|codex`
+bypasses only the agent picker. Cancelling any picker leaves the account
+unchanged. Existing Firstmate windows are focused without prompting or
+switching; restart the main session to change its token. Rate-limit switching
+remains manual.

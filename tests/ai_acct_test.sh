@@ -17,11 +17,20 @@ printf '%s|%s\n' "$*" "$PWD" >> "$LOG"
 MOCK
 cat > "$TMP/bin/tmux" <<'MOCK'
 #!/bin/sh
-case "$*" in
-  'set-environment -g CLAUDE_CODE_OAUTH_TOKEN '*)
-    [ "$4" = "${EXPECTED_TOKEN:-synthetic-b}" ] || exit 83
+if [ "$#" -ne 0 ]; then
+  case "$*" in
+    *synthetic-*) printf 'tmux|argv|%s\n' "$*" >> "$LOG"; exit 95 ;;
+  esac
+  printf 'tmux|%s\n' "$*" >> "$LOG"
+  exit 0
+fi
+command=$(cat)
+printf 'tmux|stdin\n' >> "$LOG"
+case "$command" in
+  *"set-environment -g CLAUDE_CODE_OAUTH_TOKEN '"*"'"*)
+    token=$(printf '%s\n' "$command" | sed -n "s/.*CLAUDE_CODE_OAUTH_TOKEN '\([^']*\)'.*/\1/p")
+    [ "$token" = "${EXPECTED_TOKEN:-synthetic-b}" ] || exit 83
     printf 'tmux|token updated\n' >> "$LOG" ;;
-  *) printf 'tmux|%s\n' "$*" >> "$LOG" ;;
 esac
 MOCK
 cat > "$TMP/bin/quota-axi" <<'MOCK'

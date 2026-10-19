@@ -75,10 +75,10 @@ case "${1:-status}" in
         printf '%s\n' "$account" > "$tmp"
         mv -f "$tmp" "$accounts/active" || fail 'Cannot save selector.'
         if [ -n "${TMUX:-}" ]; then
-            # Token is an argument, never part of a shell command or pane history.
-            tmux set-environment -g CLAUDE_CODE_OAUTH_TOKEN "$token" || fail 'Selector saved, but tmux token update failed.'
-            tmux set-environment -gu CLAUDE_CONFIG_DIR || fail 'Cannot clear tmux config override.'
-            tmux set-environment -gu ANTHROPIC_API_KEY || fail 'Cannot clear tmux API key override.'
+            # Single-quoted command on stdin: the token never enters the tmux client's argv.
+            quoted=$(printf '%s' "$token" | sed "s/\\\\/\\\\\\\\/g; s/'/\\\\'/g")
+            printf "set-environment -g CLAUDE_CODE_OAUTH_TOKEN '%s'\nset-environment -gu CLAUDE_CONFIG_DIR\nset-environment -gu ANTHROPIC_API_KEY\n" "$quoted" \
+                | tmux || fail 'Selector saved, but tmux token update failed.'
         fi
         printf 'Selected Claude account %s for future launches.\nRunning processes keep their account; ai-acct resume continues the main session.\n' "$account"
         ;;
