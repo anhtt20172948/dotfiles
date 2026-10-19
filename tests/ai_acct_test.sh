@@ -17,7 +17,10 @@ printf '%s|%s\n' "$*" "$PWD" >> "$LOG"
 MOCK
 cat > "$TMP/bin/tmux" <<'MOCK'
 #!/bin/sh
-if [ "$#" -ne 0 ]; then
+# Real tmux reads commands from stdin only via `source-file -`; bare `tmux`
+# would try to attach a new session instead.
+[ "$#" -ne 0 ] || exit 97
+if [ "$*" != 'source-file -' ]; then
   case "$*" in
     *synthetic-*) printf 'tmux|argv|%s\n' "$*" >> "$LOG"; exit 95 ;;
   esac
@@ -57,8 +60,19 @@ grep -Fqx 'tmux|token updated' "$LOG"
 grep -Fqx -- "--continue|$FM_HOME" "$LOG"
 "$ACCT" exec claude --model opus
 grep -Fqx -- "--model opus|$PWD" "$LOG"
+# Completed onboarding is left in place so concurrent Claude writes are not lost.
+config_inode=$(stat -c %i "$HOME/.claude.json")
+"$ACCT" exec claude --again
+[ "$(stat -c %i "$HOME/.claude.json")" = "$config_inode" ] || fail 'rewrote completed config'
+# no-mistakes only accepts a binary path; the installed symlink must use the active token.
+mkdir -p "$HOME/.local/bin"
+ln -s "$ACCT" "$HOME/.local/bin/ai-acct"
+ln -s "$ROOT/.local/bin/ai-acct-claude" "$HOME/.local/bin/ai-acct-claude"
+PATH="$TMP/bin:/usr/bin:/bin" "$HOME/.local/bin/ai-acct-claude" -p 'review this'
+grep -Fqx -- "-p review this|$PWD" "$LOG"
+grep -Fqx '  claude: ai-acct-claude' "$ROOT/.no-mistakes/config.yaml" || fail 'no-mistakes override'
 "$ACCT" status >> "$TMP/out"
-grep -Fq 'Claude account: B' "$TMP/out"
+grep -Fq 'Claude account: b' "$TMP/out"
 grep -Fqx 'quota|--provider claude,codex' "$LOG"
 EXPECTED_TOKEN=synthetic-a "$ACCT" use a
 [ "$(cat "$HOME/.config/claude-accounts/active")" = a ] || fail 'selector a'
@@ -93,7 +107,48 @@ jq -e '.hasCompletedOnboarding == true' "$HOME/.claude.json" >/dev/null
 # Nothing configured: preserve ordinary shell behavior and report it explicitly.
 rm "$HOME/.config/claude-accounts/active"
 zsh -c '[[ $CLAUDE_CODE_OAUTH_TOKEN == stale ]]' || fail 'changed unconfigured shell'
+# Managed accounts: names are validated and tokens arrive only on stdin.
+dir=$HOME/.config/claude-accounts
+printf 'synthetic-work\n' | "$ACCT" add work >> "$TMP/out"
+[ "$(cat "$dir/work.token")" = synthetic-work ] || fail 'add token'
+[ "$(stat -c %a "$dir/work.token")" = 600 ] || fail 'add permissions'
+if printf 'synthetic-dup\n' | "$ACCT" add work; then fail 'add replaced account'; fi
+[ "$(cat "$dir/work.token")" = synthetic-work ] || fail 'add changed existing token'
+for bad in Work ../x 'a b' -x ''; do
+  if printf 'synthetic-bad\n' | "$ACCT" add "$bad"; then fail "accepted name '$bad'"; fi
+done
+for bad_token in 'has space' "it's" 'back\slash'; do
+  if printf '%s\n' "$bad_token" | "$ACCT" add spaced; then fail "accepted token '$bad_token'"; fi
+done
+if "$ACCT" add empty < /dev/null; then fail 'accepted empty token'; fi
+[ ! -e "$dir/spaced.token" ] && [ ! -e "$dir/empty.token" ] || fail 'kept rejected token'
+EXPECTED_TOKEN=synthetic-work "$ACCT" use work >> "$TMP/out"
+zsh -c '[[ $CLAUDE_CODE_OAUTH_TOKEN == synthetic-work ]]' || fail 'zsh startup named account'
+"$ACCT" list > "$TMP/list"
+[ "$(cat "$TMP/list")" = "$(printf 'a\t\nb\t\nwork\tactive')" ] || fail 'list'
+: > "$LOG"
+printf 'synthetic-work2\n' | EXPECTED_TOKEN=synthetic-work2 "$ACCT" edit work >> "$TMP/out"
+[ "$(cat "$dir/work.token")" = synthetic-work2 ] || fail 'edit token'
+[ "$(stat -c %a "$dir/work.token")" = 600 ] || fail 'edit permissions'
+grep -Fqx 'tmux|token updated' "$LOG" || fail 'edit did not refresh active tmux token'
+if printf 'synthetic-x\n' | "$ACCT" edit missing; then fail 'edited missing account'; fi
+[ ! -e "$dir/missing.token" ] || fail 'edit created account'
+"$ACCT" rename work job >> "$TMP/out"
+[ -e "$dir/job.token" ] && [ ! -e "$dir/work.token" ] || fail 'rename'
+[ "$(cat "$dir/active")" = job ] || fail 'rename did not follow active account'
+if "$ACCT" rename job b; then fail 'rename replaced account'; fi
+if "$ACCT" rename job Bad; then fail 'rename accepted bad name'; fi
+[ "$(cat "$dir/b.token")" = synthetic-b ] || fail 'rename changed other token'
+: > "$LOG"
+"$ACCT" remove job >> "$TMP/out"
+[ ! -e "$dir/job.token" ] || fail 'remove token'
+[ ! -e "$dir/active" ] || fail 'kept selector of removed account'
+grep -Fqx 'tmux|set-environment -gu CLAUDE_CODE_OAUTH_TOKEN' "$LOG" || fail 'remove kept tmux token'
+if "$ACCT" remove job; then fail 'removed missing account'; fi
+"$ACCT" use b >> "$TMP/out"
+"$ACCT" remove a >> "$TMP/out"
+[ ! -e "$dir/a.token" ] && [ "$(cat "$dir/active")" = b ] || fail 'remove inactive account'
 "$ACCT" --help >/dev/null
 if "$ACCT" login b; then fail 'legacy login accepted'; fi
-if grep -Eq 'synthetic-[ab]' "$LOG" "$TMP/out"; then fail 'token leaked'; fi
+if grep -Eq 'synthetic-' "$LOG" "$TMP/out" "$TMP/list"; then fail 'token leaked'; fi
 printf 'ai-acct: OK\n'

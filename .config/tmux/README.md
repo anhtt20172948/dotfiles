@@ -206,12 +206,12 @@ Notes:
   `NN% left`, or `quota ?` when missing, unreadable, stale or timed out. Lookup
   is capped at five seconds. The higher remaining percentage comes first; ties
   or unknown quota default to Claude. A single installed CLI skips this step.
-- For Claude, an account picker follows. It offers the local
-  `~/.config/claude-accounts/{a,b}.token` files and marks the active selector;
-  when none are installed it reports the missing setup instead of launching.
+- For Claude, an account picker follows. It offers every account from
+  `ai-acct list` (`~/.config/claude-accounts/NAME.token`), active first;
+  when none exist it reports the missing setup instead of launching.
   Selection updates the selector and tmux environment only after all pickers
   finish; the pane loads the token at launch without putting it in its command
-  string. Both accounts share Claude history/config.
+  string. All accounts share Claude history/config.
 - Model and effort pickers follow, each with `default` first to preserve CLI
   configuration. Claude offers `opus`, `sonnet`, `haiku` and efforts `low`,
   `medium`, `high`, `xhigh`, `max`. Codex reads visible models and their supported
@@ -221,8 +221,10 @@ Notes:
   directly without any prompts.
 - `AI_FIRSTMATE_AGENT=claude` or `codex` skips only the agent picker.
   See [token setup and migration](../../README.md#claude-account-switching).
-  **prefix U** switches the active token for future launches; **prefix Q**
-  shows Claude/Codex quota using it. Running processes retain their token.
+  **prefix E** (`ai-account.sh`) uses, adds, replaces the token of, renames or
+  removes Claude accounts; tokens are typed hidden straight into `ai-acct`.
+  **prefix Q** shows Claude/Codex quota using the active one. Running processes
+  retain their token.
   Choosing `opus` and `high` launches `claude --model opus --effort high`.
   Codex uses `-m MODEL` and `-c model_reasoning_effort=LEVEL`; defaults add no
   flags.

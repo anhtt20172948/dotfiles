@@ -1,0 +1,4 @@
+#!/bin/sh
+# Claude with the ai-acct selected token, for launchers that take only a binary path (no-mistakes).
+# ai-acct is a sibling both in the repo and in ~/.local/bin after install.sh.
+exec "$(dirname "$0")/ai-acct" exec claude "$@"

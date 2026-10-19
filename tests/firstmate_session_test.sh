@@ -27,7 +27,9 @@ printf '%s\n' "$value"
 MOCK
 cat >"$TMP/bin/tmux" <<'MOCK'
 #!/usr/bin/env bash
-if [[ $# -eq 0 ]]; then
+# Real tmux reads commands from stdin only via `source-file -`.
+[[ $# -ne 0 ]] || exit 97
+if [[ $* == 'source-file -' ]]; then
   command=$(cat)
   printf 'tmux|stdin\n' >>"$LOG"
   case "$command" in

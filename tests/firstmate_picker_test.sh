@@ -13,13 +13,15 @@ for tool in bash dirname readlink realpath awk jq timeout cat sleep mktemp stat 
 done
 cat > "$TMP/bin/tmux" <<'MOCK'
 #!/usr/bin/env bash
-if [[ $# -eq 0 ]]; then
+# Real tmux reads commands from stdin only via `source-file -`.
+[[ $# -ne 0 ]] || exit 97
+if [[ $* == 'source-file -' ]]; then
   command=$(cat)
   printf 'tmux|stdin\n' >> "$LOG"
   case "$command" in
     *"set-environment -g CLAUDE_CODE_OAUTH_TOKEN '"*"'"*)
       token=$(printf '%s\n' "$command" | sed -n "s/.*CLAUDE_CODE_OAUTH_TOKEN '\([^']*\)'.*/\1/p")
-      [[ $token == synthetic-b || $token == synthetic-a ]] || exit 89 ;;
+      [[ $token == synthetic-b || $token == synthetic-a || $token == synthetic-work ]] || exit 89 ;;
   esac
   exit 0
 fi
@@ -98,10 +100,11 @@ run() {
 started() { /bin/grep -Fq "|exec $1|" "$LOG" || fail "did not start $1"; }
 first() { local line; IFS= read -r line < "$PICKER" || line=; [[ $line == "$1"* ]] || fail "default is not $1"; }
 no_start() { if /bin/grep -Fq 'new-session|' "$LOG"; then fail 'unexpected launch'; fi; }
-# Claude launches require a local token; both accounts exist for the picker.
+# Claude launches require a local token; several named accounts exist for the picker.
 /bin/mkdir -p "$HOME/.config/claude-accounts"
 printf 'synthetic-a\n' > "$HOME/.config/claude-accounts/a.token"
 printf 'synthetic-b\n' > "$HOME/.config/claude-accounts/b.token"
+printf 'synthetic-work\n' > "$HOME/.config/claude-accounts/work.token"
 /bin/chmod 600 "$HOME/.config/claude-accounts/"*.token
 printf 'a\n' > "$HOME/.config/claude-accounts/active"
 quota 20 80
@@ -239,8 +242,16 @@ printf 'a\n' > "$HOME/.config/claude-accounts/active"
 export AI_FIRSTMATE_AGENT=claude ACCOUNT_CHOICE=b
 run; started 'ai-acct exec claude'
 [[ $(/bin/cat "$HOME/.config/claude-accounts/active") == b ]] || fail 'account not switched'
-/bin/grep -Fxq $'a\tClaude account A (active)' "$PICKER.Account" || fail 'missing active marker'
-/bin/grep -Fxq $'b\tClaude account B' "$PICKER.Account" || fail 'missing account B'
+[[ $(/bin/cat "$PICKER.Account") == $'a\tClaude account a (active)\nb\tClaude account b\nwork\tClaude account work' ]] \
+  || fail "account entries: $(/bin/cat "$PICKER.Account")"
+# Any named account can be launched; the active one is offered first.
+export ACCOUNT_CHOICE=work
+run; started 'ai-acct exec claude'
+[[ $(/bin/cat "$HOME/.config/claude-accounts/active") == work ]] || fail 'named account not switched'
+export ACCOUNT_CHOICE=b
+run
+IFS= read -r line < "$PICKER.Account"
+[[ $line == $'work\tClaude account work (active)' ]] || fail 'active account not first'
 for CANCEL_STAGE in Account Model Effort; do
   printf 'a\n' > "$HOME/.config/claude-accounts/active"
   export CANCEL_STAGE
@@ -258,9 +269,9 @@ if run; then fail 'missing token selection accepted'; fi
 no_start
 unset ACCOUNT_CHOICE
 run; started 'ai-acct exec claude'
-if /bin/grep -Fq 'Claude account B' "$PICKER.Account"; then fail 'offered missing token'; fi
-/bin/rm "$HOME/.config/claude-accounts/a.token"
+if /bin/grep -Fq 'Claude account b' "$PICKER.Account"; then fail 'offered missing token'; fi
+/bin/rm "$HOME/.config/claude-accounts/a.token" "$HOME/.config/claude-accounts/work.token"
 if run 2>"$TMP/err"; then fail 'no-token launch succeeded'; fi
 no_start
-/bin/grep -Fq 'no Claude account tokens' "$TMP/err" || fail 'missing setup not reported'
+/bin/grep -Fq 'no Claude accounts' "$TMP/err" || fail 'missing setup not reported'
 printf 'firstmate picker: OK\n'

@@ -2,42 +2,116 @@
 # Tokens and the selector stay outside dotfiles; Claude history stays shared.
 set +x
 set -eu
+# Name checks below rely on byte ranges, never locale collation.
+LC_ALL=C
+export LC_ALL
 accounts=$HOME/.config/claude-accounts
 fm_home=${FM_HOME:-$HOME/.local/share/firstmate}
 fail() { printf 'ai-acct: %s\n' "$*" >&2; exit 1; }
 usage() {
     cat <<'HELP'
-Usage: ai-acct [status | use a|b | resume | exec COMMAND [ARG...] | --help]
-  status   Show the active Claude account and Claude/Codex quota.
-  use a|b  Select a local token for future launches and tmux panes.
-  resume   Continue Claude in ${FM_HOME:-~/.local/share/firstmate}.
-  exec     Run a command with the active token and shared Claude config.
-Store tokens in ~/.config/claude-accounts/{a,b}.token with mode 600.
-Running processes retain their account until relaunched.
+Usage: ai-acct [COMMAND]
+  status            Show the active Claude account and Claude/Codex quota.
+  list              List accounts as NAME<TAB>active|empty.
+  use NAME          Select an account for future launches and tmux panes.
+  add NAME          Add an account; the token is read from stdin (hidden on a TTY).
+  edit NAME         Replace an account token, read like add.
+  rename OLD NEW    Rename an account, keeping it active if it was.
+  remove NAME       Delete an account token; removing the active one clears it.
+  resume            Continue Claude in ${FM_HOME:-~/.local/share/firstmate}.
+  exec CMD [ARG...] Run a command with the active token and shared Claude config.
+Names: lowercase letters, digits, '-' and '_', up to 32 characters.
+Tokens live in ~/.config/claude-accounts/NAME.token with mode 600 and never
+appear in arguments. Running processes keep their account until relaunched.
 HELP
+}
+valid_name() {
+    case "$1" in ''|[!a-z0-9]*|*[!a-z0-9_-]*) return 1 ;; esac
+    [ "${#1}" -le 32 ]
+}
+# OAuth tokens are base64url-like; anything else is a paste error and could
+# break the tmux command that exports the token.
+valid_token() {
+    case "$1" in ''|*[!A-Za-z0-9._~+/=-]*) return 1 ;; esac
+}
+need_name() {
+    valid_name "$1" || fail "Invalid account name '$1'; use lowercase letters, digits, '-' and '_'."
+}
+need_account() {
+    need_name "$1"
+    [ -f "$accounts/$1.token" ] || fail "No account named '$1'; see ai-acct list."
 }
 read_active() {
     account=''
     [ ! -e "$accounts/active" ] || account=$(cat "$accounts/active") || fail 'Cannot read active selector.'
-    case "$account" in ''|a|b) ;; *) fail 'Invalid active selector; use ai-acct use a|b.' ;; esac
+    [ -z "$account" ] || valid_name "$account" || fail 'Invalid active selector; use ai-acct use NAME.'
 }
 load_token() {
-    case "$account" in a|b) ;; *) fail 'No active account; use ai-acct use a|b.' ;; esac
+    [ -n "$account" ] || fail 'No active account; use ai-acct use NAME.'
     file=$accounts/$account.token
-    [ -f "$file" ] && [ -r "$file" ] || fail 'Token missing or unreadable; install the account token first.'
+    [ -f "$file" ] && [ -r "$file" ] || fail 'Token missing or unreadable; add the account first.'
     mode=$(stat -c %a "$file" 2>/dev/null) || mode=$(stat -f %Lp "$file") || fail 'Cannot check token permissions.'
     [ "$mode" = 600 ] || fail 'Token must have mode 600 (chmod 600 the token file).'
     token=$(cat "$file") || fail 'Cannot read token.'
-    case "$token" in ''|*[![:graph:]]*) fail 'Token must contain one nonempty line without whitespace.' ;; esac
+    valid_token "$token" || fail 'Token must be one line of letters, digits and ._~+/=- only.'
     unset CLAUDE_CONFIG_DIR ANTHROPIC_API_KEY
     CLAUDE_CODE_OAUTH_TOKEN=$token
     export CLAUDE_CODE_OAUTH_TOKEN
+}
+# Reads one token line from stdin into a private temp file named in $token_tmp.
+read_new_token() {
+    new_token=''
+    if [ -t 0 ]; then
+        printf 'Token for %s (input hidden): ' "$1" >&2
+        tty_state=$(stty -g)
+        trap 'stty "$tty_state"' EXIT
+        trap 'exit 1' HUP INT TERM
+        stty -echo
+        IFS= read -r new_token || :
+        stty "$tty_state"
+        trap - EXIT
+        printf '\n' >&2
+    else
+        IFS= read -r new_token || :
+    fi
+    valid_token "$new_token" || fail 'Token must be one line of letters, digits and ._~+/=- only.'
+    umask 077
+    if [ ! -d "$accounts" ]; then
+        mkdir -p "${accounts%/*}" || fail 'Cannot create ~/.config.'
+        mkdir -m 700 "$accounts" || fail 'Cannot create account directory.'
+    fi
+    token_tmp=$(mktemp "$accounts/.token.XXXXXX") || fail 'Cannot prepare token file.'
+    trap 'rm -f "$token_tmp"' EXIT
+    trap 'exit 1' HUP INT TERM
+    printf '%s\n' "$new_token" > "$token_tmp" || fail 'Cannot write token file.'
+    unset new_token
+}
+write_selector() {
+    umask 077
+    selector=$(mktemp "$accounts/.active.XXXXXX") || fail 'Cannot prepare selector.'
+    if ! { printf '%s\n' "$1" > "$selector" && mv -f "$selector" "$accounts/active"; }; then
+        rm -f "$selector"
+        fail 'Cannot save selector.'
+    fi
+}
+# tmux reads the commands from stdin, so the token never enters its argv;
+# valid_token guarantees nothing in it needs escaping inside single quotes.
+tmux_set_token() {
+    [ -n "${TMUX:-}" ] || return 0
+    printf "set-environment -g CLAUDE_CODE_OAUTH_TOKEN '%s'\nset-environment -gu CLAUDE_CONFIG_DIR\nset-environment -gu ANTHROPIC_API_KEY\n" "$token" \
+        | tmux source-file - || fail 'Account saved, but tmux token update failed.'
+}
+tmux_clear_token() {
+    [ -n "${TMUX:-}" ] || return 0
+    tmux set-environment -gu CLAUDE_CODE_OAUTH_TOKEN || fail 'Account removed, but tmux token reset failed.'
 }
 ensure_onboarding() (
     # Preserve all existing settings; never replace malformed user config.
     umask 077
     command -v jq >/dev/null 2>&1 || fail 'jq is required to update ~/.claude.json.'
     config=$HOME/.claude.json
+    # Already onboarded: rewriting could drop a concurrent write from a running Claude.
+    ! jq -e '.hasCompletedOnboarding == true' "$config" >/dev/null 2>&1 || exit 0
     tmp=$(mktemp "$HOME/.claude.json.XXXXXX") || fail 'Cannot prepare shared config.'
     trap 'rm -f "$tmp"' EXIT
     trap 'exit 1' HUP INT TERM
@@ -56,31 +130,79 @@ case "${1:-status}" in
         read_active
         if [ -n "$account" ]; then
             load_token
-            case "$account" in a) label=A ;; b) label=B ;; esac
-            printf 'Claude account: %s\n' "$label"
+            printf 'Claude account: %s\n' "$account"
         else
             printf 'Claude account: unconfigured\n'
         fi
         exec quota-axi --provider claude,codex
         ;;
+    list)
+        [ "$#" -eq 1 ] || fail 'list takes no arguments.'
+        read_active
+        for file in "$accounts"/*.token; do
+            [ -f "$file" ] || continue
+            name=${file##*/}
+            name=${name%.token}
+            valid_name "$name" || continue
+            state=''
+            [ "$name" != "$account" ] || state=active
+            printf '%s\t%s\n' "$name" "$state"
+        done
+        ;;
     use)
-        [ "$#" -eq 2 ] || fail 'Use: ai-acct use a|b'
+        [ "$#" -eq 2 ] || fail 'Use: ai-acct use NAME'
+        need_name "$2"
         account=$2
         load_token
         ensure_onboarding
-        umask 077
-        tmp=$(mktemp "$accounts/.active.XXXXXX") || fail 'Cannot prepare selector.'
-        trap 'rm -f "$tmp"' EXIT
-        trap 'exit 1' HUP INT TERM
-        printf '%s\n' "$account" > "$tmp"
-        mv -f "$tmp" "$accounts/active" || fail 'Cannot save selector.'
-        if [ -n "${TMUX:-}" ]; then
-            # Single-quoted command on stdin: the token never enters the tmux client's argv.
-            quoted=$(printf '%s' "$token" | sed "s/\\\\/\\\\\\\\/g; s/'/\\\\'/g")
-            printf "set-environment -g CLAUDE_CODE_OAUTH_TOKEN '%s'\nset-environment -gu CLAUDE_CONFIG_DIR\nset-environment -gu ANTHROPIC_API_KEY\n" "$quoted" \
-                | tmux || fail 'Selector saved, but tmux token update failed.'
-        fi
+        write_selector "$account"
+        tmux_set_token
         printf 'Selected Claude account %s for future launches.\nRunning processes keep their account; ai-acct resume continues the main session.\n' "$account"
+        ;;
+    add)
+        [ "$#" -eq 2 ] || fail 'Use: ai-acct add NAME (token on stdin)'
+        need_name "$2"
+        [ ! -e "$accounts/$2.token" ] || fail "Account '$2' already exists; use ai-acct edit $2."
+        read_new_token "$2"
+        # A hard link creates the token atomically and never replaces an account.
+        ln "$token_tmp" "$accounts/$2.token" 2>/dev/null || fail "Account '$2' already exists; use ai-acct edit $2."
+        printf 'Added Claude account %s. Select it with ai-acct use %s.\n' "$2" "$2"
+        ;;
+    edit)
+        [ "$#" -eq 2 ] || fail 'Use: ai-acct edit NAME (token on stdin)'
+        need_account "$2"
+        read_new_token "$2"
+        mv -f "$token_tmp" "$accounts/$2.token" || fail 'Cannot save token.'
+        read_active
+        if [ "$account" = "$2" ]; then
+            load_token
+            tmux_set_token
+        fi
+        printf 'Replaced the token of Claude account %s.\n' "$2"
+        ;;
+    rename)
+        [ "$#" -eq 3 ] || fail 'Use: ai-acct rename OLD NEW'
+        need_account "$2"
+        need_name "$3"
+        [ "$2" != "$3" ] || fail 'Old and new names are the same.'
+        ln "$accounts/$2.token" "$accounts/$3.token" 2>/dev/null || fail "Account '$3' already exists."
+        rm -f "$accounts/$2.token"
+        read_active
+        [ "$account" != "$2" ] || write_selector "$3"
+        printf 'Renamed Claude account %s to %s.\n' "$2" "$3"
+        ;;
+    remove)
+        [ "$#" -eq 2 ] || fail 'Use: ai-acct remove NAME'
+        need_account "$2"
+        read_active
+        rm -f "$accounts/$2.token" || fail 'Cannot remove token.'
+        if [ "$account" = "$2" ]; then
+            rm -f "$accounts/active"
+            tmux_clear_token
+            printf 'Removed active Claude account %s; select another with ai-acct use NAME.\n' "$2"
+        else
+            printf 'Removed Claude account %s.\n' "$2"
+        fi
         ;;
     resume|exec)
         action=$1

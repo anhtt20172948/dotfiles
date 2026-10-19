@@ -200,18 +200,21 @@ fresh machine needs no root to get a working userland:
 
 ### Claude account switching
 
-`ai-acct` selects one of two long-lived Claude OAuth tokens. Both accounts use
-one shared `~/.claude` directory and `~/.claude.json`, so history and
+`ai-acct` manages named, long-lived Claude OAuth tokens and selects one. All
+accounts use one shared `~/.claude` directory and `~/.claude.json`, so history and
 `claude --continue` survive an account switch. Codex keeps its single account.
 Install with `./install.sh`, keep `~/.local/bin` on `PATH`, and install `jq`,
 `claude`, `quota-axi`, and optionally tmux.
 
-1. Store each token outside this repository in
-   `~/.config/claude-accounts/a.token` and `b.token` (one token per file).
-   Create the directory with mode `700` and set each token file to mode `600`.
-   Use a private editor or secret manager; never put tokens in shell commands,
-   logs, or version control. Do not use Claude `/login`.
-2. Run `ai-acct use a` or `ai-acct use b`. This validates the local token file,
+1. Add each account with `ai-acct add NAME` (or **prefix E** / `<leader>au`).
+   Names use lowercase letters, digits, `-` and `_`. The token is typed hidden
+   or piped on stdin, never passed as an argument, and stored outside this
+   repository as `~/.config/claude-accounts/NAME.token` (directory `700`, file
+   `600`). `ai-acct edit NAME` replaces a token, `ai-acct rename OLD NEW` keeps
+   the selection, and `ai-acct remove NAME` deletes it (removing the active one
+   clears the selection). `ai-acct list` shows them. Never put tokens in shell
+   commands, logs, or version control. Do not use Claude `/login`.
+2. Run `ai-acct use NAME`. This validates the local token file,
    atomically writes `~/.config/claude-accounts/active`, and sets
    `"hasCompletedOnboarding": true` in the shared `~/.claude.json`, preserving
    other settings. It does not make an authentication request.
@@ -226,6 +229,11 @@ shell's environment: use `ai-acct exec claude`, `ai-acct resume`, or a new zsh
 shell to launch immediately with the selected token. `ai-acct status` shows the
 active account and queries Claude and Codex quota with that token.
 
+The no-mistakes daemon runs under systemd and never reads `.zshenv`, so
+`.no-mistakes/config.yaml` points its Claude agent at `ai-acct-claude`
+(`ai-acct exec claude`). Every pipeline agent launch reads the active account,
+so a switch applies to the next review step without restarting the daemon.
+
 For migration from the previous login profiles, remove the old
 `${FM_HOME:-$HOME/.local/share/firstmate}/config/claude-account` pin yourself
 before launching Firstmate. A pin makes Firstmate discard the token and use
@@ -234,15 +242,18 @@ custom `QUOTA_AXI_CLAUDE_PROFILES` entry for the old secondary profile. The
 old secondary directory is no longer used; no history or credentials are
 copied or deleted by this workflow.
 
-In tmux, **prefix Q** opens the quota TUI with the active token and **prefix U**
-selects the token for future launches. In Neovim, `:AiAccount` shows quota and
-`:AiAccount a|b` switches accounts. The statusline shows `AI:A` or `AI:B` from
-the selector, refreshed on focus/buffer/terminal events without spawning a
-process during redraws (`AI:-` means unconfigured; `AI:?` means invalid).
+In tmux, **prefix Q** opens the quota TUI with the active token and **prefix E**
+opens the account menu: use, add, replace token, rename or remove. In Neovim,
+`<leader>au` opens the same menu, `:AiAccount` shows quota, and
+`:AiAccount use|add|edit|rename|remove [NAME]` (or `:AiAccount NAME`) runs one
+action; tokens are entered with hidden input and sent to `ai-acct` on stdin.
+The statusline shows `AI:NAME` from the selector, refreshed on
+focus/buffer/terminal events without spawning a process during redraws
+(`AI:-` means unconfigured; `AI:?` means invalid).
 
 Starting Firstmate through tmux **prefix F** or Neovim uses the same picker:
-agent, Claude account, model, then effort. The account step shows available
-local token files and marks the active account; with none installed it reports
+agent, Claude account, model, then effort. The account step lists every
+account with the active one first; with none installed it reports
 the missing setup instead of launching. `AI_FIRSTMATE_AGENT=claude|codex`
 bypasses only the agent picker. Cancelling any picker leaves the account
 unchanged. Existing Firstmate windows are focused without prompting or

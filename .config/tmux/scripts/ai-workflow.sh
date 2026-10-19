@@ -225,17 +225,20 @@ firstmate_choose_agent() {
 
 # No per-account config directories: token selection keeps Claude history shared.
 firstmate_choose_account() {
-  local accounts=$HOME/.config/claude-accounts account active='' entries='' label order='a b'
-  if [[ -r "$accounts/active" ]]; then active=$(cat "$accounts/active"); fi
-  [[ "$active" != b ]] || order='b a'
-  for account in $order; do
-    [[ -f "$accounts/$account.token" ]] || continue
-    case "$account" in a) label='Claude account A' ;; b) label='Claude account B' ;; esac
-    [[ "$account" != "$active" ]] || label="$label (active)"
-    entries="${entries}${account}"$'\t'"${label}"$'\n'
-  done
+  local listing account state active_entry='' entries=''
+  listing=$(ai-acct list) || fail 'could not list Claude accounts'
+  # The active account comes first so Enter keeps the current token.
+  while IFS=$'\t' read -r account state; do
+    [[ -n "$account" ]] || continue
+    if [[ "$state" == active ]]; then
+      active_entry="${account}"$'\t'"Claude account ${account} (active)"$'\n'
+    else
+      entries="${entries}${account}"$'\t'"Claude account ${account}"$'\n'
+    fi
+  done <<<"$listing"
+  entries="${active_entry}${entries}"
   [[ -n "$entries" ]] \
-    || fail 'no Claude account tokens - install ~/.config/claude-accounts/{a,b}.token'
+    || fail 'no Claude accounts - add one with prefix E or ai-acct add NAME'
   firstmate_pick Account "$entries"
 }
 

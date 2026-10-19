@@ -7,6 +7,12 @@
 # agent_path_override trỏ vào wrapper docker exec.
 agent: [claude, codex, opencode]
 
+# Daemon chạy bằng systemd, không đọc .zshenv: Claude đi qua ai-acct để mỗi lần
+# chạy agent đều nạp token của tài khoản đang chọn (ai-acct use a|b), không cần
+# restart daemon khi đổi tài khoản.
+agent_path_override:
+  claude: ai-acct-claude
+
 agent_timeout: "30m"
 review_agent_timeout: "30m"
 test_agent_timeout: "30m"
