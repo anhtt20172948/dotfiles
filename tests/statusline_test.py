@@ -133,6 +133,72 @@ class RendererTests(unittest.TestCase):
                          "B | effort max | ctx 50% used, 50% remaining | 500 / 1,000 input tokens")
 
 
+class CaptureTests(unittest.TestCase):
+    """The statusline records rate limits for the account its process runs as."""
+
+    LIMITS = {"five_hour": {"used_percentage": 23.5, "resets_at": 1738425600},
+              "seven_day": {"used_percentage": 41, "resets_at": 1738857600}}
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.home = Path(tmp.name)
+        accounts = self.home / ".config/claude-accounts"
+        accounts.mkdir(parents=True)
+        for name in ("work", "personal"):
+            (accounts / f"{name}.token").write_text(f"synthetic-{name}\n")
+        self.cache = self.home / "cache/ai-acct"
+        self.env = {**os.environ, "HOME": str(self.home), "TZ": "UTC",
+                    "XDG_CACHE_HOME": str(self.home / "cache")}
+        self.env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+
+    def run_line(self, rate_limits, account="work", **env):
+        payload = {"model": {"display_name": "Opus"}, "rate_limits": rate_limits}
+        env = {**self.env, **env}
+        if account is not None:
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = "synthetic-" + account
+        result = subprocess.run([str(RENDERER)], input=json.dumps(payload), text=True,
+                                capture_output=True, env=env, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("synthetic-", result.stdout + result.stderr)
+        return result.stdout.strip()
+
+    def test_records_both_windows_for_the_matching_account_privately(self):
+        line = self.run_line(self.LIMITS)
+        self.assertIn("5h 24%", line)
+        path = self.cache / "claude-work.limits.json"
+        record = json.loads(path.read_text())
+        self.assertEqual(record["windows"], {
+            "five_hour": {"used": 23.5, "resets_at": 1738425600},
+            "seven_day": {"used": 41, "resets_at": 1738857600}})
+        self.assertRegex(record["fingerprint"], r"^[0-9a-f]{64}$")
+        self.assertGreater(record["time"], 0)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.cache.stat().st_mode & 0o777, 0o700)
+        self.assertEqual([p.name for p in self.cache.iterdir()], ["claude-work.limits.json"])
+        self.assertNotIn("synthetic-", path.read_text())
+
+    def test_picks_the_account_of_this_process_not_the_selector(self):
+        (self.home / ".config/claude-accounts/active").write_text("work\n")
+        self.run_line({"seven_day": {"used_percentage": 5}}, account="personal")
+        self.assertEqual([p.name for p in self.cache.iterdir()], ["claude-personal.limits.json"])
+        record = json.loads((self.cache / "claude-personal.limits.json").read_text())
+        self.assertEqual(record["windows"], {"seven_day": {"used": 5, "resets_at": None}})
+
+    def test_nothing_is_written_without_a_matching_token_or_valid_limits(self):
+        self.run_line(self.LIMITS, account=None)
+        self.run_line(self.LIMITS, account="stranger")
+        self.run_line({"five_hour": {"resets_at": 1}, "seven_day": {"used_percentage": 101}})
+        self.run_line(None)
+        self.assertFalse(self.cache.exists())
+
+    def test_capture_failure_never_changes_the_status_line(self):
+        expected = self.run_line(self.LIMITS)
+        blocker = self.home / "blocker"
+        blocker.write_text("not a directory")
+        self.assertEqual(self.run_line(self.LIMITS, XDG_CACHE_HOME=str(blocker)), expected)
+
+
 class InstallerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

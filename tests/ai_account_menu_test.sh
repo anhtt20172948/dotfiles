@@ -48,7 +48,7 @@ menu use:work < /dev/null
 [[ $(cat "$dir/active") == work ]] || fail 'use from menu'
 menu < /dev/null
 grep -Fq $'use:work\tUse work (active)  ◌ unknown' "$MENU_LOG" || fail 'active marker'
-grep -Fq $'use:home\tUse home  ◌ unknown' "$MENU_LOG" || fail 'inactive account entry'
+grep -Fq $'use:home\tUse home           ◌ unknown' "$MENU_LOG" || fail 'inactive account entry'
 # Accounts stay switchable when quota cannot be read.
 XDG_CACHE_HOME=/dev/null/cache menu use:home < /dev/null
 grep -Fqx $'use:work\tUse work (active)  ◌ unknown' "$MENU_LOG" || fail 'quota failure hid accounts'
@@ -66,7 +66,7 @@ for mode in failure missing hang; do
     hang) printf 'import time\ntime.sleep(60)\n' > "$TMP/helper-bin/ai-acct-quota" ;;
   esac
   menu use:home < /dev/null
-  grep -Fqx $'use:home\tUse home  ◌ unknown' "$MENU_LOG" || fail "$mode helper hid quota state"
+  grep -Fqx $'use:home\tUse home           ◌ unknown' "$MENU_LOG" || fail "$mode helper hid quota state"
   [[ $(cat "$dir/active") == home ]] || fail "$mode helper prevented account switch"
   menu use:work < /dev/null
   [[ $(cat "$dir/active") == work ]] || fail "$mode helper prevented switching back"

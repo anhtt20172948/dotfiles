@@ -19,6 +19,43 @@ session_totals() {
   ' "$1"
 }
 
+# Best-effort, offline: remember the rate limits Claude Code hands us for the
+# account this process runs as, so ai-acct can show them while the usage API is
+# throttled. The account is found by comparing the process token with each
+# stored token; only a one-way fingerprint is written, never the token.
+capture_limits() {
+  local token=${CLAUDE_CODE_OAUTH_TOKEN:-} accounts=$HOME/.config/claude-accounts
+  local cache=${XDG_CACHE_HOME:-$HOME/.cache}/ai-acct file name hash limits tmp
+  [[ -n $token && -d $accounts ]] || return 0
+  limits=$(jq -c '
+    def used: if type == "object" and (.used_percentage | type) == "number"
+                 and .used_percentage >= 0 and .used_percentage <= 100
+              then {used: .used_percentage,
+                    resets_at: (if (.resets_at | type) == "number" then .resets_at else null end)}
+              else empty end;
+    (.rate_limits | if type == "object" then . else {} end) as $r
+    | {five_hour: (($r.five_hour | used) // null), seven_day: (($r.seven_day | used) // null)}
+    | with_entries(select(.value != null))
+    | if length == 0 then empty else . end' <<<"$input") && [[ -n $limits ]] || return 0
+  for file in "$accounts"/*.token; do
+    [[ -f $file && $(<"$file") == "$token" ]] || continue
+    name=${file##*/}
+    name=${name%.token}
+    hash=$(printf 'ai-acct-statusline:%s' "$token" | { sha256sum 2>/dev/null || shasum -a 256; })
+    hash=${hash%% *}
+    umask 077
+    mkdir -p "$cache" && chmod 700 "$cache" || return 0
+    tmp=$(mktemp "$cache/.limits-XXXXXX") || return 0
+    if jq -nc --arg fp "$hash" --argjson limits "$limits" '{fingerprint: $fp, time: now, windows: $limits}' \
+        >"$tmp" && mv -f "$tmp" "$cache/claude-$name.limits.json"; then
+      return 0
+    fi
+    rm -f "$tmp"
+    return 0
+  done
+}
+capture_limits >/dev/null 2>&1 || true
+
 transcript=$(jq -r '.transcript_path // empty' <<<"$input" 2>/dev/null || true)
 totals=null
 if [[ -n $transcript && -f $transcript ]]; then
