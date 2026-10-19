@@ -18,6 +18,7 @@ export PATH="$HOME/.local/bin:$PATH"
 LINT_FILES=(
 	.config/tmux/scripts/*.sh
 	.local/bin/ai-acct
+	.local/bin/ai-acct-claude
 	.local/bin/agent-statusline-claude
 	.local/bin/install_agent_workflow
 	.local/bin/install_zsh

@@ -17,12 +17,13 @@ Modular dotfile-based tmux configuration.
 ├── monitor.conf                → Monitor Center config
 ├── ai-popup.conf               → minimal config for persistent AI sessions
 └── scripts/
-    ├── ai-lib.sh               → shared helpers for the four ai-* scripts
+    ├── ai-lib.sh               → shared helpers for the ai-* scripts
     ├── ai-picker.sh            → fzf picker + previews for AI coding CLIs
     ├── ai-sessions.sh          → per-tool new, live and saved session picker
     ├── persistent-ai.sh        → persistent, per-project AI popup controller
     ├── ai-status.sh            → status-bar segment: live agent count
     ├── ai-workflow.sh          → agent workflow menu (treehouse/no-mistakes/gnhf/firstmate)
+    ├── ai-account.sh           → Claude account manager (prefix E)
     ├── crew-view.sh            → firstmate fleet overview and worker picker
     ├── monitor-lib.sh          → shared helpers for the two monitor scripts
     ├── monitor.sh              → system monitor launcher (fzf menu)
@@ -206,17 +207,27 @@ Notes:
   `NN% left`, or `quota ?` when missing, unreadable, stale or timed out. Lookup
   is capped at five seconds. The higher remaining percentage comes first; ties
   or unknown quota default to Claude. A single installed CLI skips this step.
+- For Claude, an account picker follows. It offers every account from
+  `ai-acct list` (`~/.config/claude-accounts/NAME.token`), active first;
+  when none exist it reports the missing setup instead of launching.
+  Selection updates the selector and tmux environment only after all pickers
+  finish; the pane loads the token at launch without putting it in its command
+  string. All accounts share Claude history/config.
 - Model and effort pickers follow, each with `default` first to preserve CLI
   configuration. Claude offers `opus`, `sonnet`, `haiku` and efforts `low`,
   `medium`, `high`, `xhigh`, `max`. Codex reads visible models and their supported
   efforts from `codex debug models` (five-second cap); on failure it offers the top-level
   model in `~/.codex/config.toml` and `low`, `medium`, `high`, `xhigh` efforts.
-  Esc at any step cancels without launching. Existing firstmate windows jump
-  directly without any prompts.
-- `AI_FIRSTMATE_AGENT=claude` or `codex` skips only the agent picker.
   Choosing `opus` and `high` launches `claude --model opus --effort high`.
   Codex uses `-m MODEL` and `-c model_reasoning_effort=LEVEL`; defaults add no
-  flags.
+  flags. Esc at any step cancels without launching. Existing firstmate windows
+  jump directly without any prompts.
+- `AI_FIRSTMATE_AGENT=claude` or `codex` skips only the agent picker.
+- **prefix E** (`ai-account.sh`) uses, adds, replaces the token of, renames or
+  removes Claude accounts; tokens are typed hidden straight into `ai-acct`.
+  **prefix Q** shows Claude/Codex quota using the active one. Running processes
+  retain their token. See
+  [token setup and migration](../../README.md#claude-account-switching).
 - firstmate runs from its own checkout with its own `AGENTS.md`, which applies
   only inside firstmate's sessions. Global agent rules are covered in the
   [top-level README](../../README.md#installation).

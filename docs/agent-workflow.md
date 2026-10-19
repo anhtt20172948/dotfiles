@@ -116,7 +116,7 @@ Tunables (environment variables):
 | `FIRSTMATE_DIR` | `~/.local/share/firstmate` | firstmate checkout |
 
 Starting firstmate offers Claude or Codex with remaining quota (or `quota ?`),
-then asks for model and effort. Defaults preserve CLI configuration; Esc cancels
+then asks for the Claude account (Claude only), model and effort. Defaults preserve CLI configuration; Esc cancels
 the launch, and existing windows jump directly. The pickers are
 described in [`.config/tmux/README.md`](../.config/tmux/README.md#agent-workflow).
 

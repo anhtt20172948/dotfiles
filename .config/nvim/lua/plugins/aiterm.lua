@@ -36,6 +36,15 @@ return {
 			mode = "n",
 		},
 		{
+			-- Cùng menu với tmux prefix E: dùng/thêm/sửa token/đổi tên/xóa tài khoản Claude.
+			"<leader>au",
+			function()
+				require("customize.ai_account").menu()
+			end,
+			desc = "AI: Claude accounts",
+			mode = "n",
+		},
+		{
 			"<leader>al",
 			function()
 				require("customize.aiterm").resume_last()

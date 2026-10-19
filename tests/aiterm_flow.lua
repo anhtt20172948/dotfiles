@@ -97,13 +97,19 @@ test("gnhf with a blank goal is a no-op", function()
 	assert(#calls.spawn == 0)
 end)
 
-test("firstmate refuses outside tmux and spawns inside", function()
+test("firstmate refuses outside tmux and opens its pickers in a tmux popup inside", function()
 	reset()
 	flow.firstmate()
 	assert(#calls.spawn == 0 and notes[1].level == "warn")
 	reset({ tmux = true })
 	flow.firstmate()
-	assert(vim.deep_equal(calls.spawn[1].cmd, { "/bin/true", "firstmate" }))
+	-- fzf pickers (agent/account/model/effort) need a terminal: vim.system has none.
+	local cmd = calls.spawn[1].cmd
+	assert(cmd[1] == "tmux" and cmd[2] == "display-popup", vim.inspect(cmd))
+	assert(vim.tbl_contains(cmd, "-E"), "popup must close when the script exits")
+	assert(vim.deep_equal({ cmd[#cmd - 1], cmd[#cmd] }, { "/bin/true", "firstmate" }), vim.inspect(cmd))
+	local d = vim.fn.index(cmd, "-d")
+	assert(d >= 0 and cmd[d + 2] == vim.fn.getcwd(), "popup must start in nvim's cwd")
 end)
 
 -- treehouse không có trên máy test -> giả executable() cho riêng nó.
