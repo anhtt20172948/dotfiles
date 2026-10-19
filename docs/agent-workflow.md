@@ -87,19 +87,28 @@ Check the result with `<leader>ad` in Neovim (section "Agent workflow") or
 | Menu of all actions | `prefix F` | | `ai-workflow.sh` |
 | Push current branch through the gate | `prefix F` → Push | `<leader>ap` | `git push no-mistakes <branch>` |
 | Watch gate pipelines | `prefix N` | `<leader>aP` | `no-mistakes` |
-| Show / switch existing Git worktrees | | `<leader>gw` (Snacks picker; Enter switches cwd) | `git worktree list` |
+| Show / switch Git and treehouse worktrees | | `<leader>gw` (Snacks picker; Enter switches cwd, `<A-d>` diffs vs base) | `git worktree list`, `~/.treehouse` |
 | Work in a fresh worktree | `prefix F` → New worktree shell | `<leader>aW` (opens an AI session there) | `treehouse get` |
 | Start an overnight loop | `prefix F` → gnhf | `<leader>ag` | `ai-workflow.sh gnhf "<goal>"` |
 | Talk to the first mate | `prefix F` → firstmate | `<leader>aF` | `ai-workflow.sh firstmate` |
 | Review a worker's changes (view only) | | `<leader>aR` (new tab + diffview vs base; `<A-g>` lazygit) | |
 | Check on the crew / jump to a worker | `prefix C` or `prefix F` → crew | | `ai-workflow.sh crew` |
 
-`<leader>gw` lists worktree branches and paths, marking the current, locked and
-prunable entries. Switching changes Neovim's cwd, so subsequent file pickers and
-the cwd-bound file tree use the selected worktree. Open buffers and unsaved edits
-are preserved at their original paths; their Git signs still describe those
-files. Open files from the selected worktree to edit there. This picker only
-switches existing worktrees.
+`<leader>gw` lists the current repo's Git worktrees plus every treehouse pool
+worktree (`~/.treehouse/<repo>-<hash>/<n>/<repo>-<n>`), which is where firstmate
+crewmates work and which `git worktree list` in your own checkout never shows.
+Each row shows the repo, branch (or `detached <sha>`), path and tags: `current`,
+`locked`, `prunable`, `dirty` and `task <id>` (the firstmate task whose
+`state/*.meta` `worktree=` points there). The current repo's entries come first.
+
+Enter makes the worktree the working repo: cwd changes and a file picker opens
+there, so `<leader>gg` (lazygit), Diffview, the git pickers and grep all operate
+on it. Open buffers and unsaved edits are preserved at their original paths;
+their Git signs still describe those files. `<A-d>` instead opens Diffview of
+the worktree against its merge-base with `origin/HEAD`, without changing cwd.
+The picker is read-only toward worktrees and the pool: it never runs `treehouse`
+and `git status` uses `--no-optional-locks`. `TREEHOUSE_ROOT` and
+`FIRSTMATE_DIR` override the default locations.
 
 The tmux menu and the Neovim keys share one implementation,
 [`.config/tmux/scripts/ai-workflow.sh`](../.config/tmux/scripts/ai-workflow.sh).
