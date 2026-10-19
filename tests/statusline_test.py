@@ -1,5 +1,6 @@
 """Behavioral tests for the portable Claude and Codex status line setup."""
 
+import hashlib
 import json
 import os
 import subprocess
@@ -151,11 +152,16 @@ class CaptureTests(unittest.TestCase):
         self.env = {**os.environ, "HOME": str(self.home), "TZ": "UTC",
                     "XDG_CACHE_HOME": str(self.home / "cache")}
         self.env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+        self.env.pop("AI_ACCT_FINGERPRINT", None)
 
-    def run_line(self, rate_limits, account="work", **env):
+    def run_line(self, rate_limits, account="work", by_fingerprint=False, **env):
         payload = {"model": {"display_name": "Opus"}, "rate_limits": rate_limits}
         env = {**self.env, **env}
-        if account is not None:
+        if account is not None and by_fingerprint:
+            # What Claude Code really passes: the token is stripped, the fingerprint is not.
+            env["AI_ACCT_FINGERPRINT"] = hashlib.sha256(
+                b"ai-acct-statusline:synthetic-" + account.encode()).hexdigest()
+        elif account is not None:
             env["CLAUDE_CODE_OAUTH_TOKEN"] = "synthetic-" + account
         result = subprocess.run([str(RENDERER)], input=json.dumps(payload), text=True,
                                 capture_output=True, env=env, check=False)
@@ -185,9 +191,15 @@ class CaptureTests(unittest.TestCase):
         record = json.loads((self.cache / "claude-personal.limits.json").read_text())
         self.assertEqual(record["windows"], {"seven_day": {"used": 5, "resets_at": None}})
 
+    def test_finds_the_account_by_fingerprint_when_the_token_is_stripped(self):
+        self.run_line({"seven_day": {"used_percentage": 5}}, account="personal", by_fingerprint=True)
+        self.assertEqual([p.name for p in self.cache.iterdir()], ["claude-personal.limits.json"])
+
     def test_nothing_is_written_without_a_matching_token_or_valid_limits(self):
         self.run_line(self.LIMITS, account=None)
         self.run_line(self.LIMITS, account="stranger")
+        self.run_line(self.LIMITS, account="stranger", by_fingerprint=True)
+        self.run_line(self.LIMITS, account=None, AI_ACCT_FINGERPRINT="not-hex")
         self.run_line({"five_hour": {"resets_at": 1}, "seven_day": {"used_percentage": 101}})
         self.run_line(None)
         self.assertFalse(self.cache.exists())

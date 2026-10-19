@@ -56,7 +56,12 @@ load_token() {
     valid_token "$token" || fail 'Token must be one line of letters, digits and ._~+/=- only.'
     unset CLAUDE_CONFIG_DIR ANTHROPIC_API_KEY
     CLAUDE_CODE_OAUTH_TOKEN=$token
-    export CLAUDE_CODE_OAUTH_TOKEN
+    # Claude Code strips the token from statusline commands; this one-way
+    # fingerprint (same as agent-statusline-claude) still names the account.
+    AI_ACCT_FINGERPRINT=$(printf 'ai-acct-statusline:%s' "$token" | { sha256sum 2>/dev/null || shasum -a 256; }) \
+        || fail 'Cannot fingerprint token.'
+    AI_ACCT_FINGERPRINT=${AI_ACCT_FINGERPRINT%% *}
+    export CLAUDE_CODE_OAUTH_TOKEN AI_ACCT_FINGERPRINT
 }
 # Reads one token line from stdin into a private temp file named in $token_tmp.
 read_new_token() {
@@ -98,12 +103,13 @@ write_selector() {
 # valid_token guarantees nothing in it needs escaping inside single quotes.
 tmux_set_token() {
     [ -n "${TMUX:-}" ] || return 0
-    printf "set-environment -g CLAUDE_CODE_OAUTH_TOKEN '%s'\nset-environment -gu CLAUDE_CONFIG_DIR\nset-environment -gu ANTHROPIC_API_KEY\n" "$token" \
+    printf "set-environment -g CLAUDE_CODE_OAUTH_TOKEN '%s'\nset-environment -g AI_ACCT_FINGERPRINT '%s'\nset-environment -gu CLAUDE_CONFIG_DIR\nset-environment -gu ANTHROPIC_API_KEY\n" "$token" "$AI_ACCT_FINGERPRINT" \
         | tmux source-file - || fail 'Account saved, but tmux token update failed.'
 }
 tmux_clear_token() {
     [ -n "${TMUX:-}" ] || return 0
-    tmux set-environment -gu CLAUDE_CODE_OAUTH_TOKEN || fail 'Account removed, but tmux token reset failed.'
+    { tmux set-environment -gu CLAUDE_CODE_OAUTH_TOKEN && tmux set-environment -gu AI_ACCT_FINGERPRINT; } \
+        || fail 'Account removed, but tmux token reset failed.'
 }
 ensure_onboarding() (
     # Preserve all existing settings; never replace malformed user config.
@@ -133,7 +139,7 @@ case "${1:-status}" in
     _quota)
         # Internal read-only child boundary: tokens are loaded exactly as for exec.
         [ "$#" -eq 3 ] || fail 'Invalid quota request.'
-        unset CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CONFIG_DIR ANTHROPIC_API_KEY QUOTA_AXI_CLAUDE_PROFILES
+        unset CLAUDE_CODE_OAUTH_TOKEN AI_ACCT_FINGERPRINT CLAUDE_CONFIG_DIR ANTHROPIC_API_KEY QUOTA_AXI_CLAUDE_PROFILES
         case "$2" in
             claude) need_account "$3"; account=$3; load_token ;;
             codex) ;;

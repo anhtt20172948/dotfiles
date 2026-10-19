@@ -6,14 +6,18 @@
   [[ -r $accounts/active ]] || return 0
   account=$(<$accounts/active)
   # Same name rule as ai-acct.
-  [[ $account =~ '^[a-z0-9][a-z0-9_-]{0,31}$' ]] || { unset CLAUDE_CODE_OAUTH_TOKEN; return 0; }
+  [[ $account =~ '^[a-z0-9][a-z0-9_-]{0,31}$' ]] || { unset CLAUDE_CODE_OAUTH_TOKEN AI_ACCT_FINGERPRINT; return 0; }
   [[ -f $accounts/$account.token && -r $accounts/$account.token ]] || {
-    unset CLAUDE_CODE_OAUTH_TOKEN
+    unset CLAUDE_CODE_OAUTH_TOKEN AI_ACCT_FINGERPRINT
     return 0
   }
   token=$(<$accounts/$account.token)
   # Same token rule as ai-acct.
-  [[ $token =~ '^[A-Za-z0-9._~+/=-]+$' ]] || { unset CLAUDE_CODE_OAUTH_TOKEN; return 0; }
+  [[ $token =~ '^[A-Za-z0-9._~+/=-]+$' ]] || { unset CLAUDE_CODE_OAUTH_TOKEN AI_ACCT_FINGERPRINT; return 0; }
   unset CLAUDE_CONFIG_DIR ANTHROPIC_API_KEY
   export CLAUDE_CODE_OAUTH_TOKEN=$token
+  # Same fingerprint as ai-acct; Claude Code hides the token from statuslines.
+  local fp
+  fp=$(print -rn -- "ai-acct-statusline:$token" | { sha256sum 2>/dev/null || shasum -a 256 })
+  export AI_ACCT_FINGERPRINT=${fp%% *}
 }

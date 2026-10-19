@@ -15,6 +15,9 @@ cat > "$TMP/bin/claude" <<'MOCK'
 [ "${CLAUDE_CONFIG_DIR+x}" != x ] || exit 80
 [ "${ANTHROPIC_API_KEY+x}" != x ] || exit 81
 [ "$CLAUDE_CODE_OAUTH_TOKEN" = "${EXPECTED_TOKEN:-synthetic-b}" ] || exit 82
+# The statusline only sees this fingerprint; Claude Code strips the token.
+fp=$(printf 'ai-acct-statusline:%s' "$CLAUDE_CODE_OAUTH_TOKEN" | sha256sum)
+[ "$AI_ACCT_FINGERPRINT" = "${fp%% *}" ] || exit 86
 printf '%s|%s\n' "$*" "$PWD" >> "$LOG"
 MOCK
 cat > "$TMP/bin/tmux" <<'MOCK'
@@ -35,6 +38,8 @@ case "$command" in
   *"set-environment -g CLAUDE_CODE_OAUTH_TOKEN '"*"'"*)
     token=$(printf '%s\n' "$command" | sed -n "s/.*CLAUDE_CODE_OAUTH_TOKEN '\([^']*\)'.*/\1/p")
     [ "$token" = "${EXPECTED_TOKEN:-synthetic-b}" ] || exit 83
+    fp=$(printf 'ai-acct-statusline:%s' "$token" | sha256sum)
+    printf '%s\n' "$command" | grep -Fqx "set-environment -g AI_ACCT_FINGERPRINT '${fp%% *}'" || exit 87
     printf 'tmux|token updated\n' >> "$LOG" ;;
 esac
 MOCK
@@ -86,6 +91,8 @@ ln -s "$ROOT/.zshenv" "$ZDOTDIR/.zshenv"
 zsh -c '[[ $CLAUDE_CODE_OAUTH_TOKEN == synthetic-a && -z ${CLAUDE_CONFIG_DIR+x} && -z ${ANTHROPIC_API_KEY+x} ]]' || fail 'zsh startup a'
 printf 'b\n' > "$HOME/.config/claude-accounts/active"
 zsh -c '[[ $CLAUDE_CODE_OAUTH_TOKEN == synthetic-b ]]' || fail 'zsh startup b'
+fp_b=$(printf 'ai-acct-statusline:synthetic-b' | sha256sum)
+[ "$(zsh -c 'print -r -- $AI_ACCT_FINGERPRINT')" = "${fp_b%% *}" ] || fail 'zsh startup fingerprint'
 for bad in invalid ../a; do
   if "$ACCT" use "$bad"; then fail 'accepted invalid name'; fi
 done
@@ -146,6 +153,7 @@ if "$ACCT" rename job Bad; then fail 'rename accepted bad name'; fi
 [ ! -e "$dir/job.token" ] || fail 'remove token'
 [ ! -e "$dir/active" ] || fail 'kept selector of removed account'
 grep -Fqx 'tmux|set-environment -gu CLAUDE_CODE_OAUTH_TOKEN' "$LOG" || fail 'remove kept tmux token'
+grep -Fqx 'tmux|set-environment -gu AI_ACCT_FINGERPRINT' "$LOG" || fail 'remove kept tmux fingerprint'
 if "$ACCT" remove job; then fail 'removed missing account'; fi
 "$ACCT" use b >> "$TMP/out"
 "$ACCT" remove a >> "$TMP/out"
