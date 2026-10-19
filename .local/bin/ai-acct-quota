@@ -94,13 +94,13 @@ def normalize(data, provider):
         scope = next((s for s in semantics if s.get('scope') == 'all_models'), {})
         percent = scope.get('effectivePercentRemaining')
         if scope.get('status') == 'unknown' or not number(percent):
-            return UNKNOWN
+            return {**UNKNOWN, 'windows': shown}
         limiting = next((w for w in windows if w.get('id') in scope.get('limitingWindowIds', [])), {})
     elif windows:
         limiting = min(windows, key=lambda w: w['percentRemaining'])
         percent = limiting['percentRemaining']
     else:
-        return UNKNOWN
+        return {**UNKNOWN, 'windows': shown}
     return {'state': 'known', 'percent': percent,
             'reset': reset_time(limiting.get('resetsAt')), 'windows': shown}
 
@@ -211,7 +211,7 @@ def render(quota, stale=False):
 def render_full(title, quota, stale):
     windows = [w for w in quota.get('windows') or [] if isinstance(w, dict)
                and isinstance(w.get('label'), str) and number(w.get('percent'))]
-    if quota.get('state') != 'known' or not windows:
+    if not windows:
         return [title, '    ' + unavailable(quota)]
     lines = [title + ('  (stale; refreshing)' if stale else '')]
     for window in windows:

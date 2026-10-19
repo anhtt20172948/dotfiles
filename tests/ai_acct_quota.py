@@ -103,7 +103,8 @@ print(json.dumps({'providers': [p]}))
         self.assertIn('25% left', self.section(output, '✦ Claude personal')[0])
         self.assertEqual(self.section(output, '✦ Claude limited'),
                          ['    ◌ rate-limited (retry after Oct 19 12:30 UTC)'])
-        self.assertEqual(self.section(output, '✦ Claude unknown'), ['    ◌ unknown'])
+        self.assertEqual(self.section(output, '✦ Claude unknown'),
+                         ['    session          █████████░  90% left'])
         self.assertIn('25% left', self.section(output, '◆ Codex')[0])
         self.assertEqual(output.count('Codex'), 1)
         self.assertEqual(sorted(self.names_called()),
@@ -112,6 +113,7 @@ print(json.dumps({'providers': [p]}))
             listing = self.run_cli('list', '--quota')
             self.assertIn('work\tactive\t████████░░  75% left\n', listing)
             self.assertIn('limited\t\t◌ rate-limited (retry after Oct 19 12:30 UTC)\n', listing)
+            self.assertIn('unknown\t\t◌ unknown\n', listing)
         self.run_cli('status')
         self.assertEqual(len(self.names_called()), 5)
         for path in (self.home / 'cache/ai-acct').rglob('*'):
