@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
 TMP=$(mktemp -d)
 trap 'rm -rf -- "$TMP"' EXIT
-export HOME="$TMP/home" CHOICES="$TMP/choices" MENU_LOG="$TMP/menu"
+export HOME="$TMP/home" XDG_CACHE_HOME="$TMP/cache" CHOICES="$TMP/choices" MENU_LOG="$TMP/menu"
 unset TMUX
 mkdir -p "$TMP/bin" "$HOME"
 ln -s "$ROOT/.local/bin/ai-acct" "$TMP/bin/ai-acct"
@@ -47,6 +47,11 @@ menu use:work < /dev/null
 menu < /dev/null
 grep -Fq $'use:work\tUse work (active)  ◌ unknown' "$MENU_LOG" || fail 'active marker'
 grep -Fq $'use:home\tUse home  ◌ unknown' "$MENU_LOG" || fail 'inactive account entry'
+# Accounts stay switchable when quota cannot be read.
+XDG_CACHE_HOME=/dev/null/cache menu use:home < /dev/null
+grep -Fqx $'use:work\tUse work (active)' "$MENU_LOG" || fail 'quota failure hid accounts'
+[[ $(cat "$dir/active") == home ]] || fail 'use without quota'
+menu use:work < /dev/null
 
 printf 'synthetic-new\n' | menu edit work
 [[ $(cat "$dir/work.token") == synthetic-new ]] || fail 'edit token'

@@ -57,17 +57,17 @@ pick() {
   return 1
 }
 
-# NAME<TAB>NAME [(active)] lines, from ai-acct so the name rules live in one place.
+# NAME<TAB>NAME [(active)] [QUOTA] lines, from ai-acct so the name rules live
+# in one place. Quota is optional: switching must work without it.
 account_entries() {
-  local listing name state quota
-  listing=$(ai-acct list --quota) || return 1
+  local listing name state quota label
+  listing=$(ai-acct list --quota 2>/dev/null) || listing=$(ai-acct list) || return 1
   while IFS='|' read -r name state quota; do
     [[ -n "$name" ]] || continue
-    if [[ "$state" == active ]]; then
-      printf '%s\t%s (active)  %s\n' "$name" "$name" "$quota"
-    else
-      printf '%s\t%s  %s\n' "$name" "$name" "$quota"
-    fi
+    label=$name
+    [[ "$state" != active ]] || label+=' (active)'
+    [[ -z "$quota" ]] || label+="  $quota"
+    printf '%s\t%s\n' "$name" "$label"
   done <<<"${listing//$'\t'/|}"
 }
 

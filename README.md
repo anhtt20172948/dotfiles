@@ -227,22 +227,28 @@ Switching inside tmux also updates its global environment for future panes
 and clears legacy config/API-key overrides. A switch cannot update the parent
 shell's environment: use `ai-acct exec claude`, `ai-acct resume`, or a new zsh
 shell to launch immediately with the selected token. `ai-acct status` shows every
-Claude account with an active marker, an icon, a remaining-quota bar and reset
-time, plus one Codex row. Bars are green/yellow/red on a terminal; piped output
-and Neovim notifications have no ANSI colors (`NO_COLOR` also disables color).
-Unknown or rate-limited readings show a label instead of a fabricated bar.
+Claude account with an active marker and an icon, then one remaining-quota bar
+and reset time per quota window (session, week, ...), plus Codex the same way.
+Bars are green/yellow/red on a terminal; piped output and Neovim notifications
+have no ANSI colors (`NO_COLOR` also disables color). Unknown or rate-limited
+readings show a label instead of a fabricated bar.
 
-Quota reads run in the background, each Claude token supplied only through its
-own child environment using the same validation as `ai-acct exec`. Opening a
-menu never waits for a quota request. The first open shows `unknown`; reopen
-after the refresh to see results. Only normalized percentages, reset times and
-states are cached in `${XDG_CACHE_HOME:-~/.cache}/ai-acct` (directory `700`,
-files `600`), never tokens or raw quota diagnostics. Results and failures are
-reused for five minutes, rate limits for fifteen minutes; concurrent opens share
-one refresh per account. Old readings are labeled stale while refreshing, and
-replacing a token invalidates its cached result. Requests time out after twelve
+Quota reads run in parallel background processes, each Claude token supplied only
+through its own child environment using the same validation as `ai-acct exec`.
+Opening a menu never waits for a quota request: it shows one compact bar for the
+most limiting window, the first open shows `unknown`, and reopening after the
+refresh shows results. If quota cannot be read at all, the menus still list every
+account. `ai-acct status` and `:AiAccount` wait up to twelve seconds for missing
+or expired readings, then show whatever is known. Only normalized percentages,
+reset times and states are cached in `${XDG_CACHE_HOME:-~/.cache}/ai-acct`
+(directory `700`, files `600`), never tokens or raw quota diagnostics. Results
+and failures are reused for five minutes, rate limits until the vendor's retry
+time (fifteen minutes when it gives none, at most an hour); concurrent opens
+share one refresh per account. Old readings are labeled stale while refreshing,
+and replacing a token invalidates its cached result. Requests time out after ten
 seconds and never refresh credentials. `ai-acct list --quota` appends the same
-compact display as a third tab-separated column; plain `ai-acct list` is unchanged.
+compact display as a third tab-separated column; plain `ai-acct list` is
+unchanged.
 
 The no-mistakes daemon runs under systemd and never reads `.zshenv`, so
 `.no-mistakes/config.yaml` points its Claude agent at `ai-acct-claude`

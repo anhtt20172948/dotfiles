@@ -229,7 +229,9 @@ Notes:
   into `ai-acct`. Quota comes from a private per-account cache, refreshed in the
   background so slow requests never hold up fzf. First reads show `unknown`;
   reopen after refresh. Readings/failures are reused for five minutes and rate
-  limits for fifteen minutes. `ai-acct status` shows all accounts plus Codex.
+  limits until the vendor's retry time (fifteen minutes if it gives none). If
+  quota cannot be read the menu still lists every account. `ai-acct status`
+  shows every quota window of all accounts plus Codex.
   **prefix Q** shows Claude/Codex quota using the active one. Running processes
   retain their token. See
   [token setup and migration](../../README.md#claude-account-switching).

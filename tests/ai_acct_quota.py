@@ -42,13 +42,16 @@ assert provider != 'codex' or not token
 with open(Path(os.environ['HOME']) / 'calls', 'a') as f:
     f.write(json.dumps({'name': name, 'argv': sys.argv[1:]}) + '\\n')
 time.sleep(float(os.environ.get('FAKE_DELAY', '0')))
-p = {'provider': provider, 'status': 'rate_limited' if name == 'limited' else 'fresh', 'windows': []}
+p = {'provider': provider, 'state': {'status': 'fresh', 'stale': False}, 'windows': []}
+if name == 'limited':
+    p['state'] = {'status': 'rate_limited', 'stale': False, 'retryAfter': '2099-10-19T12:30:00Z'}
 if name not in ('limited', 'unknown'):
-    p['windows'] = [{'id': 'session', 'kind': 'session', 'percentRemaining': 75 if name == 'work' else 25, 'resetsAt': '2099-10-19T12:00:00Z'}]
+    p['windows'] = [{'id': 'session', 'label': 'session', 'kind': 'session', 'percentRemaining': 75 if name == 'work' else 25, 'resetsAt': '2099-10-19T12:00:00Z'}]
 if name == 'work':
+    p['windows'].append({'id': 'week', 'label': 'week', 'kind': 'weekly', 'percentRemaining': 90, 'resetsAt': '2099-10-24T08:00:00Z'})
     p['quotaSemantics'] = {'effectiveAvailability': [{'scope': 'all_models', 'status': 'known', 'effectivePercentRemaining': 75, 'limitingWindowIds': ['session']}]}
 if name == 'unknown':
-    p['windows'] = [{'kind': 'session', 'percentRemaining': 90}]
+    p['windows'] = [{'id': 'session', 'label': 'session', 'kind': 'session', 'percentRemaining': 90}]
     p['quotaSemantics'] = {'effectiveAvailability': [{'scope': 'all_models', 'status': 'unknown'}]}
 # Deliberately hostile diagnostic fields must never be rendered or cached.
 p['message'] = token
@@ -61,47 +64,56 @@ print(json.dumps({'providers': [p]}))
                     'CLAUDE_CODE_OAUTH_TOKEN': 'synthetic-inherited',
                     'ANTHROPIC_API_KEY': 'synthetic-api',
                     'CLAUDE_CONFIG_DIR': '/wrong',
-                    'QUOTA_AXI_CLAUDE_PROFILES': '/wrong'}
+                    'QUOTA_AXI_CLAUDE_PROFILES': '/wrong', 'TZ': 'UTC'}
 
-    def run_cli(self, *args):
+    def run_cli(self, *args, timeout=15):
         result = subprocess.run([str(ACCT), *args], env=self.env,
-                                capture_output=True, text=True, timeout=3)
+                                capture_output=True, text=True, timeout=timeout)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('synthetic-', result.stdout + result.stderr)
         self.assertNotIn('\x1b', result.stdout)
         return result.stdout
 
-    def wait_for(self, text):
-        for _ in range(100):
-            output = self.run_cli('status')
-            if text in output and len(list((self.home / 'cache/ai-acct').glob('*.json'))) == 5:
-                return output
-            time.sleep(.05)
-        self.fail('background quota refresh did not complete')
-
-    def test_account_isolation_rendering_and_cache(self):
-        self.run_cli('status')
-        output = self.wait_for('75%')
-        self.assertIn('work (active)', output)
-        self.assertIn('personal', output)
-        self.assertIn('25%', output)
-        self.assertIn('█', output)
-        self.assertIn('reset', output)
-        self.assertIn('rate-limited', output)
-        self.assertIn('unknown', output)
-        self.assertNotIn('█', next(line for line in output.splitlines() if 'unknown ' in line))
-        self.assertNotIn('█', next(line for line in output.splitlines() if 'limited ' in line))
-        self.assertEqual(output.count('Codex'), 1)
+    def names_called(self):
         calls = self.home / 'calls'
-        records = [json.loads(line) for line in calls.read_text().splitlines()]
-        self.assertEqual(sorted(r['name'] for r in records),
+        if not calls.exists():
+            return []
+        return [json.loads(line)['name'] for line in calls.read_text().splitlines()]
+
+    def poll(self, check, what):
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if check():
+                return
+            time.sleep(.05)
+        self.fail(what)
+
+    def section(self, output, title):
+        lines = output.splitlines()
+        start = lines.index(title)
+        end = next((i for i in range(start + 1, len(lines)) if not lines[i].startswith(' ')), len(lines))
+        return lines[start + 1:end]
+
+    def test_status_waits_and_shows_every_window(self):
+        output = self.run_cli('status')
+        work = self.section(output, '✦ Claude work (active)')
+        self.assertEqual(len(work), 2)
+        self.assertRegex(work[0], r'^    session +█{8}░{2}  75% left  ↻ Oct 19 12:00 UTC$')
+        self.assertRegex(work[1], r'^    week +█{9}░  90% left  ↻ Oct 24 08:00 UTC$')
+        self.assertIn('25% left', self.section(output, '✦ Claude personal')[0])
+        self.assertEqual(self.section(output, '✦ Claude limited'),
+                         ['    ◌ rate-limited (retry after Oct 19 12:30 UTC)'])
+        self.assertEqual(self.section(output, '✦ Claude unknown'), ['    ◌ unknown'])
+        self.assertIn('25% left', self.section(output, '◆ Codex')[0])
+        self.assertEqual(output.count('Codex'), 1)
+        self.assertEqual(sorted(self.names_called()),
                          ['codex', 'limited', 'personal', 'unknown', 'work'])
         for _ in range(3):
             listing = self.run_cli('list', '--quota')
-            self.assertIn('work\tactive\t', listing)
-            self.assertIn('75%', listing)
-        time.sleep(.15)
-        self.assertEqual(len(calls.read_text().splitlines()), 5)
+            self.assertIn('work\tactive\t████████░░  75% left\n', listing)
+            self.assertIn('limited\t\t◌ rate-limited (retry after Oct 19 12:30 UTC)\n', listing)
+        self.run_cli('status')
+        self.assertEqual(len(self.names_called()), 5)
         for path in (self.home / 'cache/ai-acct').rglob('*'):
             if path.is_file():
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
@@ -109,7 +121,7 @@ print(json.dumps({'providers': [p]}))
         self.assertEqual((self.home / 'cache/ai-acct').stat().st_mode & 0o777, 0o700)
 
     def test_terminal_colors_and_no_color(self):
-        self.wait_for('75%')
+        self.run_cli('status')
         for no_color in (False, True):
             master, slave = pty.openpty()
             try:
@@ -117,7 +129,7 @@ print(json.dumps({'providers': [p]}))
                 if no_color:
                     env['NO_COLOR'] = '1'
                 result = subprocess.run([str(ACCT), 'status'], env=env, stdout=slave,
-                                        stderr=subprocess.PIPE, timeout=3)
+                                        stderr=subprocess.PIPE, timeout=15)
                 self.assertEqual(result.returncode, 0)
                 output = os.read(master, 8192).decode()
                 self.assertEqual('\x1b[' in output, not no_color)
@@ -127,60 +139,77 @@ print(json.dumps({'providers': [p]}))
                 os.close(slave)
 
     def test_real_fzf_menu_uses_cached_bars(self):
-        self.wait_for('75%')
+        self.run_cli('status')
         (self.home / 'bin/ai-acct').symlink_to(ACCT)
         fzf = self.home / 'bin/fzf'
         fzf.write_text('#!/bin/sh\ncat > "$HOME/menu-input"\nexit 130\n')
         fzf.chmod(0o700)
         result = subprocess.run(['bash', str(ROOT / '.config/tmux/scripts/ai-account.sh')],
                                 env={**self.env, 'TMUX': ''}, capture_output=True,
-                                text=True, timeout=3)
+                                text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         menu = (self.home / 'menu-input').read_text()
-        self.assertIn('Use work (active)  █', menu)
-        self.assertIn('75%', menu)
+        self.assertIn('Use work (active)  ████████░░  75% left', menu)
         self.assertIn('rate-limited', menu)
         self.assertNotIn('synthetic-', menu + result.stdout + result.stderr)
 
     def test_slow_menu_is_immediate_and_deduplicated(self):
-        self.env['FAKE_DELAY'] = '.6'
+        delay = 3
+        self.env['FAKE_DELAY'] = str(delay)
         start = time.monotonic()
         for _ in range(3):
             self.assertIn('unknown', self.run_cli('list', '--quota'))
-        self.assertLess(time.monotonic() - start, .6)
-        self.wait_for('75%')
+        self.assertLess(time.monotonic() - start, delay)
+        self.poll(lambda: len(self.names_called()) == 4, 'menu refreshes did not start')
+        self.assertIn('75% left', self.run_cli('status'))
+        self.assertEqual(sorted(self.names_called()),
+                         ['codex', 'limited', 'personal', 'unknown', 'work'])
+
+    def test_status_falls_back_after_bounded_wait(self):
+        self.env['FAKE_DELAY'] = '30'
+        start = time.monotonic()
+        output = self.run_cli('status', timeout=25)
+        self.assertLess(time.monotonic() - start, 20)
+        self.assertEqual(self.section(output, '✦ Claude work (active)'), ['    ◌ unknown'])
+        self.assertEqual(self.section(output, '◆ Codex'), ['    ◌ unknown'])
+
+    def test_malformed_cache_is_a_miss(self):
+        self.run_cli('status')
+        path = self.home / 'cache/ai-acct/claude-work.json'
+        record = json.loads(path.read_text())
+        path.write_text(json.dumps({'identity': record['identity'], 'time': 'x'}))
+        self.assertIn('work\tactive\t◌ unknown', self.run_cli('list', '--quota'))
+        self.assertIn('75% left', self.run_cli('status'))
 
     def test_expiry_rate_backoff_and_token_replacement(self):
-        self.wait_for('75%')
+        self.run_cli('status')
         cache = self.home / 'cache/ai-acct'
-        # Expire ordinary entries, but a rate limit remains backed off at 6m.
+        # Expire ordinary entries; the rate limit stays backed off until retryAfter.
         for path in cache.glob('*.json'):
             record = json.loads(path.read_text())
             path.write_text(json.dumps({**record, 'time': time.time() - 360}))
         output = self.run_cli('list', '--quota')
         self.assertIn('(stale)', output)
-        time.sleep(.3)
-        calls = [json.loads(line)['name'] for line in (self.home / 'calls').read_text().splitlines()]
-        self.assertEqual(calls.count('limited'), 1)
-        self.assertEqual(calls.count('work'), 2)
+        self.poll(lambda: self.names_called().count('work') == 2, 'stale entry was not refreshed')
+        self.assertEqual(self.names_called().count('limited'), 1)
         (self.accounts / 'work.token').write_text('synthetic-personal')
-        output = self.run_cli('status')
-        work = next(line for line in output.splitlines() if 'work (active)' in line)
-        self.assertIn('unknown', work)
-        for _ in range(100):
-            output = self.run_cli('status')
-            work = next(line for line in output.splitlines() if 'work (active)' in line)
-            if '25%' in work:
-                break
-            time.sleep(.05)
-        self.assertIn('25%', work)
+        self.assertIn('unknown', self.run_cli('list', '--quota').splitlines()[-1])
+        work = self.section(self.run_cli('status'), '✦ Claude work (active)')
+        self.assertIn('25% left', work[0])
 
     def test_invalid_account_does_not_hide_others(self):
         (self.accounts / 'work.token').chmod(0o644)
-        output = self.wait_for('25%')
-        self.assertIn('work (active)', output)
-        self.assertIn('unknown', output)
+        output = self.run_cli('status')
+        self.assertEqual(self.section(output, '✦ Claude work (active)'), ['    ◌ unknown'])
+        self.assertIn('25% left', self.section(output, '✦ Claude personal')[0])
         self.assertNotIn('75%', output)
+
+    def test_invalid_selector_reports_ai_acct_error(self):
+        (self.accounts / 'active').write_text('Bad')
+        result = subprocess.run([str(ACCT), 'status'], env=self.env,
+                                capture_output=True, text=True, timeout=15)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, 'ai-acct: Invalid active selector; use ai-acct use NAME.\n')
 
 
 if __name__ == '__main__':

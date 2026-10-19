@@ -38,7 +38,7 @@ local function accounts(with_quota)
 		return vim.system(with_quota and { "ai-acct", "list", "--quota" } or { "ai-acct", "list" }, { text = true }):wait()
 	end)
 	if not ok or result.code ~= 0 then
-		return {}
+		return with_quota and accounts() or {}
 	end
 	local list = {}
 	for line in vim.gsplit(result.stdout or "", "\n", { trimempty = true }) do

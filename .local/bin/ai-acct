@@ -11,7 +11,7 @@ fail() { printf 'ai-acct: %s\n' "$*" >&2; exit 1; }
 usage() {
     cat <<'HELP'
 Usage: ai-acct [COMMAND]
-  status            Show every Claude account and Codex quota (cached, async refresh).
+  status            Show every quota window of each Claude account and Codex.
   list [--quota]    List NAME<TAB>active|empty; append quota with --quota.
   use NAME          Select an account for future launches and tmux panes.
   add NAME          Add an account; the token is read from stdin (hidden on a TTY).
