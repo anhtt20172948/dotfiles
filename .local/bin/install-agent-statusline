@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Merge agent status lines and context limits without replacing other CLI settings."""
+"""Merge agent status lines, context limits and the dotfiles Claude Code mods
+without replacing other CLI settings."""
 
 import argparse
 import json
@@ -32,14 +33,45 @@ TABLE_RE = re.compile(r"(?m)^\s*\[([^\]\n]+)\]\s*(?:#.*)?$")
 STATUS_RE = re.compile(r"(?ms)^[ \t]*status_line[ \t]*=[ \t]*(?:\[[^\]]*\]|[^\n]*)")
 
 
-def claude_result(path):
+def json_object(data, path, key):
+    value = data.get(key, {})
+    if not isinstance(value, dict):
+        raise TypeError(f"{path}: expected {key} to be a JSON object")
+    return value
+
+
+def claude_mods(data, path, mods):
+    """Declare the mods folder as a directory marketplace and enable its mods.
+
+    Claude Code reads a folder marketplace's mods from the folder itself, so every
+    session loads them however it was started, and an edit needs only
+    /reload-plugins. A mod already listed in enabledPlugins keeps its value, so one
+    turned off in /plugin stays off.
+    """
+    manifest = mods / ".claude-plugin/marketplace.json"
+    if not manifest.is_file():
+        return {}
+    catalog = json.loads(manifest.read_text())
+    try:
+        name = catalog["name"]
+        plugins = [plugin["name"] for plugin in catalog["plugins"]]
+    except (KeyError, TypeError) as error:
+        raise ValueError(f"{manifest}: expected a name and a plugins list of named entries") from error
+    source = {"source": {"source": "directory", "path": str(mods)}}
+    enabled = {f"{plugin}@{name}": True for plugin in plugins}
+    return {
+        "extraKnownMarketplaces": {**json_object(data, path, "extraKnownMarketplaces"), name: source},
+        "enabledPlugins": {**enabled, **json_object(data, path, "enabledPlugins")},
+    }
+
+
+def claude_result(path, home):
     data = json.loads(path.read_text()) if path.exists() else {}
     if not isinstance(data, dict):
         raise TypeError(f"{path}: expected a JSON object")
-    env = data.get("env", {})
-    if not isinstance(env, dict):
-        raise TypeError(f"{path}: expected env to be a JSON object")
-    desired = {**data, "statusLine": CLAUDE_STATUS, "env": {**env, **CLAUDE_ENV}}
+    env = json_object(data, path, "env")
+    desired = {**data, "statusLine": CLAUDE_STATUS, "env": {**env, **CLAUDE_ENV},
+               **claude_mods(data, path, home / ".config/claude-mods")}
     if data == desired:
         return None
     return json.dumps(desired, indent=2, ensure_ascii=False) + "\n"
@@ -114,7 +146,7 @@ def main():
     args = parser.parse_args()
     if not args.home.is_absolute():
         parser.error("--home must be an absolute path")
-    targets = [("claude", args.home / ".claude/settings.json", claude_result),
+    targets = [("claude", args.home / ".claude/settings.json", lambda path: claude_result(path, args.home)),
                ("codex", args.home / ".codex/config.toml", codex_result)]
     skipped = []
     if tomllib is None:

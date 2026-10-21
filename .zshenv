@@ -21,14 +21,3 @@
   fp=$(print -rn -- "ai-acct-statusline:$token" | { sha256sum 2>/dev/null || shasum -a 256 })
   export AI_ACCT_FINGERPRINT=${fp%% *}
 }
-
-# Load every Claude Code mod in .config/claude-mods (fleet-deck, pixel-pet).
-# Only paths are added, no secret is read; a folder without a plugin manifest is
-# skipped, and so is a path already listed (nested shells source this file again).
-() {
-  local mod
-  for mod in $HOME/.config/claude-mods/*(N/); do
-    [[ -f $mod/.claude-plugin/plugin.json && :${CLAUDE_CODE_PLUGIN_DIRS-}: != *:$mod:* ]] || continue
-    export CLAUDE_CODE_PLUGIN_DIRS=${CLAUDE_CODE_PLUGIN_DIRS:+$CLAUDE_CODE_PLUGIN_DIRS:}$mod
-  done
-}
