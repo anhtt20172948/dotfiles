@@ -1,0 +1,73 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: ShellCheck (repository lint entry point)
+        run: HOME="$(mktemp -d)" bash tests/run.sh lint
+
+  stylua:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install StyLua 2.5.2
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL https://github.com/JohnnyMorganz/StyLua/releases/download/v2.5.2/stylua-linux-x86_64.zip -o stylua.zip
+          echo 'bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab  stylua.zip' | sha256sum -c -
+          unzip -q stylua.zip -d stylua-bin
+          echo "$PWD/stylua-bin" >> "$GITHUB_PATH"
+      - run: HOME="$(mktemp -d)" stylua --check .config/nvim
+
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: sudo apt-get update && sudo apt-get install -y jq tmux python3
+      # Run the complete shell-test subset of tests/run.sh. Skip tests/*.lua:
+      # they need newer Neovim APIs and plugin fixtures rather than stock Ubuntu
+      # Neovim. No plugin downloads, network-dependent tests or display are used.
+      - name: Shell and Python CLI tests
+        run: |
+          HOME=$(mktemp -d)
+          export HOME
+          export XDG_CONFIG_HOME="$HOME/.config" XDG_CACHE_HOME="$HOME/.cache"
+          export XDG_DATA_HOME="$HOME/.local/share" XDG_STATE_HOME="$HOME/.local/state"
+          export CODEX_HOME="$HOME/.codex"
+          for test in tests/*_test.sh; do
+            echo "Running $test"
+            timeout 120 bash "$test"
+          done
+
+  secrets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks 8.24.3
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz -o gitleaks.tar.gz
+          echo '9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c  gitleaks.tar.gz' | sha256sum -c -
+          mkdir gitleaks-bin
+          tar -xzf gitleaks.tar.gz -C gitleaks-bin gitleaks
+          echo "$PWD/gitleaks-bin" >> "$GITHUB_PATH"
+      - run: HOME="$(mktemp -d)" gitleaks git --log-opts=--all --redact
