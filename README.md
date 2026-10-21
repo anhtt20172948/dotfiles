@@ -181,35 +181,6 @@ marketplace and the settings `install.sh` writes, and runs the first and last
 for every mod when `claude` is installed). `tsc -p` needs the types the engine
 lays in `.claude-plugin/types` the first time it loads the mod.
 
-### fleet-deck
-
-`.config/claude-mods/fleet-deck` makes the CLI easier to read:
-
-- a compact status entry with the model, context use, the Claude account in use
-  and its 5h/7d quota;
-- on a machine with a Firstmate home, one quiet row above the prompt (workers,
-  PRs waiting, what needs you), a `/fleet` side pane listing every worker, and a
-  toast for a finished worker, a ready PR, a landed merge or a failure.
-
-Everything fleet-related reads only `bin/fm-fleet-snapshot.sh --json` of
-`$FM_HOME` (default `~/.local/share/firstmate`). Where that script is missing, or
-in a Firstmate worker session, those parts do nothing and the status entry still
-works. Colours come from the terminal theme and `NO_COLOR` is honoured.
-
-The existing `statusLine` stays as it is: it also records the rate limits that
-`ai-acct` shows, so the mod adds its entry beside it. `/fleet` toggles the pane
-and refuses with a message below 110 columns.
-
-Options are rows of `/config` (type `fleet` to filter them):
-
-| Row | Default | Effect |
-| --- | --- | --- |
-| Chime (`sound`) | off | short chime with a fleet toast (`afplay` on macOS, else `paplay`, `pw-play` or `ffplay`) |
-| Fleet toasts (`toasts`) | on | fleet toasts |
-| Status entry (`status`) | on | the compact status entry |
-
-To turn the chime on, set Chime to `true` in `/config`.
-
 ### pixel-pet
 
 `.config/claude-mods/pixel-pet` draws a pixel-art cat, four rows tall, above the

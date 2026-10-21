@@ -3,7 +3,6 @@
   "description": "Claude Code mods kept in these dotfiles",
   "owner": { "name": "thanh.nguyen" },
   "plugins": [
-    { "name": "fleet-deck", "source": "./fleet-deck" },
     { "name": "pixel-pet", "source": "./pixel-pet" }
   ]
 }

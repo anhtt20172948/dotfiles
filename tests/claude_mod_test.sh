@@ -10,7 +10,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
 MODS=.config/claude-mods
 MARKET=dotfiles-mods
-NAMES=(fleet-deck pixel-pet)
+NAMES=(pixel-pet)
 TMP=$(mktemp -d)
 trap 'rm -rf -- "$TMP"' EXIT
 export HOME="$TMP/home"
@@ -23,10 +23,6 @@ fail() {
 	echo "FAIL: $*" >&2
 	exit 1
 }
-
-# The chime must stay off until someone turns it on.
-[[ $(jq -r '.userConfig.sound.default' "$ROOT/$MODS/fleet-deck/.claude-plugin/plugin.json") == false ]] ||
-	fail "sound must default to off"
 
 # The marketplace lists every mod folder, each by its own manifest name.
 listed=$(jq -r '.plugins[] | "\(.name) \(.source)"' "$ROOT/$MODS/.claude-plugin/marketplace.json" | sort)
@@ -55,13 +51,17 @@ for name in "${NAMES[@]}"; do
 	jq -e --arg id "$name@$MARKET" '.enabledPlugins[$id] == true' "$settings" >/dev/null || fail "$name is not enabled"
 done
 
-# A mod turned off in /plugin stays off, and other settings stay, when install.sh runs again.
-jq --arg id "pixel-pet@$MARKET" '.enabledPlugins[$id] = false | .enabledPlugins["other@elsewhere"] = true' \
+# A mod turned off in /plugin stays off, and other settings stay, when install.sh
+# runs again; a mod the marketplace no longer lists is dropped.
+jq --arg id "pixel-pet@$MARKET" --arg gone "gone@$MARKET" \
+	'.enabledPlugins[$id] = false | .enabledPlugins[$gone] = true | .enabledPlugins["other@elsewhere"] = true' \
 	"$settings" >"$TMP/settings.json"
 mv "$TMP/settings.json" "$settings"
 "$ROOT/install.sh" >/dev/null
 jq -e --arg id "pixel-pet@$MARKET" '.enabledPlugins[$id] == false and .enabledPlugins["other@elsewhere"] == true' \
 	"$settings" >/dev/null || fail "install.sh overrode enabledPlugins"
+jq -e --arg gone "gone@$MARKET" '.enabledPlugins | has($gone) | not' "$settings" >/dev/null ||
+	fail "install.sh kept a mod the marketplace no longer lists"
 
 if ! command -v claude >/dev/null; then
 	echo "skip: claude not installed, mod validate/test not run"

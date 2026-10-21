@@ -46,7 +46,8 @@ def claude_mods(data, path, mods):
     Claude Code reads a folder marketplace's mods from the folder itself, so every
     session loads them however it was started, and an edit needs only
     /reload-plugins. A mod already listed in enabledPlugins keeps its value, so one
-    turned off in /plugin stays off.
+    turned off in /plugin stays off, and one the marketplace no longer lists is
+    dropped.
     """
     manifest = mods / ".claude-plugin/marketplace.json"
     if not manifest.is_file():
@@ -59,9 +60,11 @@ def claude_mods(data, path, mods):
         raise ValueError(f"{manifest}: expected a name and a plugins list of named entries") from error
     source = {"source": {"source": "directory", "path": str(mods)}}
     enabled = {f"{plugin}@{name}": True for plugin in plugins}
+    kept = {plugin_id: value for plugin_id, value in json_object(data, path, "enabledPlugins").items()
+            if plugin_id in enabled or not plugin_id.endswith(f"@{name}")}
     return {
         "extraKnownMarketplaces": {**json_object(data, path, "extraKnownMarketplaces"), name: source},
-        "enabledPlugins": {**enabled, **json_object(data, path, "enabledPlugins")},
+        "enabledPlugins": {**enabled, **kept},
     }
 
 
