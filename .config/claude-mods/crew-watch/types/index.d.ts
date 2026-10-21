@@ -23,21 +23,25 @@ export type ToolTokens = { calls: number; output: number; input: number; estimat
 /** A share of local usage (0 to 1) and, when the weekly percent is known, of the weekly limit (0 to 100). */
 export type QuotaShare = { share: number | null; percent: number | null }
 
+/** `tools` is the direct cost of the calls: later cache re-reads of their results count to `session` only. */
 export type MemberQuota = { session: QuotaShare; tools: QuotaShare }
 
 /** One provider's weekly window as local sources report it. */
 export type QuotaProvider = {
-  /** Plan label from local auth metadata, empty when unknown. */
+  /** Plan label from local metadata, empty when unknown. */
   plan: string
   /** Null when no current reading exists. */
   percentUsed: number | null
   resetsAt: number | null
   windowStart: number
   windowStartKnown: boolean
+  /** Where the reading came from, and when; readAt is null when the source does not say. */
   source: string
   readAt: number | null
-  /** Readings exist but the window they describe has reset. */
+  /** The reading is older than half an hour. */
   stale: boolean
+  /** Readings exist but the window they describe has reset. */
+  reset: boolean
   /** False while local logs are still being indexed. */
   indexed: boolean
   localCost: number

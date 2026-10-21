@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { CrewMember, CrewReport } from '../types'
-import { QUOTA_NOTE, ago, cacheHit, cacheText, callTokensText, clip, clockText, contextText, dispatchText, effortText, gauge, modelsText, quotaRows, statusLine, tokens, toolTokenNote, toolTokenText, toolTokenTotal, totalTokens } from './format'
+import { QUOTA_NOTE, TOOLS_DIRECT_NOTE, ago, cacheHit, cacheText, callTokensText, clip, clockText, contextText, dispatchText, effortText, gauge, modelsText, quotaRows, statusLine, tokens, toolTokenNote, toolTokenText, toolTokenTotal, totalTokens } from './format'
 import { activityLane, crewState, dashboardLayout, fleetModels, harnessColor, laneGeometry, memberKey, recentLog, sortedTools, toggleExpanded } from './dashboard'
 
 type Dollar = EngineInterface
@@ -173,7 +173,7 @@ export const register: Register = (on, options) => {
           {line(`read ${tokens(m.cacheRead)} · write ${tokens(m.cacheWrite)}`, 'subtle')}
           {line(`tools ${m.toolCalls} · ${tokens(spent)} tok`)}
           {top.map(([name, count]) => line(`${clip(name, Math.max(4, inner - 22))} ${gauge(count * 100 / maximum, 5)} ${count} ${tokens(toolTokenTotal(m.toolTokens[name]))}`, color))}
-          {quotaRows(m.quota, providers).map(r => line(r.text, r.tone))}
+          {quotaRows(m.quota, providers, now).map(r => line(r.text, r.tone))}
           {!m.readable ? line(`usage is not readable for the ${m.harness} harness`, 'subtle') : m.sessions === 0 ? line('no transcript found for its worktree yet', 'subtle') : null}
           {m.lastTool ? line(`▸ ${m.lastTool}`, 'subtle') : null}
           {m.lastText ? line(`“${m.lastText}”`, 'subtle') : null}
@@ -183,6 +183,7 @@ export const register: Register = (on, options) => {
           {detail ? sortedTools(m.tools).map(([tool, count]) => <Text wrap="wrap">{`${tool} ×${count} · ${toolTokenText(m.toolTokens[tool])}`}</Text>) : null}
           {detail && note ? <Text color="subtle" wrap="wrap">{note}</Text> : null}
           {detail && Object.keys(m.quota).length > 0 ? <Text color="subtle" wrap="wrap">{QUOTA_NOTE}</Text> : null}
+          {detail && Object.keys(m.quota).length > 0 ? <Text color="subtle" wrap="wrap">{TOOLS_DIRECT_NOTE}</Text> : null}
           {detail ? m.recentTools.map(event => <Text color="subtle" wrap="wrap">{`${clockText(event.at)} ${event.tool ? `${callTokensText(event)} · ` : ''}${event.text}`}</Text>) : null}
           {detail && m.lastText ? <Text wrap="wrap">{m.lastText}</Text> : null}
           {detail && m.status ? <Text color="permission" wrap="wrap">{m.status}</Text> : null}
@@ -224,8 +225,9 @@ export const register: Register = (on, options) => {
           {report ? row(`in ${tokens(report.totals.input)} · out ${tokens(report.totals.output)} · thinking ${tokens(report.totals.reasoning)}`, 'subtle', inner) : null}
           {report ? row(`cache ${gauge(Number.parseFloat(cacheHit(report.totals)))} ${cacheHit(report.totals)}`, 'permission', inner) : null}
           {report ? row(`read ${tokens(report.totals.cacheRead)} · write ${tokens(report.totals.cacheWrite)}`, 'subtle', inner) : null}
-          {report ? quotaRows(report.quota.fleet, providers).map(r => row(r.text, r.tone, inner)) : null}
+          {report ? quotaRows(report.quota.fleet, providers, now).map(r => row(r.text, r.tone, inner)) : null}
           {report && Object.keys(report.quota.fleet).length > 0 ? <Text color="subtle" wrap="wrap">{QUOTA_NOTE}</Text> : null}
+          {report && Object.keys(report.quota.fleet).length > 0 ? <Text color="subtle" wrap="wrap">{TOOLS_DIRECT_NOTE}</Text> : null}
           {models.map(([model, count]) => row(`${model} ×${count}`, 'suggestion', inner))}
           {report && crew.length === 0 ? row('No crewmates are live.', 'subtle', inner) : null}
         </Box>

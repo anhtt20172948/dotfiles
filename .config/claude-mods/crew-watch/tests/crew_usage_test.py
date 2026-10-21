@@ -66,14 +66,14 @@ class TelemetryTest(unittest.TestCase):
         partial = {"type": "assistant", "timestamp": "2026-10-21T17:11:00Z", "message": {
             "id": "partial", "model": "claude-test", "content": [{"type": "text", "text": "finished"}]}}
         self.append(partial, newline=False)
-        usage.parse_claude(self.path, entry)
+        usage.parse_claude(self.path, entry, {})
         self.assertEqual(entry["agg"]["requests"], 70)
         self.assertEqual(len(entry["agg"]["events"]), 10)
         self.assertLessEqual(len(entry["agg"]["activity"]), 60)
         self.assertIsNone(entry["agg"]["contextWindow"])
         with self.path.open("a") as stream:
             stream.write("\n")
-        usage.parse_claude(self.path, entry)
+        usage.parse_claude(self.path, entry, {})
         self.assertEqual(entry["agg"]["requests"], 71)
         self.assertEqual(entry["agg"]["lastText"], "finished")
 
@@ -203,7 +203,7 @@ class TelemetryTest(unittest.TestCase):
         ), patch.object(usage, "CACHE_PATH", str(root / "cache" / "cache.json")):
             for slot in (codex_slot, pi_slot):
                 first = Path(usage.claude_project_dir(slot)) / "first.jsonl"
-                self.claude_turn(first, "first", "claude-first")
+                self.claude_turn(first, "first-" + Path(slot).name, "claude-first")
                 os.utime(first, (now - 3600, now - 3600))
             self.codex_rollout(root / "sessions" / "rollout-relaunched.jsonl", codex_slot, 30)
             crew = {m["id"]: m for m in self.report(fm)["crew"]}
@@ -245,9 +245,9 @@ class TelemetryTest(unittest.TestCase):
         self.append({"type": "assistant", "timestamp": "2026-10-21T17:00:00Z", "message": {
             "id": "one", "usage": {"input_tokens": 10}, "content": [{"type": "tool_use", "name": "Read"}]}})
         entry = usage.fresh_entry()
-        usage.parse_claude(self.path, entry)
+        usage.parse_claude(self.path, entry, {})
         self.path.write_text(json.dumps({"type": "assistant", "message": {"id": "two", "content": []}}) + "\n")
-        usage.parse_claude(self.path, entry)
+        usage.parse_claude(self.path, entry, {})
         self.assertEqual(entry["agg"]["events"], [])
         self.assertEqual(entry["agg"]["requests"], 1)
 
@@ -311,7 +311,7 @@ class TelemetryTest(unittest.TestCase):
         # Next context 1400: it grew by 300 beyond the first context and its 100 output tokens.
         self.two_call_request({"input_tokens": 5, "cache_read_input_tokens": 1000, "cache_creation_input_tokens": 395, "output_tokens": 7})
         entry = usage.fresh_entry()
-        usage.parse_claude(self.path, entry)
+        usage.parse_claude(self.path, entry, {})
         tools = entry["agg"]["toolTokens"]
         self.assertEqual(tools["Read"], {"calls": 1, "output": 50, "input": 225, "estimated": 0, "estCalls": 0})
         self.assertEqual(tools["Bash"], {"calls": 1, "output": 50, "input": 75, "estimated": 0, "estCalls": 0})
@@ -323,7 +323,7 @@ class TelemetryTest(unittest.TestCase):
     def test_a_request_without_a_successor_is_estimated_from_result_size_until_one_arrives(self):
         self.two_call_request(None)
         entry = usage.fresh_entry()
-        usage.parse_claude(self.path, entry)
+        usage.parse_claude(self.path, entry, {})
         self.assertEqual(entry["agg"]["toolTokens"], {})
         pending = usage.settled_agg(entry, "claude")
         # 300 and 100 characters at four characters per token, flagged as estimated.
@@ -335,7 +335,7 @@ class TelemetryTest(unittest.TestCase):
         self.append({"type": "assistant", "timestamp": "2026-10-21T17:01:00Z", "message": {
             "id": "m2", "model": "claude-sonnet-5-5", "content": [{"type": "text", "text": "done"}],
             "usage": {"input_tokens": 5, "cache_read_input_tokens": 1000, "cache_creation_input_tokens": 395, "output_tokens": 7}}})
-        usage.parse_claude(self.path, entry)
+        usage.parse_claude(self.path, entry, {})
         self.assertEqual(entry["agg"]["toolTokens"]["Read"]["estCalls"], 0)
         self.assertEqual(entry["agg"]["toolTokens"]["Read"]["input"], 225)
         self.assertIs(usage.settled_agg(entry, "claude"), entry["agg"])
@@ -344,7 +344,7 @@ class TelemetryTest(unittest.TestCase):
         # The whole 1400-token context is rewritten: growth is still 300, charged at the cache-write price.
         self.two_call_request({"input_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 1400, "output_tokens": 7})
         entry = usage.fresh_entry()
-        usage.parse_claude(self.path, entry)
+        usage.parse_claude(self.path, entry, {})
         self.assertEqual(entry["agg"]["toolTokens"]["Read"]["input"], 225)
         self.assertEqual(entry["agg"]["toolTokens"]["Read"]["estCalls"], 0)
         w = usage.token_weights("claude", "claude-sonnet-5-5")
@@ -356,7 +356,7 @@ class TelemetryTest(unittest.TestCase):
         # A compaction: the next context is smaller than the last one.
         self.two_call_request({"input_tokens": 50, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0, "output_tokens": 7})
         entry = usage.fresh_entry()
-        usage.parse_claude(self.path, entry)
+        usage.parse_claude(self.path, entry, {})
         self.assertEqual(entry["agg"]["toolTokens"]["Read"], {"calls": 1, "output": 50, "input": 75, "estimated": 75, "estCalls": 1})
 
     def test_a_log_without_usage_attributes_estimates_only_and_never_negative_tokens(self):
@@ -364,7 +364,7 @@ class TelemetryTest(unittest.TestCase):
             self.append({"type": "assistant", "timestamp": at, "message": {"id": mid, "content": [
                 {"type": "tool_use", "id": "t" + mid, "name": "Read"}]}})
         entry = usage.fresh_entry()
-        usage.parse_claude(self.path, entry)
+        usage.parse_claude(self.path, entry, {})
         self.assertEqual(entry["agg"]["toolTokens"]["Read"], {"calls": 1, "output": 0, "input": 0, "estimated": 0, "estCalls": 1})
 
     def test_codex_calls_split_the_request_output_and_measure_the_next_contexts_growth(self):
@@ -437,16 +437,67 @@ class TelemetryTest(unittest.TestCase):
 
     def test_a_window_that_has_reset_gives_no_percent(self):
         now = 1_000_000_000
-        stale = usage.window_candidate("claude-code cache", 100, now - 1, usage.WEEK_MS, now - 5000)
-        live = usage.window_candidate("quota-axi", 30, now + 86_400_000, usage.WEEK_MS, now - 9000)
-        self.assertIsNone(usage.pick_window([stale], now))
-        self.assertEqual(usage.pick_window([stale, live], now)["percent"], 30.0)
-        window = usage.provider_window([stale], "Max 5x", now)
-        self.assertEqual((window["percentUsed"], window["stale"], window["windowStartKnown"]), (None, True, False))
+        ended = usage.window_candidate("claude-code cache", 100, now - 1, usage.WEEK_MS, now - 5000)
+        live = usage.window_candidate("claude-code", 30, now + 86_400_000, usage.WEEK_MS, now - 9000)
+        self.assertIsNone(usage.pick_window([ended], now))
+        self.assertEqual(usage.pick_window([ended, live], now)["percent"], 30.0)
+        window = usage.provider_window([ended], "Max 5x", now)
+        self.assertEqual((window["percentUsed"], window["reset"], window["stale"], window["windowStartKnown"]), (None, True, False, False))
         self.assertEqual(window["windowStart"], now - usage.WEEK_MS)
         window = usage.provider_window([live], "", now)
         self.assertEqual(window["windowStart"], now + 86_400_000 - usage.WEEK_MS)
-        self.assertEqual(usage.provider_window([], "", now)["stale"], False)
+        self.assertEqual((window["reset"], window["stale"]), (False, False))
+        self.assertEqual((usage.provider_window([], "", now)["reset"], usage.provider_window([], "", now)["stale"]), (False, False))
+
+    def test_the_freshest_reading_wins_and_one_older_than_half_an_hour_is_stale(self):
+        now = 10_000_000_000
+        resets = now + 86_400_000
+        old = usage.window_candidate("claude-code cache", 10, resets, usage.WEEK_MS, now - 4 * 86_400_000)
+        recent = usage.window_candidate("codex rollout", 50, resets, usage.WEEK_MS, now - 60_000)
+        window = usage.provider_window([old, recent], "", now)
+        self.assertEqual((window["percentUsed"], window["source"], window["readAt"], window["stale"]), (50.0, "codex rollout", now - 60_000, False))
+        window = usage.provider_window([old], "", now)
+        self.assertEqual((window["percentUsed"], window["source"], window["stale"]), (10.0, "claude-code cache", True))
+        self.assertTrue(usage.provider_window([usage.window_candidate("x", 1, resets, usage.WEEK_MS, now - usage.STALE_MS - 1)], "", now)["stale"])
+        self.assertFalse(usage.provider_window([usage.window_candidate("x", 1, resets, usage.WEEK_MS, now - usage.STALE_MS)], "", now)["stale"])
+        unknown = usage.provider_window([usage.window_candidate("claude-code cache", 1, resets, usage.WEEK_MS, None)], "", now)
+        self.assertEqual((unknown["readAt"], unknown["stale"]), (None, True))
+
+    def test_messages_copied_into_a_resumed_or_forked_transcript_count_once(self):
+        root = Path(self.tmp.name)
+        fm = root / "fm"
+        (fm / "state").mkdir(parents=True)
+        mine, other = str(root / "mine"), str(root / "other")
+        now = int(usage.time.time())
+        (fm / "state" / "a.meta").write_text(f"harness=claude\nworktree={mine}\nspawn_gen=s{now - 600}.1.2\n")
+        stamp = lambda seconds: datetime.fromtimestamp(now - seconds, timezone.utc).isoformat()
+        row = lambda mid, seconds, tokens: json.dumps({"type": "assistant", "timestamp": stamp(seconds), "message": {
+            "id": mid, "model": "claude-sonnet-5-5", "usage": {"input_tokens": tokens},
+            "content": [{"type": "tool_use", "id": "t" + mid, "name": "Read", "input": {"path": "/x"}}]}}) + "\n"
+        project = Path(usage.claude_project_dir(mine))
+        project.mkdir(parents=True)
+        (project / "first.jsonl").write_text(row("m1", 300, 100))
+        # --resume copies m1 into the new transcript before its own m2.
+        (project / "resumed.jsonl").write_text(row("m1", 300, 100) + row("m2", 60, 50))
+        # A fork elsewhere copies m1 too and adds m3.
+        forked = Path(usage.claude_project_dir(other))
+        forked.mkdir(parents=True)
+        (forked / "fork.jsonl").write_text(row("m1", 300, 100) + row("m3", 30, 200))
+        tomorrow = datetime.fromtimestamp(now + 86400, timezone.utc).isoformat()
+        limits = json.dumps([{"kind": "seven_day", "percentUsed": 70, "resetsAt": tomorrow}])
+        reports = []
+        for _ in range(2):
+            with redirect_stdout(io.StringIO()) as output, patch.object(usage, "CACHE_PATH", str(root / "cache.json")), patch.object(
+                    usage.sys, "argv", ["crew_usage.py", "--home", str(fm), "--claude-limits", limits]):
+                usage.main()
+            reports.append(json.loads(output.getvalue()))
+        for report in reports:
+            member = report["crew"][0]
+            self.assertEqual((member["requests"], member["input"], member["toolCalls"], member["sessions"]), (2, 150, 2, 2))
+            self.assertEqual(member["toolTokens"]["Read"]["calls"], 2)
+            w = usage.token_weights("claude", "claude-sonnet-5-5")
+            self.assertAlmostEqual(report["quota"]["providers"]["claude"]["localCost"], 350 * w["input"])
+            self.assertAlmostEqual(member["quota"]["claude"]["session"]["share"], 150 / 350)
 
     def test_report_estimates_the_weekly_share_from_the_window_percent_and_local_usage(self):
         root = Path(self.tmp.name)
@@ -507,7 +558,7 @@ class TelemetryTest(unittest.TestCase):
         self.assertFalse(report["quota"]["providers"]["claude"]["indexed"])
         self.assertEqual(report["crew"][0]["quota"]["claude"]["session"], {"share": None, "percent": None})
 
-    def test_codex_window_comes_from_the_newest_rollout_event_and_the_plan_from_local_metadata(self):
+    def test_codex_window_and_plan_come_from_the_newest_rollout_event(self):
         resets = int(usage.time.time()) + 86400
         limits = lambda percent, at: {"type": "event_msg", "timestamp": at, "payload": {"type": "token_count", "info": None, "rate_limits": {
             "plan_type": "plus", "primary": {"used_percent": 3.0, "window_minutes": 300, "resets_at": resets},
@@ -533,6 +584,8 @@ class TelemetryTest(unittest.TestCase):
         candidates = usage.claude_candidates([{"kind": "seven_day", "percentUsed": 50, "resetsAt": "2999-01-02T00:00:00Z"}], 10)
         self.assertEqual(sorted((c["source"], c["percent"]) for c in candidates), [("claude-code", 50.0), ("claude-code cache", 12.0)])
         self.assertEqual(usage.pick_window(candidates, 10)["source"], "claude-code")
+        cached = usage.provider_window(usage.claude_candidates([], 10), "", 5 + usage.STALE_MS + 1)
+        self.assertEqual((cached["percentUsed"], cached["source"], cached["readAt"], cached["stale"]), (12.0, "claude-code cache", 5, True))
         (home / ".claude").mkdir()
         (home / ".claude" / ".credentials.json").write_text(json.dumps({"claudeAiOauth": {"subscriptionType": "max", "rateLimitTier": "default_claude_max_20x", "accessToken": "secret"}}))
         self.assertEqual(usage.claude_plan(), "Max 20x · Team")

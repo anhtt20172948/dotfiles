@@ -61,7 +61,7 @@ const REPORT: CrewReport = {
   totals: { requests: 12, input: 120, output: 15_400, cacheRead: 1_900_000, cacheWrite: 98_000, reasoning: 4_000, toolCalls: 31 },
   quota: {
     providers: {
-      claude: { plan: 'Max 5x', percentUsed: 37, resetsAt: NOW + 86_400_000, windowStart: NOW - 5 * 86_400_000, windowStartKnown: true, source: 'claude-code', readAt: NOW, stale: false, indexed: true, localCost: 1e6 },
+      claude: { plan: 'Max 5x', percentUsed: 37, resetsAt: NOW + 86_400_000, windowStart: NOW - 5 * 86_400_000, windowStartKnown: true, source: 'claude-code', readAt: NOW - 120_000, stale: false, reset: false, indexed: true, localCost: 1e6 },
     },
     fleet: { claude: { session: { share: 0.2, percent: 7.4 }, tools: { share: 0.08, percent: 2.96 } } },
   },
@@ -109,7 +109,9 @@ test('the pane shows each crewmate\'s models, tokens, cache and tools, on every 
     expect(await ui.find({ text: /tools 31 · 47k tok/ })).toBeDefined()
     expect(await ui.find({ text: /Bash ▰.* 20 42k/ })).toBeDefined()
     expect(await ui.find({ text: /claude Max 5x · week 37% used/ })).toBeDefined()
-    expect(await ui.find({ text: /of week session 7\.4% · tools 3\.0%/ })).toBeDefined()
+    expect(await ui.find({ text: /current · read 2m ago · claude-code/ })).toBeDefined()
+    expect(await ui.find({ text: /of week session 7\.4% · tools direct 3\.0%/ })).toBeDefined()
+    expect(await ui.find({ text: /later cache re-reads count to the session only/ })).toBeDefined()
     expect(await ui.find({ text: /other machines and the web are not seen/ })).toBeDefined()
     expect(await ui.find({ text: /Bash ▰/ })).toBeDefined()
     expect((await ui.find({ type: 'Text', text: /npm test/ }))?.text).toContain('▸')
@@ -229,11 +231,19 @@ test('token and quota text states what is unknown instead of inventing numbers',
   expect(toolTokenNote({ toolCalls: 3, toolTokens: {} })).toBe('per-call tokens unavailable: the transcript has no usage fields')
   expect(toolTokenNote({ toolCalls: 0, toolTokens: {} })).toBe('')
   const share = { session: { share: 0.31, percent: null }, tools: { share: 0.004, percent: null } }
-  const provider = { plan: '', percentUsed: null, resetsAt: null, windowStart: 0, windowStartKnown: false, source: '', readAt: null, stale: true, indexed: true, localCost: 5 }
-  expect(quotaRows({ codex: share }, { codex: provider }).map(r => r.text)).toEqual([
+  const provider = { plan: '', percentUsed: null, resetsAt: null, windowStart: 0, windowStartKnown: false, source: '', readAt: null, stale: false, reset: true, indexed: true, localCost: 5 }
+  expect(quotaRows({ codex: share }, { codex: provider }, NOW).map(r => r.text)).toEqual([
     'codex plan unknown',
-    'week session 31% of local · tools 0.4% of local',
+    'week session 31% of local · tools direct 0.4% of local',
     'weekly % unavailable: window reset',
   ])
-  expect(quotaRows({ codex: share }, { codex: { ...provider, indexed: false } }).map(r => r.text)).toEqual(['codex plan unknown · indexing local logs…'])
+  expect(quotaRows({ codex: share }, { codex: { ...provider, indexed: false } }, NOW).map(r => r.text)).toEqual(['codex plan unknown · indexing local logs…'])
+  const old = { ...provider, plan: 'Max 5x', percentUsed: 10, source: 'claude-code cache', readAt: NOW - 4 * 86_400_000, stale: true, reset: false }
+  const measured = { session: { share: 0.31, percent: 3.1 }, tools: { share: 0.004, percent: 0.04 } }
+  expect(quotaRows({ claude: measured }, { claude: old }, NOW)).toEqual([
+    { text: 'claude Max 5x · week 10% used', tone: 'subtle' },
+    { text: 'stale · read 4d ago · claude-code cache', tone: 'warning' },
+    { text: 'of week session 3.1% · tools direct <0.1%', tone: 'text' },
+  ])
+  expect(quotaRows({ claude: measured }, { claude: { ...old, readAt: null } }, NOW)[1].text).toBe('stale · read at an unknown time · claude-code cache')
 })

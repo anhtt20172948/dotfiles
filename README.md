@@ -212,26 +212,32 @@ context), the input is estimated from the result size at four characters per
 token and shown with `~`. The expanded crewmate lists `out N in M` per recent
 call and `total · avg` per tool; Codex rollouts work the same from their
 `token_count` events, and a log without usage fields says so instead of
-guessing.
+guessing. This is a call's direct cost: every later request re-reads its result
+from the prompt cache, and those re-reads count to the session, never to the
+call.
 
 Weekly quota share. Vendors do not publish weekly caps in tokens, so none is
 hard-coded. The estimate is `window % used x weighted tokens of the crewmate
-(or of its tool calls) since the window started / weighted tokens of every
-local session of that provider since then`, scanning `~/.claude/projects` and
-`~/.codex/sessions`. Tokens are weighted by relative price per type and model
-family (a cache read costs a tenth of an input token, an output token several
-times more; the table is `PRICE_RATIO`/`FAMILY_PRICE` in `crew_usage.py`).
-The percent, reset time and plan come from local sources only, freshest
-reading still in force first: the rate limits the Claude Code engine reports
-(`$.session.usage()`), quota-axi's cache file (`~/.cache/quota-axi/quotas.json`,
-never run), Claude Code's cached usage in `~/.claude.json`, and the rate-limit
-events in Codex rollouts. The plan comes from local auth metadata (Claude's
-rate-limit tier or subscription type, Codex's ChatGPT plan type). Each card
-shows the plan, the session's and the tool calls' share of the week, and the
-fleet box the total. A reading whose window has reset is ignored; with no
-current percent the card shows the raw share of local usage and says the weekly
-percent is unavailable. Usage from other machines or the web is not seen
-locally, so the share is an upper bound for local work. The first run indexes
+(or the direct cost of its tool calls) since the window started / weighted
+tokens of every local session of that provider since then`, scanning
+`~/.claude/projects` and `~/.codex/sessions`. A resumed or forked Claude
+session copies earlier messages into a new transcript, so each message id
+counts once, in the first transcript parsed that logged it. Tokens are
+weighted by relative price per type and model family (a cache read costs a
+tenth of an input token, an output token several times more; the table is
+`PRICE_RATIO`/`FAMILY_PRICE` in `crew_usage.py`). The percent and reset time
+come from local sources only, the freshest reading still in force first: the
+rate limits the Claude Code engine reports (`$.session.usage()`), Claude
+Code's cached usage in `~/.claude.json`, and the rate-limit events in Codex
+rollouts. The plan comes from Claude's local auth metadata (rate-limit tier or
+subscription type) and from the plan type in Codex rollouts. Each card shows
+the plan, where the weekly percent was read and how long ago (`stale` once it
+is more than 30 minutes old), the session's share of the week and the tool
+calls' direct share (`tools direct`), and the fleet box the total. A reading
+whose window has reset is ignored; with no current percent the card shows the
+raw share of local usage and says the weekly percent is unavailable. Usage
+from other machines or the web is not seen locally, so the share is an upper
+bound for local work. The first run indexes
 the last week of local logs within a ten second budget and shows "indexing
 local logs" until it finishes.
 
