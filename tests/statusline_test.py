@@ -1,15 +1,23 @@
 """Behavioral tests for the portable Claude and Codex status line setup."""
 
 import hashlib
+import importlib.util
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import tomllib
+try:
+    import tomllib
+except ImportError:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        tomllib = None
 
 ROOT = Path(__file__).resolve().parent.parent
 INSTALLER = ROOT / ".local/bin/install-agent-statusline"
@@ -211,6 +219,9 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(self.run_line(self.LIMITS, XDG_CACHE_HOME=str(blocker)), expected)
 
 
+needs_toml = unittest.skipIf(tomllib is None, "merging Codex settings needs Python 3.11+ or tomli")
+
+
 class InstallerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -227,17 +238,18 @@ class InstallerTests(unittest.TestCase):
     def install(self, *args):
         return subprocess.run([str(INSTALLER), "--home", str(self.home), *args],
                               text=True, capture_output=True, check=False,
-                              env={**os.environ, "HOME": "/wrong/home"})
+                              env={**os.environ, "HOME": "/wrong/home", "PYTHONDONTWRITEBYTECODE": "1"})
 
+    @needs_toml
     def test_check_apply_idempotence_and_unrelated_settings(self):
         before = (self.claude.read_bytes(), self.codex.read_bytes())
         check = self.install("--check")
         self.assertEqual(check.returncode, 0, check.stderr)
-        self.assertEqual(json.loads(check.stdout), {"changed": True, "changes": ["claude", "codex"]})
+        self.assertEqual(json.loads(check.stdout), {"changed": True, "changes": ["claude", "codex"], "skipped": []})
         self.assertEqual((self.claude.read_bytes(), self.codex.read_bytes()), before)
         applied = self.install()
         self.assertEqual(applied.returncode, 0, applied.stderr)
-        self.assertEqual(json.loads(applied.stdout), {"changed": True, "changes": ["claude", "codex"]})
+        self.assertEqual(json.loads(applied.stdout), {"changed": True, "changes": ["claude", "codex"], "skipped": []})
         data = json.loads(self.claude.read_text())
         self.assertEqual(data["model"], "opus")
         self.assertEqual(data["hooks"], {"Stop": [{"hooks": []}]})
@@ -251,9 +263,10 @@ class InstallerTests(unittest.TestCase):
                          CODEX_ITEMS)
         after = (self.claude.read_bytes(), self.codex.read_bytes())
         again = self.install()
-        self.assertEqual(json.loads(again.stdout), {"changed": False, "changes": []})
+        self.assertEqual(json.loads(again.stdout), {"changed": False, "changes": [], "skipped": []})
         self.assertEqual((self.claude.read_bytes(), self.codex.read_bytes()), after)
 
+    @needs_toml
     def test_context_settings_merge_preserves_model_effort_and_environment(self):
         original = {"model": "opus[1m]", "effortLevel": "max",
                     "env": {"OTHER_VAR": "keep", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "90"}}
@@ -289,6 +302,7 @@ show_tooltips = false
         self.assertIn("# private settings", self.codex.read_text())
         self.assertFalse(json.loads(self.install().stdout)["changed"])
 
+    @needs_toml
     def test_missing_settings_get_global_context_defaults(self):
         self.claude.unlink()
         self.codex.unlink()
@@ -309,6 +323,7 @@ show_tooltips = false
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((self.claude.read_bytes(), self.codex.read_bytes()), before)
 
+    @needs_toml
     def test_invalid_config_fails_without_partial_write(self):
         self.codex.write_text("[tui\n")
         before = (self.claude.read_bytes(), self.codex.read_bytes())
@@ -316,6 +331,7 @@ show_tooltips = false
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((self.claude.read_bytes(), self.codex.read_bytes()), before)
 
+    @needs_toml
     def test_existing_multiline_codex_status_line_is_replaced_only_once(self):
         self.codex.write_text('''model = "gpt-6-astra"
 [tui]
@@ -345,12 +361,39 @@ hooks = true
         self.assertTrue(self.claude.is_symlink())
         self.assertEqual(outside.read_text(), '{"theme":"dark"}')
 
+    @needs_toml
     def test_explicit_home_works_without_home_environment(self):
         env = {key: value for key, value in os.environ.items() if key != 'HOME'}
         result = subprocess.run([str(INSTALLER), '--home', str(self.home), '--check'],
                                 env=env, text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)['changes'], ['claude', 'codex'])
+
+    def install_without(self, *modules):
+        # Runs the installer as an interpreter that cannot import these modules.
+        code = ("import runpy, sys\n"
+                f"for name in {modules!r}:\n    sys.modules[name] = None\n"
+                "sys.argv = sys.argv[1:]\n"
+                "runpy.run_path(sys.argv[0], run_name='__main__')\n")
+        return subprocess.run([sys.executable, "-c", code, str(INSTALLER), "--home", str(self.home)],
+                              text=True, capture_output=True, check=False,
+                              env={**os.environ, "HOME": "/wrong/home", "PYTHONDONTWRITEBYTECODE": "1"})
+
+    def test_without_a_toml_parser_codex_is_skipped_and_claude_still_merges(self):
+        before = self.codex.read_bytes()
+        result = self.install_without("tomllib", "tomli")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {"changed": True, "changes": ["claude"], "skipped": ["codex"]})
+        self.assertIn("needs Python 3.11+ or the tomli package", result.stderr)
+        self.assertEqual(self.codex.read_bytes(), before)
+        self.assertIn("statusLine", json.loads(self.claude.read_text()))
+
+    @unittest.skipIf(importlib.util.find_spec("tomli") is None, "the tomli backport is not installed")
+    def test_tomli_backport_merges_codex_without_tomllib(self):
+        result = self.install_without("tomllib")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["changes"], ["claude", "codex"])
+        self.assertEqual(tomllib.loads(self.codex.read_text())["tui"]["status_line"], CODEX_ITEMS)
 
     def test_empty_existing_claude_settings_fail_closed(self):
         self.claude.write_text('')

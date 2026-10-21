@@ -10,7 +10,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-import tomllib
+# tomllib ships with Python 3.11+; tomli is its backport for older interpreters
+# (Ubuntu 22.04 and L4T ship 3.10). Without either the Codex merge cannot be
+# verified, so it is skipped rather than written blind.
+try:
+    import tomllib
+except ImportError:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        tomllib = None
 
 CODEX_ITEMS = ["model-with-reasoning", "context-used", "context-remaining", "context-window-size",
                "five-hour-limit", "weekly-limit", "total-input-tokens", "total-output-tokens"]
@@ -107,6 +116,11 @@ def main():
         parser.error("--home must be an absolute path")
     targets = [("claude", args.home / ".claude/settings.json", claude_result),
                ("codex", args.home / ".codex/config.toml", codex_result)]
+    skipped = []
+    if tomllib is None:
+        print(f"install-agent-statusline: skipped {targets[1][1]}: merging Codex settings "
+              "needs Python 3.11+ or the tomli package", file=sys.stderr)
+        skipped.append(targets.pop()[0])
     for _, path, _ in targets:
         if path.is_symlink():
             raise ValueError(f"{path}: settings symlink requires a manual merge")
@@ -115,12 +129,14 @@ def main():
     if not args.check:
         for _, path, content in changes:
             write_atomic(path, content)
-    print(json.dumps({"changed": bool(changes), "changes": [name for name, _, _ in changes]}))
+    print(json.dumps({"changed": bool(changes), "changes": [name for name, _, _ in changes],
+                      "skipped": skipped}))
 
 
 if __name__ == "__main__":
+    errors = (OSError, TypeError, ValueError) + ((tomllib.TOMLDecodeError,) if tomllib else ())
     try:
         main()
-    except (OSError, TypeError, ValueError, tomllib.TOMLDecodeError) as error:
+    except errors as error:
         print(f"install-agent-statusline: {error}", file=sys.stderr)
         sys.exit(1)
