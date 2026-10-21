@@ -32,6 +32,11 @@ does not apply, because these tools launch the agent CLI themselves.
 
 ## Install
 
+The supported server provisioning path is the separate
+[workflow](https://github.com/anhtt20172948/workflow) repository. The standalone
+installer below is an alternative helper; `install.sh` only links configuration
+and merges agent settings.
+
 Requirements: `git`, `tmux`, `curl`, `node` >= 20 with `npm`/`npx`, and the
 GitHub CLI logged in:
 
@@ -150,7 +155,7 @@ runs [`tests/run.sh`](../tests/run.sh):
 
 ```bash
 tests/run.sh lint   # shellcheck on the scripts that are clean
-tests/run.sh test   # every tests/*.lua in headless Neovim
+tests/run.sh test   # headless Neovim tests and shell tests
 tests/run.sh        # both
 ```
 
