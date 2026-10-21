@@ -585,7 +585,8 @@ function M.doctor(extra)
 	vim.list_extend(lines, #samples > 0 and samples or { "  (none)" })
 	lines[#lines + 1] = ""
 	lines[#lines + 1] = "Gợi ý: nếu 'all dirs' > 0 mà 'scoped' = 0 -> cwd hiện tại không khớp cwd đã ghi"
-	lines[#lines + 1] = "ở trên. Mở nvim ĐÚNG thư mục dự án, hoặc dùng <A-a> trong picker để xem tất cả."
+	lines[#lines + 1] =
+		"ở trên. Mở nvim ĐÚNG thư mục dự án, hoặc dùng <A-a> trong picker để xem tất cả."
 	if extra and #extra > 0 then
 		lines[#lines + 1] = ""
 		vim.list_extend(lines, extra)

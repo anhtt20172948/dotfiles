@@ -137,8 +137,21 @@ function M.firstmate()
 	-- tmux như prefix F, vim.system không có tty.
 	local cwd = vim.fn.getcwd()
 	M.spawn({
-		"tmux", "display-popup", "-d", cwd, "-w", "70%", "-h", "60%", "-b", "rounded",
-		"-T", " 󰚩 firstmate ", "-E", M.config.script, "firstmate",
+		"tmux",
+		"display-popup",
+		"-d",
+		cwd,
+		"-w",
+		"70%",
+		"-h",
+		"60%",
+		"-b",
+		"rounded",
+		"-T",
+		" 󰚩 firstmate ",
+		"-E",
+		M.config.script,
+		"firstmate",
 	}, cwd)
 end
 
