@@ -46,9 +46,29 @@ line uses [agent-statusline-claude](.local/bin/agent-statusline-claude) and need
 ~/.local/bin/install-agent-statusline --home "$HOME" --check
 ```
 
-Firstmate's `config/crew-dispatch.json` and `data/captain.md` are linked
-individually under `~/.local/share/firstmate`, keeping its runtime directories
-real. Edits to those linked files change this checkout.
+Firstmate's `config/crew-dispatch.json` is linked individually under
+`~/.local/share/firstmate`, keeping its runtime directories real. Edits to that
+linked file change this checkout.
+
+### Firstmate settings are per host
+
+`captain.md` holds each host's own captain preferences, so it lives at
+`~/.local/share/firstmate/data/captain.md` on every host and is intentionally
+untracked (it is gitignored and `install.sh` never links or replaces it). Create
+it from [docs/firstmate/captain.md.example](docs/firstmate/captain.md.example):
+
+```bash
+mkdir -p ~/.local/share/firstmate/data
+cp docs/firstmate/captain.md.example ~/.local/share/firstmate/data/captain.md
+```
+
+A host where it is still a symlink into an old dotfiles checkout can turn it into
+a real file (a no-op on a regular file or a missing path; a non-zero exit status
+only means the path was not a symlink):
+
+```bash
+for f in data/captain.md; do p=~/.local/share/firstmate/$f; [ -L "$p" ] && cp --remove-destination "$(readlink -f "$p")" "$p"; done
+```
 
 ## Configurations
 

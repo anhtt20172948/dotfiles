@@ -43,3 +43,6 @@ __pycache__/
 *.tokens.json
 .env
 .env.*
+
+# Firstmate captain preferences are per host: never track them.
+.local/share/firstmate/data/captain.md

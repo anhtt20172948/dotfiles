@@ -24,19 +24,18 @@ echo rules >"$REPO/.config/agents/AGENTS.md"
 echo '@~/.config/agents/AGENTS.md' >"$REPO/.config/agents/CLAUDE.md"
 ln -s ../agents/AGENTS.md "$REPO/.config/opencode/AGENTS.md"
 echo dispatch >"$REPO/.local/share/firstmate/config/crew-dispatch.json"
-echo captain >"$REPO/.local/share/firstmate/data/captain.md"
 echo repo-only >"$REPO/.claude/settings.json"
 
 before=$(find "$HOME" -printf '%p %y %l\n' | sort)
 out=$("$REPO/install.sh" --dry-run)
 [[ $(find "$HOME" -printf '%p %y %l\n' | sort) == "$before" ]] || fail 'dry-run changed HOME'
 grep -q '^link    ~/.local/share/firstmate/config/crew-dispatch.json ' <<<"$out" || fail 'dispatch folded in dry-run'
-grep -q '^link    ~/.local/share/firstmate/data/captain.md ' <<<"$out" || fail 'captain folded in dry-run'
+! grep -q 'firstmate/data/' <<<"$out" || fail 'dry-run links per-host firstmate data'
 grep -q '^link    ~/.claude/CLAUDE.md ' <<<"$out" || fail 'Claude mapping missing'
 "$REPO/install.sh" >/dev/null
 for dir in .local/share/firstmate .local/share/firstmate/config .local/share/firstmate/data .claude; do real_dir "$dir"; done
 linked .local/share/firstmate/config/crew-dispatch.json
-linked .local/share/firstmate/data/captain.md
+[[ -z $(find "$HOME/.local/share/firstmate/data" -mindepth 1) ]] || fail 'firstmate data populated'
 linked .claude/CLAUDE.md .config/agents/CLAUDE.md
 linked .config/opencode/AGENTS.md .config/agents/AGENTS.md
 jq -e '.statusLine.type == "command" and (.statusLine.command | contains("$HOME"))' "$HOME/.claude/settings.json" >/dev/null || fail 'Claude status line missing'
@@ -60,8 +59,13 @@ printf '%s\n' 'model = "gpt-6-astra"' >"$HOME/.codex/config.toml"
 echo old-claude >"$HOME/.claude/CLAUDE.md"
 echo old-opencode >"$HOME/.config/opencode/AGENTS.md"
 echo old-dispatch >"$HOME/.local/share/firstmate/config/crew-dispatch.json"
+mkdir -p "$HOME/.local/share/firstmate/data"
+echo host-captain >"$HOME/.local/share/firstmate/data/captain.md"
 "$REPO/install.sh" >/dev/null
 [[ $(cat "$HOME/.local/share/firstmate/config/private.json") == private ]] || fail 'private config lost'
+[[ -f $HOME/.local/share/firstmate/data/captain.md && ! -L $HOME/.local/share/firstmate/data/captain.md ]] || fail 'captain.md replaced'
+[[ $(cat "$HOME/.local/share/firstmate/data/captain.md") == host-captain ]] || fail 'captain.md changed'
+[[ ! -e $(find "$HOME/.dotfiles-backup" -mindepth 1 -maxdepth 1 -type d)/.local/share/firstmate/data ]] || fail 'captain.md backed up'
 [[ $(cat "$HOME/.claude/credentials.json") == credential ]] || fail 'credentials lost'
 jq -e '.hooks.Stop == [] and .theme == "dark" and .statusLine.type == "command"' "$HOME/.claude/settings.json" >/dev/null || fail 'Claude settings lost'
 python3 - "$HOME/.codex/config.toml" <<'PY' || fail 'Codex settings lost'
@@ -87,5 +91,4 @@ real_dir .local/share/firstmate
 real_dir .local/share/firstmate/config
 real_dir .local/share/firstmate/data
 linked .local/share/firstmate/config/crew-dispatch.json
-linked .local/share/firstmate/data/captain.md
 echo 'agent config: OK'
