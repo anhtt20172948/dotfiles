@@ -3,13 +3,15 @@
 
 Reads each home's state/*.meta (one per live task), finds the task's own
 transcripts by its worktree, written since the task first started (pooled
-worktrees are reused; a relaunch keeps earlier usage), and prints one JSON document on stdout:
+worktrees are reused; a relaunch keeps earlier usage, even under another
+harness), and prints one JSON document on stdout:
 
   {"generatedAt": ms, "crew": [...], "totals": {...}, "errors": [...]}
 
-Claude crewmates are read from ~/.claude/projects/<encoded worktree>/**.jsonl
-(subagent transcripts included), Codex crewmates from ~/.codex/sessions rollouts
-whose session cwd is the worktree. Other harnesses get a meta-only row.
+Every task reads both Claude transcripts from ~/.claude/projects/<encoded
+worktree>/**.jsonl (subagent transcripts included) and Codex rollouts in
+~/.codex/sessions whose session cwd is the worktree. A task with neither and
+another harness gets a meta-only row.
 
 Parsing is incremental: per-file byte offsets and partial sums are cached in
 ~/.cache/crew-watch/cache.json, so a poll only reads what was appended.
@@ -489,15 +491,13 @@ def main():
         worktree = meta.get("worktree") or ""
         agg = empty_agg()
         sessions = 0
-        readable = harness.startswith("claude") or harness == "codex"
-        if worktree and harness.startswith("claude"):
+        if worktree:
             for path in claude_files(worktree, task["since"]):
                 entry = files.setdefault(path, fresh_entry())
                 parse_claude(path, entry, worktree)
                 touched.add(path)
                 merge(agg, entry["agg"])
                 sessions += 1
-        elif worktree and harness == "codex":
             if codex_index is None:
                 codex_index = codex_files(cache, now)
             prefix = worktree.rstrip("/") + "/"
@@ -508,6 +508,7 @@ def main():
                     touched.add(path)
                     merge(agg, entry["agg"])
                     sessions += 1
+        readable = harness.startswith("claude") or harness == "codex" or sessions > 0
         top = sorted(agg["tools"].items(), key=lambda kv: -kv[1])[:4]
         statuses = status_events(os.path.join(task["home"], "state", task["id"] + ".status"))
         for event in statuses:
