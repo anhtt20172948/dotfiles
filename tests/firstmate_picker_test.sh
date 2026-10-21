@@ -39,7 +39,7 @@ cat > "$TMP/bin/fzf" <<'MOCK'
 #!/usr/bin/env bash
 stage=Agent
 for arg in "$@"; do
-  case "$arg" in '--prompt=Account › ') stage=Account ;; '--prompt=Model › ') stage=Model ;; '--prompt=Effort › ') stage=Effort ;; esac
+  case "$arg" in '--prompt=Session › ') stage=Session ;; '--prompt=Account › ') stage=Account ;; '--prompt=Model › ') stage=Model ;; '--prompt=Effort › ') stage=Effort ;; esac
 done
 file=$PICKER
 [[ $stage == Agent ]] || file="$PICKER.$stage"
@@ -47,6 +47,7 @@ printf '%s\n' "$@" > "$file.args"
 cat > "$file"
 [[ ${CANCEL_STAGE:-} != "$stage" && ${CANCEL:-0} != 1 ]] || exit 130
 case "$stage" in
+  Session) choice=new ;;
   Account) choice=${ACCOUNT_CHOICE:-} ;;
   Agent) choice=${CHOICE:-} ;;
   Model) choice=${MODEL_CHOICE:-} ;;
@@ -174,6 +175,9 @@ if run 2>/dev/null; then fail 'claude launch without jq succeeded'; fi
 no_start
 first claude
 [[ ! -s $QUOTA_LOG ]] || fail 'quota fetched without parser'
+export AI_FIRSTMATE_AGENT=codex
+run; started codex
+unset AI_FIRSTMATE_AGENT
 /bin/ln -s "$JQ_BIN" "$TMP/bin/jq"
 export AI_FIRSTMATE_AGENT=claude MODEL_CHOICE=opus EFFORT_CHOICE=max
 run; started 'ai-acct exec claude --model opus --effort max'
@@ -188,7 +192,7 @@ for model in opus sonnet haiku; do
     fi
   done
 done
-for CANCEL_STAGE in Model Effort; do
+for CANCEL_STAGE in Session Model Effort; do
   export CANCEL_STAGE
   run; no_start
 done
@@ -252,7 +256,7 @@ export ACCOUNT_CHOICE=b
 run
 IFS= read -r line < "$PICKER.Account"
 [[ $line == $'work\tClaude account work (active)' ]] || fail 'active account not first'
-for CANCEL_STAGE in Account Model Effort; do
+for CANCEL_STAGE in Session Account Model Effort; do
   printf 'a\n' > "$HOME/.config/claude-accounts/active"
   export CANCEL_STAGE
   run; no_start

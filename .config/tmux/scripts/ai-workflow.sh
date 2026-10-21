@@ -315,46 +315,114 @@ firstmate_efforts() {
   done <<<"$levels"
 }
 
+# This is only a launch guard; the agent's startup hooks own lock acquisition.
+firstmate_live_primary() {
+  local pid process
+  [[ -r "$FIRSTMATE_DIR/state/.lock" ]] || return 1
+  IFS= read -r pid < "$FIRSTMATE_DIR/state/.lock" || [[ -n "$pid" ]] || return 1
+  [[ "$pid" =~ ^[1-9][0-9]*$ && "$pid" != 1 ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  process=$(ps -p "$pid" -o comm=) || return 1
+  process=${process##*/}
+  case "$process" in claude|codex) return 0 ;; *) return 1 ;; esac
+}
+
+# Read native transcript metadata directly, without the session picker helper.
+# Validate cwd too: different Claude paths can produce the same project slug.
+firstmate_has_transcript() {
+  local agent=$1 cwd store slug file
+  cwd=$(cd "$FIRSTMATE_DIR" && pwd -P) || return 1
+  if [[ "$agent" == claude ]]; then
+    slug=$(printf '%s' "$cwd" | LC_ALL=C sed 's/[^a-zA-Z0-9]/-/g')
+    store="$HOME/.claude/projects/$slug"
+  else
+    store="${CODEX_HOME:-$HOME/.codex}/sessions"
+  fi
+  [[ -d "$store" ]] || return 1
+  while IFS= read -r -d '' file; do
+    if jq -ne --arg cwd "$cwd" --arg agent "$agent" '
+      if $agent == "claude" then
+        first(inputs | select((.type == "user" or .type == "assistant")
+          and (.isSidechain != true))) | .cwd == $cwd
+      else
+        first(inputs | select(.type == "session_meta")) | .payload.cwd == $cwd
+      end' "$file" >/dev/null 2>&1; then
+      return 0
+    fi
+  done < <(find "$store" -type f -name '*.jsonl' -print0 2>/dev/null)
+  return 1
+}
+
 action_firstmate() {
   [[ -d "$FIRSTMATE_DIR/.git" ]] \
     || fail "firstmate not found at $FIRSTMATE_DIR - run install_agent_workflow"
   [[ -n "${TMUX:-}" ]] || fail 'firstmate needs tmux (its crewmates are tmux windows)'
 
-  local target cmd windows index window name panes agent account model effort catalog='' entries flag first=''
+  local target cmd windows index window name panes agent account model effort catalog='' entries flag first='' mode
   target=$(firstmate_target)
   if [[ -n "$target" ]]; then
     tmux switch-client -t "${target%%:*}" \; select-window -t "$target"
     return
+  fi
+  if firstmate_live_primary; then
+    tmux display-message 'Firstmate lock is held by a live primary; refusing to start another.'
+    return 0
   fi
   agent=$(firstmate_choose_agent) || return $?
   [[ -n "$agent" ]] || return 0
   # fzf emits only the installed agent names offered above.
   [[ "$agent" == claude || "$agent" == codex ]] \
     || fail 'invalid firstmate agent selection'
+  entries=$'new\tNew Firstmate session\n'
+  if ! have jq; then
+    info 'Install jq to enable Firstmate resume; New session is available.'
+  elif firstmate_has_transcript "$agent"; then
+    entries+=$'resume\tResume last Firstmate session\n'
+  else
+    info "No $agent transcript to resume in $FIRSTMATE_DIR. Choose New Firstmate session."
+  fi
+  mode=$(firstmate_pick Session "$entries") || return $?
+  [[ -n "$mode" ]] || return 0
   if [[ "$agent" == claude ]]; then
     account=$(firstmate_choose_account) || return $?
     [[ -n "$account" ]] || return 0
   fi
-  if [[ "$agent" == codex ]] && have jq \
-    && { have timeout || have gtimeout || have perl; }; then
-    catalog=$(ai_run_limited 5 codex debug models 2>/dev/null) || catalog=''
-  fi
-  entries=$(firstmate_models "$agent" "$catalog")
-  model=$(firstmate_pick Model "$entries") || return $?
-  [[ -n "$model" ]] || return 0
-  entries=$(firstmate_efforts "$agent" "$model" "$catalog")
-  effort=$(firstmate_pick Effort "$entries") || return $?
-  [[ -n "$effort" ]] || return 0
-  printf -v cmd 'exec %q' "$agent"
-  if [[ "$model" != default ]]; then
-    case "$agent" in claude) flag=--model ;; codex) flag=-m ;; esac
-    printf -v cmd '%s %q %q' "$cmd" "$flag" "$model"
-  fi
-  if [[ "$effort" != default ]]; then
+  if [[ "$mode" == new ]]; then
+    if [[ "$agent" == codex ]] && have jq \
+      && { have timeout || have gtimeout || have perl; }; then
+      catalog=$(ai_run_limited 5 codex debug models 2>/dev/null) || catalog=''
+    fi
+    entries=$(firstmate_models "$agent" "$catalog")
+    model=$(firstmate_pick Model "$entries") || return $?
+    [[ -n "$model" ]] || return 0
+    entries=$(firstmate_efforts "$agent" "$model" "$catalog")
+    effort=$(firstmate_pick Effort "$entries") || return $?
+    [[ -n "$effort" ]] || return 0
+    printf -v cmd 'exec %q' "$agent"
+    if [[ "$model" != default ]]; then
+      case "$agent" in claude) flag=--model ;; codex) flag=-m ;; esac
+      printf -v cmd '%s %q %q' "$cmd" "$flag" "$model"
+    fi
+    if [[ "$effort" != default ]]; then
+      case "$agent" in
+        claude) printf -v cmd '%s --effort %q' "$cmd" "$effort" ;;
+        codex) printf -v cmd '%s -c %q' "$cmd" "model_reasoning_effort=$effort" ;;
+      esac
+    fi
+  else
     case "$agent" in
-      claude) printf -v cmd '%s --effort %q' "$cmd" "$effort" ;;
-      codex) printf -v cmd '%s -c %q' "$cmd" "model_reasoning_effort=$effort" ;;
+      claude) cmd='exec claude --continue' ;;
+      codex) printf -v cmd 'exec codex resume -C %q --last' "$FIRSTMATE_DIR" ;;
     esac
+  fi
+  # Recheck after the pickers in case another launcher acquired the lock.
+  if firstmate_live_primary; then
+    tmux display-message 'Firstmate lock is held by a live primary; refusing to start another.'
+    target=$(firstmate_target)
+    if [[ -n "$target" ]]; then
+      tmux switch-client -t "${target%%:*}" \; select-window -t "$target"
+    fi
+    return 0
   fi
   if [[ "$agent" == claude ]]; then
     need ai-acct
@@ -415,7 +483,7 @@ action_label() {
     push)      printf '%s  Push through no-mistakes' '󰜘' ;;
     pipelines) printf '%s  no-mistakes pipelines (TUI)' '󰑮' ;;
     gnhf)      printf '%s  gnhf: overnight loop…' '󰽥' ;;
-    firstmate) printf '%s  firstmate: crew orchestrator' '󰚩' ;;
+    firstmate) printf '%s  firstmate: new / resume / jump' '󰚩' ;;
     crew)      printf '%s  firstmate: crew overview / jump' '󰚩' ;;
   esac
 }
