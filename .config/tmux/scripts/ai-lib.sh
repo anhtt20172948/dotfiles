@@ -217,7 +217,10 @@ ai_capitalize() {
 # present on macOS, and a real alarm() beats a `sleep &` watchdog: there is no
 # leftover process to reap, and nothing keeps the command-substitution pipe open
 # after the child exits (a backgrounded sleep would make every call block for the
-# full timeout even when the command returned instantly).
+# full timeout even when the command returned instantly). Like GNU timeout, the
+# child gets its own process group and the whole group is signalled: killing only
+# the direct child left a grandchild (a wrapper script's `sleep`, a node worker)
+# holding the output pipe, so the caller still waited for it to finish.
 ai_run_limited() {
   local secs=$1
   shift
@@ -228,8 +231,8 @@ ai_run_limited() {
     my $secs = shift @ARGV;
     my $pid = fork();
     exit 127 if !defined $pid;
-    if ($pid == 0) { exec { $ARGV[0] } @ARGV or exit 127 }
-    $SIG{ALRM} = sub { kill "TERM", $pid };
+    if ($pid == 0) { setpgrp(0, 0); exec { $ARGV[0] } @ARGV or exit 127 }
+    $SIG{ALRM} = sub { kill "TERM", -$pid };
     alarm $secs;
     waitpid $pid, 0;
     my $st = $?;

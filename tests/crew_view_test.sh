@@ -74,7 +74,8 @@ export WINDOWS=$'1\tfirstmate\n3\tfm-task-one\n5\tfm-task-two\n7\tnotes\n'
 run_view 0
 contains "$TMP/preview" 'Fleet overview'
 contains "$TMP/preview" 'worker status: working'
-[[ $(wc -l <"$TMP/header") == 0 ]] || fail 'multi-line header crowds out worker list'
+# -eq, not ==: BSD wc pads the count with spaces.
+[[ $(wc -l <"$TMP/header") -eq 0 ]] || fail 'multi-line header crowds out worker list'
 [[ $(cat "$TMP/fzf.input") == $'3\tfm-task-one\n5\tfm-task-two' ]] || fail 'worker filtering'
 [[ $(cat "$TMP/fleet.home") == "$FIRSTMATE_DIR" ]] || fail 'FM_HOME override'
 contains "$TMP/tmux.log" 'switch-client -t =firstmate:3'

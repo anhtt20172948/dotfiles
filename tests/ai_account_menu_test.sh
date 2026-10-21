@@ -30,12 +30,14 @@ export PATH="$TMP/bin:$PATH"
 MENU="$ROOT/.config/tmux/scripts/ai-account.sh"
 dir=$HOME/.config/claude-accounts
 fail() { printf 'FAIL: %s\n' "$*" >&2; cat "$MENU_LOG" >&2 || true; exit 1; }
+# GNU stat -c, else BSD stat -f (macOS has no -c).
+mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
 # menu CHOICE... <<< stdin
 menu() { printf '%s\n' "$@" > "$CHOICES"; : > "$MENU_LOG"; bash "$MENU" 2>>"$TMP/err"; }
 
 printf 'work\nsynthetic-work\n' | menu add
 [[ $(cat "$dir/work.token") == synthetic-work ]] || fail 'add token'
-[[ $(stat -c %a "$dir/work.token") == 600 ]] || fail 'add permissions'
+[[ $(mode_of "$dir/work.token") == 600 ]] || fail 'add permissions'
 sed '/^--$/q' "$MENU_LOG" > "$TMP/first-menu"
 grep -Fqx $'add\t+ Add account' "$TMP/first-menu" || fail 'menu lacks add'
 if grep -Fq 'Replace token' "$TMP/first-menu"; then fail 'offered edit with no accounts'; fi

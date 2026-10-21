@@ -172,7 +172,7 @@ get_gpu_info() {
 
 get_container_count() {
   if have docker; then
-    docker ps -q 2>/dev/null | wc -l
+    docker ps -q 2>/dev/null | wc -l | tr -d " "
   fi
 }
 

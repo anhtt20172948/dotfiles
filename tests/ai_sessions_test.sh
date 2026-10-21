@@ -14,7 +14,9 @@ import uuid
 
 
 with tempfile.TemporaryDirectory(prefix="ai-sessions-") as scratch:
-    tmp = Path(scratch)
+    # Physical path: the scripts and agents record cwd as pwd -P, and macOS temp
+    # dirs sit behind the /var -> /private/var symlink.
+    tmp = Path(scratch).resolve()
     home = tmp / "home"
     bin_dir = tmp / "bin"
     bin_dir.mkdir()
@@ -110,7 +112,8 @@ with tempfile.TemporaryDirectory(prefix="ai-sessions-") as scratch:
     # without entering the interactive picker. Every path is in this scratch HOME.
     definitions = '''
 source "$1/ai-lib.sh"
-source <(sed -n '/^list_codex_sessions() {$/,/^}$/p; /^list_claude_sessions() {$/,/^}$/p; /^delete_saved_session() {$/,/^}$/p; /^clean_title() {$/,/^}$/p' "$1/ai-sessions.sh")
+# eval, not source <(...): bash 3.2 (macOS /bin/bash) sources nothing from a pipe.
+eval "$(sed -n '/^list_codex_sessions() {$/,/^}$/p; /^list_claude_sessions() {$/,/^}$/p; /^delete_saved_session() {$/,/^}$/p; /^clean_title() {$/,/^}$/p' "$1/ai-sessions.sh")"
 shift
 "$@"
 '''

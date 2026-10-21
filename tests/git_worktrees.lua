@@ -4,6 +4,8 @@ vim.opt.rtp:prepend(root .. "/.config/nvim")
 local original = vim.fn.getcwd()
 local tmp = vim.fn.tempname()
 vim.fn.mkdir(tmp, "p")
+-- git in ra đường dẫn thật; trên macOS tempname() nằm sau symlink /var -> /private/var.
+tmp = assert(vim.uv.fs_realpath(tmp))
 local repo = tmp .. "/main"
 local linked = tmp .. "/linked space%#"
 local detached = tmp .. "/detached"

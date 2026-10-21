@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
 
@@ -185,22 +186,31 @@ print(json.dumps({'providers': [p]}))
                 env = {k: v for k, v in self.env.items() if k != 'NO_COLOR'}
                 if no_color:
                     env['NO_COLOR'] = '1'
+                # Drain the pty while the CLI runs: a macOS pty buffers only
+                # 1 KiB, so an unread terminal blocks the colored status.
+                chunks = []
+
+                def drain():
+                    while True:
+                        try:
+                            chunk = os.read(master, 8192)
+                        except OSError as error:
+                            if error.errno != errno.EIO:
+                                raise
+                            break
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+
+                reader = threading.Thread(target=drain, daemon=True)
+                reader.start()
                 result = subprocess.run([str(ACCT), 'status'], env=env, stdout=slave,
                                         stderr=subprocess.PIPE, timeout=15)
                 self.assertEqual(result.returncode, 0)
                 os.close(slave)
                 slave = None
-                chunks = []
-                while True:
-                    try:
-                        chunk = os.read(master, 8192)
-                    except OSError as error:
-                        if error.errno != errno.EIO:
-                            raise
-                        break
-                    if not chunk:
-                        break
-                    chunks.append(chunk)
+                reader.join(timeout=15)
+                self.assertFalse(reader.is_alive(), 'terminal output never closed')
                 output = b''.join(chunks).decode()
                 self.assertEqual('\x1b[' in output, not no_color)
                 self.assertNotIn('synthetic-', output)

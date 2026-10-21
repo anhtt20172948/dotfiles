@@ -18,6 +18,9 @@ with tempfile.TemporaryDirectory(prefix="firstmate-resume-") as tmp:
     firstmate = home / ".local/share/first mate"
     (firstmate / ".git").mkdir(parents=True)
     (firstmate / "state").mkdir()
+    # The launcher works from the physical path (pwd -P), as do the agents that
+    # record transcript cwds. macOS temp dirs sit behind the /var symlink.
+    firstmate = firstmate.resolve()
     tools = lab / "bin"
     tools.mkdir()
     real_tmux = shutil.which("tmux")
@@ -61,9 +64,11 @@ printf 'arg:%s\\n' "$@" >> "$LOG"
 [[ ${{1:-}} != debug ]] || {{ printf '{{"models":[]}}\\n'; exit 0; }}
 exit 0
 ''')
-    # A separate fake primary makes kill -0 and process inspection real.
+    # A separate fake primary makes kill -0 and process inspection real. Link,
+    # not copy: ps reports the name the process was exec'd as, and macOS kills
+    # a copied system binary (launch constraints) before it ever runs.
     primary = lab / "claude"
-    shutil.copy("/bin/sleep", primary)
+    primary.symlink_to("/bin/sleep")
     workflow = str(Path(os.environ["ROOT"]) / ".config/tmux/scripts/ai-workflow.sh")
     log = lab / "log"
 
@@ -147,7 +152,7 @@ exit 0
         for name in ("claude", "codex"):
             holder_path = lab / name
             if not holder_path.exists():
-                shutil.copy("/bin/sleep", holder_path)
+                holder_path.symlink_to("/bin/sleep")
             with subprocess.Popen([str(holder_path), "30"]) as holder:
                 reset()
                 lock.write_text(f"{holder.pid}\nunchanged\n")
