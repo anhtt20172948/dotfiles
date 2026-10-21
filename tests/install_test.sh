@@ -30,6 +30,19 @@ assert_absent() {
 	[[ ! -e "$HOME/$1" && ! -L "$HOME/$1" ]] || fail "~/$1 should not exist"
 }
 
+# Mỗi entry dưới $HOME với loại và đích symlink; find -printf chỉ GNU mới có.
+snapshot() {
+	(cd "$HOME" && find . | LC_ALL=C sort | while IFS= read -r p; do
+		if [[ -L "$p" ]]; then
+			echo "$p l $(readlink "$p")"
+		elif [[ -d "$p" ]]; then
+			echo "$p d"
+		else
+			echo "$p f"
+		fi
+	done)
+}
+
 # Repo giả mô phỏng layout thật, gồm cả các entry chỉ thuộc repo.
 mkdir -p "$REPO"/.config/{nvim/lua,tmux,yazi} "$REPO"/.local/bin "$REPO"/.no-mistakes \
 	"$REPO"/{docs,tests,.claude,.git,.github,.superpowers}
@@ -60,9 +73,9 @@ mkdir -p "$HOME/.local"
 ln -s ../../dotfiles/.local/bin "$HOME/.local/bin"
 
 # Dry-run không được đụng tới $HOME.
-before=$(cd "$HOME" && find . -printf '%p %y %l\n' | sort)
+before=$(snapshot)
 out=$("$REPO/install.sh" --dry-run)
-after=$(cd "$HOME" && find . -printf '%p %y %l\n' | sort)
+after=$(snapshot)
 [[ "$before" == "$after" ]] || fail "dry-run changed \$HOME"
 grep -q '^link    ~/.config/tmux ' <<<"$out" || fail "dry-run did not report links: $out"
 grep -q '^unfold  ~/.local/bin$' <<<"$out" || fail "dry-run did not report unfold: $out"
@@ -104,12 +117,48 @@ for f in docs tests .claude .git .github .superpowers README.md LICENSE .gitigno
 	assert_absent "$f"
 done
 assert_absent .config/nvim/init.lua~
-grep -q '^done: .* 1 already linked$' <<<"$out" || fail "summary: $out"
+grep -q '^done: .* 1 already linked, 0 untracked skipped$' <<<"$out" || fail "summary: $out"
 
 # Chạy lại: không đổi gì, không tạo backup mới.
 out=$("$REPO/install.sh")
 grep -q '^done: 0 linked, 0 backed up, ' <<<"$out" || fail "re-run not idempotent: $out"
 [[ $(find "$HOME/.dotfiles-backup" -mindepth 1 -maxdepth 1 | wc -l) -eq 1 ]] ||
 	fail "re-run created another backup"
+
+# Repo là git checkout: chỉ thứ git track (hoặc đã git add) được link. Một bản
+# clone untracked nằm trong repo (firstmate) không bị link ra $HOME từng file.
+REPO="$TMP/tracked"
+export HOME="$TMP/home-tracked"
+mkdir -p "$HOME" "$REPO"/.config/app "$REPO"/.local/share/firstmate/{bin,config,data,state}
+cp "$ROOT/install.sh" "$REPO/install.sh"
+git -C "$REPO" init -q
+echo app >"$REPO/.config/app/app.conf"
+echo new >"$REPO/.config/new.conf"
+echo crew >"$REPO/.local/share/firstmate/config/crew-dispatch.json"
+echo zsh >"$REPO/.zshrc"
+git -C "$REPO" add .config/app/app.conf .config/new.conf .local/share/firstmate/config/crew-dispatch.json .zshrc
+for f in .DS_Store .config/app/local.conf .local/share/firstmate/AGENTS.md \
+	.local/share/firstmate/bin/fm-watch.sh .local/share/firstmate/config/startup-memory-budget \
+	.local/share/firstmate/data/backlog.md .local/share/firstmate/state/.lock; do
+	echo untracked >"$REPO/$f"
+done
+
+out=$("$REPO/install.sh" --dry-run)
+grep -q '^skip    ~/.DS_Store (git không track)$' <<<"$out" || fail "dry-run did not report untracked skip: $out"
+grep -q '^skip    ~/.local/share/firstmate/bin (git không track)$' <<<"$out" ||
+	fail "dry-run did not skip the untracked clone: $out"
+
+out=$("$REPO/install.sh")
+assert_link .config/app
+assert_link .config/new.conf
+assert_link .zshrc
+assert_real_dir .local/share/firstmate
+assert_real_dir .local/share/firstmate/config
+assert_link .local/share/firstmate/config/crew-dispatch.json
+for f in .DS_Store .local/share/firstmate/AGENTS.md .local/share/firstmate/bin .local/share/firstmate/data \
+	.local/share/firstmate/state .local/share/firstmate/config/startup-memory-budget; do
+	assert_absent "$f"
+done
+grep -q '^done: 4 linked, 0 backed up, 0 already linked, 6 untracked skipped$' <<<"$out" || fail "summary: $out"
 
 echo "install.sh: OK"
