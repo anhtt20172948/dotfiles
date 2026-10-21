@@ -21,3 +21,12 @@
   fp=$(print -rn -- "ai-acct-statusline:$token" | { sha256sum 2>/dev/null || shasum -a 256 })
   export AI_ACCT_FINGERPRINT=${fp%% *}
 }
+
+# Load the fleet-deck Claude Code mod (.config/claude-mods/fleet-deck). Only a
+# path is added, no secret is read; skipped where the checkout is absent and
+# when the path is already listed (nested shells source this file again).
+() {
+  local mod=$HOME/.config/claude-mods/fleet-deck
+  [[ -d $mod && :${CLAUDE_CODE_PLUGIN_DIRS-}: != *:$mod:* ]] || return 0
+  export CLAUDE_CODE_PLUGIN_DIRS=${CLAUDE_CODE_PLUGIN_DIRS:+$CLAUDE_CODE_PLUGIN_DIRS:}$mod
+}
