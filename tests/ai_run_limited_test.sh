@@ -50,7 +50,9 @@ for cmd in wrapper stubborn; do
   SECONDS=0
   out=$(limited 1 "$cmd") && st=0 || st=$?
   [[ $st == 124 ]] || fail "$cmd: timeout returned $st"
-  ((SECONDS < 5)) || fail "$cmd: caller waited ${SECONDS}s for the output pipe"
+  # Well under the 30s the held pipe would cost. Not tighter: an idle macOS
+  # coalesces timers, stretching the 1s TERM grace (20 x 50ms polls) past 3s.
+  ((SECONDS < 15)) || fail "$cmd: caller waited ${SECONDS}s for the output pipe"
   gone "$(/bin/cat "$PIDFILE")" || fail "$cmd: process survived the timeout"
 done
 
