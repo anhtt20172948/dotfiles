@@ -180,10 +180,9 @@ Unmount failures are appended to `${TMPDIR:-/tmp}/show-unmount.log`.
 
 ## Bootstrap scripts
 
-These live in `.local/bin` and build or fetch tooling into `~/.local`, so a
+These live in `.local/bin` and build tooling into `~/.local`, so a
 fresh machine needs no root to get a working userland:
 
-- `install_linux_x86_64.sh` — fetch pinned release binaries into `~/.local/bin`.
 - `install_zsh.sh` — build ncurses + zsh from source into `~/.local`.
 - `install_neovim.sh` — build Neovim from source (run with `bash`, or `chmod +x`
   it first).

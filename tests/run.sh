@@ -14,7 +14,7 @@ cd "$ROOT"
 export PATH="$HOME/.local/bin:$PATH"
 
 # Chỉ các script đang qua shellcheck. Script cũ ở .local/bin (download, show,
-# install_neovim, install_linux_x86_64) và hypr chưa sạch -> thêm vào khi sửa.
+# install_neovim) và hypr chưa sạch -> thêm vào khi sửa.
 LINT_FILES=(
 	.config/tmux/scripts/*.sh
 	.local/bin/ai-acct
