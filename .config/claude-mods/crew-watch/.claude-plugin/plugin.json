@@ -1,0 +1,21 @@
+{
+  "name": "crew-watch",
+  "version": "0.1.0",
+  "description": "A pane showing what each live Firstmate crewmate is doing: models, tokens, cache, tool calls and its latest action",
+  "author": { "name": "thanh.nguyen" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "homes": {
+      "type": "string",
+      "title": "Firstmate homes",
+      "description": "Comma-separated Firstmate home folders to watch; empty means this session's working directory",
+      "default": ""
+    },
+    "intervalSeconds": {
+      "type": "number",
+      "title": "Refresh interval (seconds)",
+      "description": "How often the crew's logs are re-read",
+      "default": 5
+    }
+  }
+}
