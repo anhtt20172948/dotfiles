@@ -29,11 +29,6 @@ export const modelsText = (models: Record<string, number>): string =>
     .map(([model, n]) => `${model.replace(/^claude-/, '')} ×${n}`)
     .join(' · ')
 
-export const tokensText = (u: CrewTotals): string => {
-  const think = u.reasoning > 0 ? ` (think ${tokens(u.reasoning)})` : ''
-  return `in ${tokens(u.input)} · out ${tokens(u.output)}${think} · cache r ${tokens(u.cacheRead)} w ${tokens(u.cacheWrite)} · hit ${cacheHit(u)}`
-}
-
 export const dispatchText = (m: CrewMember): string => {
   const pinned = [m.model, m.effort].filter(v => v && v !== 'default').join('/')
   return pinned ? `${m.harness} ${pinned}` : m.harness

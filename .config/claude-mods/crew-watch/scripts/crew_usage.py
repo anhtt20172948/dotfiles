@@ -2,7 +2,8 @@
 """Summarize what every live Firstmate crewmate is doing and what it costs.
 
 Reads each home's state/*.meta (one per live task), finds the task's own
-transcripts by its worktree, and prints one JSON document on stdout:
+transcripts by its worktree, written since the task was spawned (pooled
+worktrees are reused), and prints one JSON document on stdout:
 
   {"generatedAt": ms, "crew": [...], "totals": {...}, "errors": [...]}
 
@@ -24,12 +25,12 @@ import shlex
 import sys
 import time
 
-CACHE_VERSION = 5
+CACHE_VERSION = 6
 HOME = os.path.expanduser("~")
 CLAUDE_PROJECTS = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR", os.path.join(HOME, ".claude")), "projects")
 CODEX_SESSIONS = os.path.join(os.environ.get("CODEX_HOME", os.path.join(HOME, ".codex")), "sessions")
 CACHE_PATH = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.join(HOME, ".cache")), "crew-watch", "cache.json")
-CODEX_LOOKBACK_DAYS = 30
+LOOKBACK_DAYS = 30
 SNIPPET = 180
 MAX_EVENTS = 10
 ACTIVITY_MINUTES = 60
@@ -304,46 +305,62 @@ def parse_codex(path, entry, worktree=""):
             agg["lastAt"] = max(agg["lastAt"], at)
 
 
+def modified_ms(path):
+    try:
+        return int(os.path.getmtime(path) * 1000)
+    except OSError:
+        return -1
+
+
+def task_start(meta, path):
+    """When this incarnation was spawned; an older log in its worktree is another task's."""
+    match = re.match(r"s(\d+)", meta.get("spawn_gen") or "")
+    return int(match[1]) * 1000 if match else max(0, modified_ms(path))
+
+
 def claude_project_dir(worktree):
     return os.path.join(CLAUDE_PROJECTS, re.sub(r"[^A-Za-z0-9]", "-", worktree))
 
 
-def claude_files(worktree):
+def claude_files(worktree, since):
     root = claude_project_dir(worktree)
     out = []
     for dirpath, _dirs, files in os.walk(root):
         for name in files:
-            if name.endswith(".jsonl"):
-                out.append(os.path.join(dirpath, name))
+            path = os.path.join(dirpath, name)
+            if name.endswith(".jsonl") and modified_ms(path) >= since:
+                out.append(path)
     return out
 
 
 def codex_files(cache, now):
-    """Every recent rollout, its session cwd read once and cached."""
+    """Every recent rollout with its mtime; a session cwd is cached once its first line is complete."""
     cwds = cache.setdefault("codexCwd", {})
     out = []
-    cutoff = now / 1000 - CODEX_LOOKBACK_DAYS * 86400
+    cutoff = now - LOOKBACK_DAYS * 86400000
     for dirpath, _dirs, files in os.walk(CODEX_SESSIONS):
         for name in files:
             if not (name.startswith("rollout-") and name.endswith(".jsonl")):
                 continue
             path = os.path.join(dirpath, name)
-            try:
-                if os.path.getmtime(path) < cutoff:
-                    continue
-            except OSError:
+            modified = modified_ms(path)
+            if modified < cutoff:
                 continue
             if path not in cwds:
-                cwd = ""
                 try:
                     with open(path, "rb") as f:
-                        first = json.loads(f.readline() or b"{}")
-                    if first.get("type") == "session_meta":
-                        cwd = (first.get("payload") or {}).get("cwd") or ""
-                except (OSError, ValueError):
-                    cwd = ""
-                cwds[path] = cwd
-            out.append((path, cwds[path]))
+                        first = f.readline()
+                except OSError:
+                    continue
+                if not first.endswith(b"\n"):
+                    continue
+                try:
+                    row = json.loads(first)
+                except ValueError:
+                    row = None
+                session = isinstance(row, dict) and row.get("type") == "session_meta"
+                cwds[path] = ((row.get("payload") or {}).get("cwd") or "") if session else ""
+            out.append((path, cwds[path], modified))
     return out
 
 
@@ -417,7 +434,9 @@ def collect_tasks(home, depth, seen):
         tid = name[: -len(".meta")]
         meta = read_meta(os.path.join(state, name))
         status, status_at = last_status(os.path.join(state, tid + ".status"))
-        tasks.append({"id": tid, "home": home, "depth": depth, "meta": meta, "status": status, "statusAt": status_at})
+        since = task_start(meta, os.path.join(state, name))
+        tasks.append({"id": tid, "home": home, "depth": depth, "meta": meta, "since": since,
+                      "status": status, "statusAt": status_at})
         if meta.get("kind") == "secondmate" and meta.get("worktree") and not meta.get("remote_host"):
             tasks.extend(collect_tasks(meta["worktree"], depth + 1, seen))
     return tasks
@@ -461,7 +480,7 @@ def main():
         sessions = 0
         readable = harness.startswith("claude") or harness == "codex"
         if worktree and harness.startswith("claude"):
-            for path in claude_files(worktree):
+            for path in claude_files(worktree, task["since"]):
                 entry = files.setdefault(path, fresh_entry())
                 parse_claude(path, entry, worktree)
                 touched.add(path)
@@ -471,8 +490,8 @@ def main():
             if codex_index is None:
                 codex_index = codex_files(cache, now)
             prefix = worktree.rstrip("/") + "/"
-            for path, cwd in codex_index:
-                if cwd == worktree or cwd.startswith(prefix):
+            for path, cwd, modified in codex_index:
+                if modified >= task["since"] and (cwd == worktree or cwd.startswith(prefix)):
                     entry = files.setdefault(path, fresh_entry())
                     parse_codex(path, entry, worktree)
                     touched.add(path)
@@ -525,19 +544,21 @@ def main():
         )
         merge(totals, agg)
 
-    # Keep only files a live task still reads, so the cache never grows unbounded.
-    cache["files"] = {p: e for p, e in files.items() if p in touched}
+    # Other sessions share this cache for other homes: drop only logs that are gone or long idle.
+    cutoff = now - LOOKBACK_DAYS * 86400000
+    cache["files"] = {p: e for p, e in files.items() if p in touched or modified_ms(p) >= cutoff}
     if codex_index is not None:
-        live = {p for p, _ in codex_index}
+        live = {p for p, _, _ in codex_index}
         cache["codexCwd"] = {p: c for p, c in cache.get("codexCwd", {}).items() if p in live}
-    try:
-        os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
-        tmp = CACHE_PATH + f".tmp.{os.getpid()}"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(cache, f)
-        os.replace(tmp, CACHE_PATH)
-    except OSError as err:
-        errors.append(f"cache not saved: {err}")
+    if tasks:
+        try:
+            os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
+            tmp = CACHE_PATH + f".tmp.{os.getpid()}"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(cache, f)
+            os.replace(tmp, CACHE_PATH)
+        except OSError as err:
+            errors.append(f"cache not saved: {err}")
 
     json.dump(
         {

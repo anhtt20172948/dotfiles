@@ -3,6 +3,7 @@ from contextlib import redirect_stdout
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -103,6 +104,80 @@ class TelemetryTest(unittest.TestCase):
             self.assertEqual(reports[1]["totals"]["toolCalls"], 1)
             self.assertIsNone(child["contextWindow"])
             self.assertEqual(reports[1]["errors"], [])
+
+    def report(self, *homes):
+        with redirect_stdout(io.StringIO()) as output:
+            with patch.object(usage.sys, "argv", ["crew_usage.py", *[a for h in homes for a in ("--home", str(h))]]):
+                usage.main()
+        return json.loads(output.getvalue())
+
+    def claude_turn(self, path, mid, model):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"type": "assistant", "timestamp": "2026-10-21T17:00:00Z", "message": {
+            "id": mid, "model": model, "usage": {"input_tokens": 10},
+            "content": [{"type": "tool_use", "name": "Read", "input": {"path": "/x"}}]}}) + "\n")
+
+    def codex_rollout(self, path, cwd, tokens):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(json.dumps(row) + "\n" for row in [
+            {"type": "session_meta", "payload": {"cwd": cwd}},
+            {"type": "event_msg", "timestamp": "2026-10-21T17:00:00Z", "payload": {"type": "token_count", "info": {
+                "total_token_usage": {"input_tokens": tokens, "total_tokens": tokens}, "last_token_usage": {"input_tokens": tokens}}}},
+        ]))
+
+    def test_reused_worktree_slot_reports_only_logs_written_since_spawn(self):
+        root = Path(self.tmp.name)
+        fm = root / "fm"
+        (fm / "state").mkdir(parents=True)
+        spawned = int(usage.time.time()) - 60
+        claude_slot, codex_slot = str(root / "slot1"), str(root / "slot2")
+        (fm / "state" / "a.meta").write_text(f"harness=claude\nworktree={claude_slot}\nspawn_gen=s{spawned}.1.2\n")
+        (fm / "state" / "b.meta").write_text(f"harness=codex\nworktree={codex_slot}\nspawn_gen=s{spawned}.3.4\n")
+        with patch.object(usage, "CLAUDE_PROJECTS", str(root / "projects")), patch.object(
+            usage, "CODEX_SESSIONS", str(root / "sessions")
+        ), patch.object(usage, "CACHE_PATH", str(root / "cache" / "cache.json")):
+            project = Path(usage.claude_project_dir(claude_slot))
+            self.claude_turn(project / "previous.jsonl", "old", "claude-old")
+            self.claude_turn(project / "previous" / "subagents" / "agent.jsonl", "older", "claude-old")
+            self.claude_turn(project / "current.jsonl", "new", "claude-new")
+            self.codex_rollout(root / "sessions" / "rollout-previous.jsonl", codex_slot, 5000)
+            self.codex_rollout(root / "sessions" / "rollout-current.jsonl", codex_slot, 30)
+            for old in (project / "previous.jsonl", project / "previous" / "subagents" / "agent.jsonl",
+                        root / "sessions" / "rollout-previous.jsonl"):
+                os.utime(old, (spawned - 3600, spawned - 3600))
+            crew = {m["id"]: m for m in self.report(fm)["crew"]}
+        self.assertEqual((crew["a"]["models"], crew["a"]["toolCalls"], crew["a"]["sessions"]), ({"claude-new": 1}, 1, 1))
+        self.assertEqual((crew["b"]["input"], crew["b"]["requests"], crew["b"]["sessions"]), (30, 1, 1))
+
+    def test_sessions_watching_other_homes_keep_each_others_cached_offsets(self):
+        root = Path(self.tmp.name)
+        homes = [root / "fm1", root / "fm2"]
+        for n, home in enumerate(homes):
+            (home / "state").mkdir(parents=True)
+            (home / "state" / "t.meta").write_text(f"harness=claude\nworktree={root / f'wt{n}'}\n")
+        cache = root / "cache" / "cache.json"
+        with patch.object(usage, "CLAUDE_PROJECTS", str(root / "projects")), patch.object(usage, "CACHE_PATH", str(cache)):
+            transcript = Path(usage.claude_project_dir(str(root / "wt0"))) / "s.jsonl"
+            self.claude_turn(transcript, "one", "claude-test")
+            self.report(homes[0])
+            saved = json.loads(cache.read_text())["files"][str(transcript)]
+            self.report(root)
+            self.report(homes[1])
+            self.assertEqual(json.loads(cache.read_text())["files"].get(str(transcript)), saved)
+
+    def test_codex_cwd_is_cached_only_after_a_complete_session_meta_line(self):
+        root = Path(self.tmp.name) / "sessions"
+        root.mkdir()
+        rollout = root / "rollout-new.jsonl"
+        rollout.write_text("")
+        cache = {}
+        with patch.object(usage, "CODEX_SESSIONS", str(root)):
+            now = int(usage.time.time() * 1000)
+            self.assertEqual(usage.codex_files(cache, now), [])
+            rollout.write_text('{"type": "session_meta", "payload": {"cwd": "/pool/1"')
+            self.assertEqual(usage.codex_files(cache, now), [])
+            rollout.write_text(json.dumps({"type": "session_meta", "payload": {"cwd": "/pool/1"}}) + "\n")
+            self.assertEqual([(p, c) for p, c, _ in usage.codex_files(cache, now)], [(str(rollout), "/pool/1")])
 
     def test_truncated_transcript_resets_new_telemetry(self):
         self.append({"type": "assistant", "timestamp": "2026-10-21T17:00:00Z", "message": {

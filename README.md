@@ -195,7 +195,8 @@ calls. Cards sit side by side when they fit; larger fleets use activity lanes
 on a shared minute axis. A crew log with local-time timestamps follows them.
 Inline above the prompt, the dashboard shrinks to at most eight rows; dock it
 for full details.
-It reads Claude Code transcripts and Codex rollouts, follows secondmate homes,
+It reads the Claude Code transcripts and Codex rollouts each task wrote since it
+was spawned (worktree slots are reused), follows secondmate homes,
 and shows a summary in the status line. The layout takes inspiration from
 [claude-flightdeck](https://github.com/scasella/claude-flightdeck).
 
