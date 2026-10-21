@@ -1,0 +1,15 @@
+{
+  "name": "pixel-pet",
+  "version": "0.1.0",
+  "description": "A pixel-art cat above the prompt that reacts to prompts, tool calls, errors and finished turns",
+  "author": { "name": "thanh.nguyen" },
+  "types":"./types/index.d.ts",
+  "userConfig": {
+    "name": {
+      "type": "string",
+      "title": "Pet name",
+      "description": "The name shown beside the pet",
+      "default": "Mochi"
+    }
+  }
+}

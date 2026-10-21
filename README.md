@@ -156,10 +156,23 @@ unavailable state. The account menu remains usable while quota refreshes.
 In Neovim, `:AiAccount` shows quota and `:AiAccount use NAME` selects an account;
 the status line shows `AI:NAME`.
 
-## Claude Code mod
+## Claude Code mods
 
-`.config/claude-mods/fleet-deck` is a small Claude Code mod (a function-hooks
-plugin) that makes the CLI easier to read:
+`.config/claude-mods` holds Claude Code mods (function-hooks plugins).
+`install.sh` links the folder to `~/.config/claude-mods`, and `.zshenv` adds
+every mod in it (each folder with a `.claude-plugin/plugin.json`) to
+`CLAUDE_CODE_PLUGIN_DIRS`, so new shells start Claude Code with them loaded. A
+mod that draws above the prompt stacks its rows on what lies beneath (`next(e)`)
+instead of replacing it, so the mods' bands show together.
+
+Check a change to a mod with `claude plugin validate`, `tsc -p` and
+`claude plugin test` on its folder (`tests/claude_mod_test.sh` runs the first and
+last for every mod when `claude` is installed). `tsc -p` needs the types the
+engine lays in `.claude-plugin/types` the first time it loads the mod.
+
+### fleet-deck
+
+`.config/claude-mods/fleet-deck` makes the CLI easier to read:
 
 - a compact status entry with the model, context use, the Claude account in use
   and its 5h/7d quota;
@@ -172,11 +185,9 @@ Everything fleet-related reads only `bin/fm-fleet-snapshot.sh --json` of
 in a Firstmate worker session, those parts do nothing and the status entry still
 works. Colours come from the terminal theme and `NO_COLOR` is honoured.
 
-`install.sh` links the folder to `~/.config/claude-mods/fleet-deck` and `.zshenv`
-adds that path to `CLAUDE_CODE_PLUGIN_DIRS`, so new shells start Claude Code with
-the mod loaded. The existing `statusLine` stays as it is: it also records the
-rate limits that `ai-acct` shows, so the mod adds its entry beside it. `/fleet`
-toggles the pane and refuses with a message below 110 columns.
+The existing `statusLine` stays as it is: it also records the rate limits that
+`ai-acct` shows, so the mod adds its entry beside it. `/fleet` toggles the pane
+and refuses with a message below 110 columns.
 
 Options are rows of `/config` (type `fleet` to filter them):
 
@@ -186,9 +197,27 @@ Options are rows of `/config` (type `fleet` to filter them):
 | Fleet toasts (`toasts`) | on | fleet toasts |
 | Status entry (`status`) | on | the compact status entry |
 
-To turn the chime on, set Chime to `true` in `/config`. Check a change to the mod
-with `claude plugin validate`, `tsc -p` and `claude plugin test` on the folder
-(`tests/claude_mod_test.sh` runs the first and last when `claude` is installed).
+To turn the chime on, set Chime to `true` in `/config`.
+
+### pixel-pet
+
+`.config/claude-mods/pixel-pet` draws a pixel-art cat, four rows tall, above the
+prompt, with its name, what it is doing and the session's turn, tool and error
+counts beside it. Two pixel rows share one text row (`▀`/`▄` with a foreground
+and a background colour).
+
+| When | The cat |
+| --- | --- |
+| idle | walks back and forth and blinks |
+| a turn or a tool runs | paws tap, `đang chạy Bash...` |
+| a turn ends | closed eyes and blush, `xong rồi! ♥`, for 4 seconds |
+| a tool fails or a turn is interrupted | a tear, `Bash lỗi rồi…` |
+| idle for 3 minutes | sleeps, `zZz` |
+
+`/pet` hides or shows it. Its name is the Pet name row of `/config` (type `pet`),
+`Mochi` by default. Prompts and tools never wait on its updates. It gives way
+while a survey holds the band or the band has fewer than four rows, and under
+`NO_COLOR` it is drawn as a silhouette with its eyes cut out.
 
 ## Remote helper scripts
 

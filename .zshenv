@@ -22,11 +22,13 @@
   export AI_ACCT_FINGERPRINT=${fp%% *}
 }
 
-# Load the fleet-deck Claude Code mod (.config/claude-mods/fleet-deck). Only a
-# path is added, no secret is read; skipped where the checkout is absent and
-# when the path is already listed (nested shells source this file again).
+# Load every Claude Code mod in .config/claude-mods (fleet-deck, pixel-pet).
+# Only paths are added, no secret is read; a folder without a plugin manifest is
+# skipped, and so is a path already listed (nested shells source this file again).
 () {
-  local mod=$HOME/.config/claude-mods/fleet-deck
-  [[ -d $mod && :${CLAUDE_CODE_PLUGIN_DIRS-}: != *:$mod:* ]] || return 0
-  export CLAUDE_CODE_PLUGIN_DIRS=${CLAUDE_CODE_PLUGIN_DIRS:+$CLAUDE_CODE_PLUGIN_DIRS:}$mod
+  local mod
+  for mod in $HOME/.config/claude-mods/*(N/); do
+    [[ -f $mod/.claude-plugin/plugin.json && :${CLAUDE_CODE_PLUGIN_DIRS-}: != *:$mod:* ]] || continue
+    export CLAUDE_CODE_PLUGIN_DIRS=${CLAUDE_CODE_PLUGIN_DIRS:+$CLAUDE_CODE_PLUGIN_DIRS:}$mod
+  done
 }
