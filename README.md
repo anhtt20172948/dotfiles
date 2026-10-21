@@ -156,6 +156,40 @@ unavailable state. The account menu remains usable while quota refreshes.
 In Neovim, `:AiAccount` shows quota and `:AiAccount use NAME` selects an account;
 the status line shows `AI:NAME`.
 
+## Claude Code mod
+
+`.config/claude-mods/fleet-deck` is a small Claude Code mod (a function-hooks
+plugin) that makes the CLI easier to read:
+
+- a compact status entry with the model, context use, the Claude account in use
+  and its 5h/7d quota;
+- on a machine with a Firstmate home, one quiet row above the prompt (workers,
+  PRs waiting, what needs you), a `/fleet` side pane listing every worker, and a
+  toast for a finished worker, a ready PR, a landed merge or a failure.
+
+Everything fleet-related reads only `bin/fm-fleet-snapshot.sh --json` of
+`$FM_HOME` (default `~/.local/share/firstmate`). Where that script is missing, or
+in a Firstmate worker session, those parts do nothing and the status entry still
+works. Colours come from the terminal theme and `NO_COLOR` is honoured.
+
+`install.sh` links the folder to `~/.config/claude-mods/fleet-deck` and `.zshenv`
+adds that path to `CLAUDE_CODE_PLUGIN_DIRS`, so new shells start Claude Code with
+the mod loaded. The existing `statusLine` stays as it is: it also records the
+rate limits that `ai-acct` shows, so the mod adds its entry beside it. `/fleet`
+toggles the pane and refuses with a message below 110 columns.
+
+Options are rows of `/config` (type `fleet` to filter them):
+
+| Row | Default | Effect |
+| --- | --- | --- |
+| Chime (`sound`) | off | short chime with a fleet toast (`afplay` on macOS, else `paplay`, `pw-play` or `ffplay`) |
+| Fleet toasts (`toasts`) | on | fleet toasts |
+| Status entry (`status`) | on | the compact status entry |
+
+To turn the chime on, set Chime to `true` in `/config`. Check a change to the mod
+with `claude plugin validate`, `tsc -p` and `claude plugin test` on the folder
+(`tests/claude_mod_test.sh` runs the first and last when `claude` is installed).
+
 ## Remote helper scripts
 
 `show` and `download` search SSH hosts in parallel for a path. `show` mounts

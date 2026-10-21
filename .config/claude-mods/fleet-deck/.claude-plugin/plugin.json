@@ -1,0 +1,27 @@
+{
+  "name": "fleet-deck",
+  "version": "0.1.0",
+  "description": "Compact status entry, Firstmate fleet band and pane, toasts and an optional chime for Claude Code",
+  "author": { "name": "anhtran" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "status": {
+      "type": "boolean",
+      "title": "Status entry",
+      "description": "Show the compact model, context and account quota entry under the prompt",
+      "default": true
+    },
+    "sound": {
+      "type": "boolean",
+      "title": "Chime",
+      "description": "Play a short chime with a fleet toast (worker finished, PR ready, merge landed, failure)",
+      "default": false
+    },
+    "toasts": {
+      "type": "boolean",
+      "title": "Fleet toasts",
+      "description": "Show a toast when a Firstmate worker finishes, a PR is ready, a merge lands or a worker fails",
+      "default": true
+    }
+  }
+}
