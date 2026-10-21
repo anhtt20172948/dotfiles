@@ -4,12 +4,19 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
 TMP=$(mktemp -d)
 JQ_BIN=$(command -v jq)
+# Not /bin/grep: macOS only has /usr/bin/grep.
+GREP_BIN=$(command -v grep)
 trap '/bin/rm -rf -- "$TMP"' EXIT
 export HOME="$TMP/home" FIRSTMATE_DIR="$TMP/firstmate" TMUX=mock
 export LOG="$TMP/tmux.log" PICKER="$TMP/picker" QUOTA_LOG="$TMP/quota.log"
 mkdir -p "$TMP/bin" "$HOME" "$FIRSTMATE_DIR/.git"
-for tool in bash dirname readlink realpath awk jq timeout cat sleep mktemp stat mv rm sed sha256sum; do
-  ln -s "$(command -v "$tool")" "$TMP/bin/$tool"
+for tool in bash dirname readlink realpath awk jq cat sleep mktemp stat mv rm sed perl ps; do
+  path=$(command -v "$tool") || { echo "missing required tool: $tool" >&2; exit 1; }
+  ln -s "$path" "$TMP/bin/$tool"
+done
+# Optional: stock macOS lacks timeout (perl fallback) and, before 15, sha256sum (shasum fallback).
+for tool in timeout sha256sum shasum; do
+  if path=$(command -v "$tool"); then ln -s "$path" "$TMP/bin/$tool"; fi
 done
 cat > "$TMP/bin/tmux" <<'MOCK'
 #!/usr/bin/env bash
@@ -98,9 +105,9 @@ run() {
   : > "$LOG"; : > "$QUOTA_LOG"; : > "$PICKER"; : > "$PICKER.args"; : > "$PICKER.Model"; : > "$PICKER.Effort"; : > "$PICKER.Account"
   bash "$ROOT/.config/tmux/scripts/ai-workflow.sh" firstmate </dev/null
 }
-started() { /bin/grep -Fq "|exec $1|" "$LOG" || fail "did not start $1"; }
+started() { "$GREP_BIN" -Fq "|exec $1|" "$LOG" || fail "did not start $1"; }
 first() { local line; IFS= read -r line < "$PICKER" || line=; [[ $line == "$1"* ]] || fail "default is not $1"; }
-no_start() { if /bin/grep -Fq 'new-session|' "$LOG"; then fail 'unexpected launch'; fi; }
+no_start() { if "$GREP_BIN" -Fq 'new-session|' "$LOG"; then fail 'unexpected launch'; fi; }
 # Claude launches require a local token; several named accounts exist for the picker.
 /bin/mkdir -p "$HOME/.config/claude-accounts"
 printf 'synthetic-a\n' > "$HOME/.config/claude-accounts/a.token"
@@ -110,9 +117,9 @@ printf 'synthetic-work\n' > "$HOME/.config/claude-accounts/work.token"
 printf 'a\n' > "$HOME/.config/claude-accounts/active"
 quota 20 80
 run; first codex; started codex
-/bin/grep -Fxq $'codex\tcodex  80% left' "$PICKER" || fail 'missing codex quota'
-/bin/grep -Fxq $'claude\tclaude  20% left' "$PICKER" || fail 'missing claude quota'
-/bin/grep -Fxq -- '--no-sort' "$PICKER.args" || fail 'picker would reorder default'
+"$GREP_BIN" -Fxq $'codex\tcodex  80% left' "$PICKER" || fail 'missing codex quota'
+"$GREP_BIN" -Fxq $'claude\tclaude  20% left' "$PICKER" || fail 'missing claude quota'
+"$GREP_BIN" -Fxq -- '--no-sort' "$PICKER.args" || fail 'picker would reorder default'
 export CHOICE=claude
 run; started 'ai-acct exec claude'
 unset CHOICE
@@ -150,16 +157,16 @@ for QUOTA_MODE in fail invalid empty slow; do
   SECONDS=0
   run; first claude; started 'ai-acct exec claude'
   [[ $SECONDS -lt 7 ]] || fail 'quota lookup was not bounded'
-  /bin/grep -Fxq $'claude\tclaude  quota ?' "$PICKER" || fail 'fallback shows a percentage'
+  "$GREP_BIN" -Fxq $'claude\tclaude  quota ?' "$PICKER" || fail 'fallback shows a percentage'
 done
 export QUOTA_MODE=cold
 quota 10 90
 run; first codex; started codex
-/bin/grep -Fxq $'codex\tcodex  90% left' "$PICKER" || fail 'cold quota lost'
+"$GREP_BIN" -Fxq $'codex\tcodex  90% left' "$PICKER" || fail 'cold quota lost'
 unset QUOTA_MODE
 /bin/mv "$TMP/bin/quota-axi" "$TMP/quota-axi"
 run; first claude
-/bin/grep -Fxq $'codex\tcodex  quota ?' "$PICKER" || fail 'missing tooling hid quota cell'
+"$GREP_BIN" -Fxq $'codex\tcodex  quota ?' "$PICKER" || fail 'missing tooling hid quota cell'
 /bin/mv "$TMP/quota-axi" "$TMP/bin/quota-axi"
 quota null 90
 run; first claude
@@ -167,7 +174,7 @@ quota 101 90
 run; first claude
 export QUOTA_JSON='{"providers":[{"provider":"claude","windows":[{"percentRemaining":90}],"quotaSemantics":{"effectiveAvailability":[{"scope":"all_models","status":"unknown"}]}},{"provider":"codex","quotaSemantics":{"effectiveAvailability":[{"scope":"all_models","effectivePercentRemaining":10}]}}]}'
 run; first claude
-/bin/grep -Fxq $'claude\tclaude  quota ?' "$PICKER" || fail 'unknown headroom displayed as raw quota'
+"$GREP_BIN" -Fxq $'claude\tclaude  quota ?' "$PICKER" || fail 'unknown headroom displayed as raw quota'
 export QUOTA_JSON='{"providers":[]}'
 run; first claude
 /bin/rm "$TMP/bin/jq"
@@ -181,7 +188,7 @@ unset AI_FIRSTMATE_AGENT
 /bin/ln -s "$JQ_BIN" "$TMP/bin/jq"
 export AI_FIRSTMATE_AGENT=claude MODEL_CHOICE=opus EFFORT_CHOICE=max
 run; started 'ai-acct exec claude --model opus --effort max'
-/bin/grep -Fxq $'default\tdefault (CLI config)' "$PICKER.Model" || fail 'missing model default'
+"$GREP_BIN" -Fxq $'default\tdefault (CLI config)' "$PICKER.Model" || fail 'missing model default'
 for model in opus sonnet haiku; do
   export MODEL_CHOICE=$model
   for effort in low medium high xhigh max default; do
@@ -199,9 +206,9 @@ done
 unset CANCEL_STAGE MODEL_CHOICE EFFORT_CHOICE
 export AI_FIRSTMATE_AGENT=codex MODEL_CHOICE=gpt-test EFFORT_CHOICE=high
 run; started 'codex -m gpt-test -c model_reasoning_effort=high'
-/bin/grep -Fxq $'gpt-other\tgpt-other' "$PICKER.Model" || fail 'missing listed codex model'
-if /bin/grep -Fq gpt-hidden "$PICKER.Model"; then fail 'hidden codex model offered'; fi
-if /bin/grep -Fq xhigh "$PICKER.Effort"; then fail 'unsupported catalog effort'; fi
+"$GREP_BIN" -Fxq $'gpt-other\tgpt-other' "$PICKER.Model" || fail 'missing listed codex model'
+if "$GREP_BIN" -Fq gpt-hidden "$PICKER.Model"; then fail 'hidden codex model offered'; fi
+if "$GREP_BIN" -Fq xhigh "$PICKER.Effort"; then fail 'unsupported catalog effort'; fi
 export MODEL_CHOICE=gpt-other EFFORT_CHOICE=xhigh
 run; started 'codex -m gpt-other -c model_reasoning_effort=xhigh'
 /bin/mkdir -p "$HOME/.codex"
@@ -220,9 +227,9 @@ run; started 'codex -c model_reasoning_effort=high'
 export MODEL_CHOICE=gpt-test EFFORT_CHOICE=xhigh
 if run 2>"$TMP/err"; then fail 'unsupported picker effort accepted'; fi
 no_start
-/bin/grep -Fq "invalid firstmate Effort selection 'xhigh' (offered: default, low, high)" "$TMP/err" \
+"$GREP_BIN" -Fq "invalid firstmate Effort selection 'xhigh' (offered: default, low, high)" "$TMP/err" \
   || fail 'invalid selection not explained'
-/bin/grep -Fq 'Press any key' "$TMP/err" || fail 'invalid selection did not pause popup'
+"$GREP_BIN" -Fq 'Press any key' "$TMP/err" || fail 'invalid selection did not pause popup'
 unset EFFORT_CHOICE
 # shellcheck disable=SC2016
 export MODEL_CHOICE='$(touch /tmp/unsafe)'
@@ -237,7 +244,7 @@ for AI_FIRSTMATE_AGENT in '' codex; do
   export AI_FIRSTMATE_AGENT CANCEL=1
   : > "$PICKER"
   bash "$ROOT/.config/tmux/scripts/ai-workflow.sh" </dev/null 2>"$TMP/err" || fail 'menu failed'
-  /bin/grep '^firstmate' "$PICKER" | /bin/grep -Fq '●' || fail 'menu marked installed firstmate missing'
+  "$GREP_BIN" '^firstmate' "$PICKER" | "$GREP_BIN" -Fq '●' || fail 'menu marked installed firstmate missing'
   if [[ -s $TMP/err ]]; then fail "menu errored: $(/bin/cat "$TMP/err")"; fi
 done
 unset AI_FIRSTMATE_AGENT CANCEL
@@ -273,9 +280,9 @@ if run; then fail 'missing token selection accepted'; fi
 no_start
 unset ACCOUNT_CHOICE
 run; started 'ai-acct exec claude'
-if /bin/grep -Fq 'Claude account b' "$PICKER.Account"; then fail 'offered missing token'; fi
+if "$GREP_BIN" -Fq 'Claude account b' "$PICKER.Account"; then fail 'offered missing token'; fi
 /bin/rm "$HOME/.config/claude-accounts/a.token" "$HOME/.config/claude-accounts/work.token"
 if run 2>"$TMP/err"; then fail 'no-token launch succeeded'; fi
 no_start
-/bin/grep -Fq 'no Claude accounts' "$TMP/err" || fail 'missing setup not reported'
+"$GREP_BIN" -Fq 'no Claude accounts' "$TMP/err" || fail 'missing setup not reported'
 printf 'firstmate picker: OK\n'

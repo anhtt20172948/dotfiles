@@ -217,7 +217,12 @@ ai_capitalize() {
 # present on macOS, and a real alarm() beats a `sleep &` watchdog: there is no
 # leftover process to reap, and nothing keeps the command-substitution pipe open
 # after the child exits (a backgrounded sleep would make every call block for the
-# full timeout even when the command returned instantly).
+# full timeout even when the command returned instantly). On timeout the whole
+# descendant tree gets TERM, then KILL after a short grace: killing only the
+# direct child left a grandchild (a wrapper script's `sleep`, a node worker)
+# holding the output pipe, so the caller still waited for it to finish. The child
+# stays in the caller's process group, so fzf killing a preview or Ctrl-C on the
+# popup still takes the command down with it.
 ai_run_limited() {
   local secs=$1
   shift
@@ -225,16 +230,41 @@ ai_run_limited() {
   if have gtimeout; then gtimeout "$secs" "$@"; return $?; fi
   have perl || { "$@"; return $?; }
   perl -e '
+    use POSIX ":sys_wait_h";
+    sub tree {
+      my %kids;
+      if (open my $ps, "-|", "ps", "-A", "-o", "pid=", "-o", "ppid=") {
+        while (<$ps>) { my ($p, $pp) = split; push @{ $kids{$pp} }, $p }
+        close $ps;
+      }
+      my @all = my @todo = @_;
+      while (@todo) { my @k = @{ $kids{ shift @todo } || [] }; push @all, @k; push @todo, @k }
+      return @all;
+    }
     my $secs = shift @ARGV;
     my $pid = fork();
     exit 127 if !defined $pid;
     if ($pid == 0) { exec { $ARGV[0] } @ARGV or exit 127 }
-    $SIG{ALRM} = sub { kill "TERM", $pid };
-    alarm $secs;
+    my $st;
+    my $done = eval {
+      local $SIG{ALRM} = sub { die "timeout\n" };
+      alarm $secs;
+      waitpid $pid, 0;
+      $st = $?;
+      alarm 0;
+      1;
+    };
+    exit(($st & 127) ? 124 : ($st >> 8)) if $done;
+    my @tree = tree($pid);
+    kill "TERM", @tree;
+    for (1 .. 20) {
+      waitpid $pid, WNOHANG;
+      last unless grep { kill 0, $_ } @tree;
+      select undef, undef, undef, 0.05;
+    }
+    kill "KILL", grep { kill 0, $_ } @tree;
     waitpid $pid, 0;
-    my $st = $?;
-    alarm 0;
-    exit(($st & 127) ? 124 : ($st >> 8));
+    exit 124;
   ' "$secs" "$@"
 }
 

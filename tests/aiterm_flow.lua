@@ -17,7 +17,10 @@ local function reset(opts)
 	vim.env.TMUX = opts.tmux and "/tmp/tmux-1000/default,1,0" or nil
 end
 
-flow.config.script = "/bin/true" -- executable() phải đúng
+-- executable() phải đúng; macOS không có /bin/true nên lấy đường dẫn thật.
+local script = vim.fn.exepath("true")
+assert(script ~= "", "true not found")
+flow.config.script = script
 flow.exec = function(cmd)
 	if cmd[1] == "git" and cmd[2] == "rev-parse" then
 		return git_root and { code = 0, stdout = git_root .. "\n" } or { code = 128, stdout = "", stderr = "fatal" }
@@ -67,14 +70,14 @@ test("push_gate runs the shared script's push action at the repo root", function
 	reset({ git_root = "/work/repo" })
 	flow.push_gate()
 	assert(#calls.float == 1, "terminal expected")
-	assert(vim.deep_equal(calls.float[1].cmd, { "/bin/true", "push" }), vim.inspect(calls.float[1].cmd))
+	assert(vim.deep_equal(calls.float[1].cmd, { script, "push" }), vim.inspect(calls.float[1].cmd))
 	assert(calls.float[1].cwd == "/work/repo")
 end)
 
 test("pipelines opens the no-mistakes TUI through the script", function()
 	reset({ git_root = "/work/repo" })
 	flow.pipelines()
-	assert(vim.deep_equal(calls.float[1].cmd, { "/bin/true", "pipelines" }))
+	assert(vim.deep_equal(calls.float[1].cmd, { script, "pipelines" }))
 end)
 
 test("gnhf refuses to run outside tmux", function()
@@ -87,7 +90,7 @@ end)
 test("gnhf spawns the trimmed goal at the repo root", function()
 	reset({ git_root = "/work/repo", tmux = true })
 	flow.gnhf("  add tests  ")
-	assert(vim.deep_equal(calls.spawn[1].cmd, { "/bin/true", "gnhf", "add tests" }), vim.inspect(calls.spawn[1]))
+	assert(vim.deep_equal(calls.spawn[1].cmd, { script, "gnhf", "add tests" }), vim.inspect(calls.spawn[1]))
 	assert(calls.spawn[1].cwd == "/work/repo")
 end)
 
@@ -107,7 +110,7 @@ test("firstmate refuses outside tmux and opens its pickers in a tmux popup insid
 	local cmd = calls.spawn[1].cmd
 	assert(cmd[1] == "tmux" and cmd[2] == "display-popup", vim.inspect(cmd))
 	assert(vim.tbl_contains(cmd, "-E"), "popup must close when the script exits")
-	assert(vim.deep_equal({ cmd[#cmd - 1], cmd[#cmd] }, { "/bin/true", "firstmate" }), vim.inspect(cmd))
+	assert(vim.deep_equal({ cmd[#cmd - 1], cmd[#cmd] }, { script, "firstmate" }), vim.inspect(cmd))
 	local d = vim.fn.index(cmd, "-d")
 	assert(d >= 0 and cmd[d + 2] == vim.fn.getcwd(), "popup must start in nvim's cwd")
 end)

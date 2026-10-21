@@ -16,7 +16,7 @@ cat > "$TMP/bin/claude" <<'MOCK'
 [ "${ANTHROPIC_API_KEY+x}" != x ] || exit 81
 [ "$CLAUDE_CODE_OAUTH_TOKEN" = "${EXPECTED_TOKEN:-synthetic-b}" ] || exit 82
 # The statusline only sees this fingerprint; Claude Code strips the token.
-fp=$(printf 'ai-acct-statusline:%s' "$CLAUDE_CODE_OAUTH_TOKEN" | sha256sum)
+fp=$(printf 'ai-acct-statusline:%s' "$CLAUDE_CODE_OAUTH_TOKEN" | { sha256sum 2>/dev/null || shasum -a 256; })
 [ "$AI_ACCT_FINGERPRINT" = "${fp%% *}" ] || exit 86
 printf '%s|%s\n' "$*" "$PWD" >> "$LOG"
 MOCK
@@ -38,7 +38,7 @@ case "$command" in
   *"set-environment -g CLAUDE_CODE_OAUTH_TOKEN '"*"'"*)
     token=$(printf '%s\n' "$command" | sed -n "s/.*CLAUDE_CODE_OAUTH_TOKEN '\([^']*\)'.*/\1/p")
     [ "$token" = "${EXPECTED_TOKEN:-synthetic-b}" ] || exit 83
-    fp=$(printf 'ai-acct-statusline:%s' "$token" | sha256sum)
+    fp=$(printf 'ai-acct-statusline:%s' "$token" | { sha256sum 2>/dev/null || shasum -a 256; })
     printf '%s\n' "$command" | grep -Fqx "set-environment -g AI_ACCT_FINGERPRINT '${fp%% *}'" || exit 87
     printf 'tmux|token updated\n' >> "$LOG" ;;
 esac
@@ -51,6 +51,9 @@ printf 'quota|%s\n' "$*" >> "$LOG"
 MOCK
 chmod +x "$TMP/bin/"*
 fail() { echo "FAIL: $*" >&2; exit 1; }
+# GNU stat -c, else BSD stat -f (macOS has no -c).
+mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+inode_of() { stat -c %i "$1" 2>/dev/null || stat -f %i "$1"; }
 printf 'synthetic-a\n' > "$HOME/.config/claude-accounts/a.token"
 printf 'synthetic-b\n' > "$HOME/.config/claude-accounts/b.token"
 chmod 600 "$HOME/.config/claude-accounts/"*.token
@@ -61,24 +64,34 @@ export CLAUDE_CODE_OAUTH_TOKEN=stale ANTHROPIC_API_KEY=stale CLAUDE_CONFIG_DIR=/
 [ ! -e "$FM_HOME/config/claude-account" ] || fail 'created pin'
 [ ! -e "$HOME/.claude-b" ] || fail 'created separate profile'
 jq -e '.existing == 42 and .hasCompletedOnboarding == true' "$HOME/.claude.json" >/dev/null
-[ "$(stat -c %a "$HOME/.claude.json")" = 600 ] || fail 'onboarding permissions'
+[ "$(mode_of "$HOME/.claude.json")" = 600 ] || fail 'onboarding permissions'
 grep -Fqx 'tmux|token updated' "$LOG"
 "$ACCT" resume
 grep -Fqx -- "--continue|$FM_HOME" "$LOG"
 "$ACCT" exec claude --model opus
 grep -Fqx -- "--model opus|$PWD" "$LOG"
 # Completed onboarding is left in place so concurrent Claude writes are not lost.
-config_inode=$(stat -c %i "$HOME/.claude.json")
+config_inode=$(inode_of "$HOME/.claude.json")
 "$ACCT" exec claude --again
-[ "$(stat -c %i "$HOME/.claude.json")" = "$config_inode" ] || fail 'rewrote completed config'
+[ "$(inode_of "$HOME/.claude.json")" = "$config_inode" ] || fail 'rewrote completed config'
 # no-mistakes only accepts a binary path; the installed symlink must use the active token.
 mkdir -p "$HOME/.local/bin"
 ln -s "$ACCT" "$HOME/.local/bin/ai-acct"
 ln -s "$ROOT/.local/bin/ai-acct-claude" "$HOME/.local/bin/ai-acct-claude"
 PATH="$TMP/bin:/usr/bin:/bin" "$HOME/.local/bin/ai-acct-claude" -p 'review this'
 grep -Fqx -- "-p review this|$PWD" "$LOG"
-python3 -I -c 'import sys, yaml; sys.exit(yaml.safe_load(open(sys.argv[1]))["agent_path_override"]["claude"] != "ai-acct-claude")' \
-  "$ROOT/.no-mistakes/config.yaml" || fail 'no-mistakes override'
+# A real YAML loader: stock python3 (macOS, Homebrew) has no PyYAML, while
+# Ruby ships YAML in its standard library.
+claude_override() {
+  if python3 -I -c 'import yaml' 2>/dev/null; then
+    python3 -I -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["agent_path_override"]["claude"])' "$1"
+  elif command -v ruby >/dev/null; then
+    ruby -ryaml -e 'puts YAML.safe_load(File.read(ARGV[0]))["agent_path_override"]["claude"]' "$1"
+  else
+    fail "no YAML parser to read $1 (install PyYAML or ruby)"
+  fi
+}
+[ "$(claude_override "$ROOT/.no-mistakes/config.yaml")" = ai-acct-claude ] || fail 'no-mistakes override'
 "$ACCT" status >> "$TMP/out"
 grep -Fq 'Claude b (active)' "$TMP/out"
 EXPECTED_TOKEN=synthetic-a "$ACCT" use a
@@ -91,7 +104,7 @@ ln -s "$ROOT/.zshenv" "$ZDOTDIR/.zshenv"
 zsh -c '[[ $CLAUDE_CODE_OAUTH_TOKEN == synthetic-a && -z ${CLAUDE_CONFIG_DIR+x} && -z ${ANTHROPIC_API_KEY+x} ]]' || fail 'zsh startup a'
 printf 'b\n' > "$HOME/.config/claude-accounts/active"
 zsh -c '[[ $CLAUDE_CODE_OAUTH_TOKEN == synthetic-b ]]' || fail 'zsh startup b'
-fp_b=$(printf 'ai-acct-statusline:synthetic-b' | sha256sum)
+fp_b=$(printf 'ai-acct-statusline:synthetic-b' | { sha256sum 2>/dev/null || shasum -a 256; })
 [ "$(zsh -c 'print -r -- $AI_ACCT_FINGERPRINT')" = "${fp_b%% *}" ] || fail 'zsh startup fingerprint'
 for bad in invalid ../a; do
   if "$ACCT" use "$bad"; then fail 'accepted invalid name'; fi
@@ -120,7 +133,7 @@ zsh -c '[[ $CLAUDE_CODE_OAUTH_TOKEN == stale ]]' || fail 'changed unconfigured s
 dir=$HOME/.config/claude-accounts
 printf 'synthetic-work\n' | "$ACCT" add work >> "$TMP/out"
 [ "$(cat "$dir/work.token")" = synthetic-work ] || fail 'add token'
-[ "$(stat -c %a "$dir/work.token")" = 600 ] || fail 'add permissions'
+[ "$(mode_of "$dir/work.token")" = 600 ] || fail 'add permissions'
 if printf 'synthetic-dup\n' | "$ACCT" add work; then fail 'add replaced account'; fi
 [ "$(cat "$dir/work.token")" = synthetic-work ] || fail 'add changed existing token'
 for bad in Work ../x 'a b' -x ''; do
@@ -138,7 +151,7 @@ zsh -c '[[ $CLAUDE_CODE_OAUTH_TOKEN == synthetic-work ]]' || fail 'zsh startup n
 : > "$LOG"
 printf 'synthetic-work2\n' | EXPECTED_TOKEN=synthetic-work2 "$ACCT" edit work >> "$TMP/out"
 [ "$(cat "$dir/work.token")" = synthetic-work2 ] || fail 'edit token'
-[ "$(stat -c %a "$dir/work.token")" = 600 ] || fail 'edit permissions'
+[ "$(mode_of "$dir/work.token")" = 600 ] || fail 'edit permissions'
 grep -Fqx 'tmux|token updated' "$LOG" || fail 'edit did not refresh active tmux token'
 if printf 'synthetic-x\n' | "$ACCT" edit missing; then fail 'edited missing account'; fi
 [ ! -e "$dir/missing.token" ] || fail 'edit created account'
