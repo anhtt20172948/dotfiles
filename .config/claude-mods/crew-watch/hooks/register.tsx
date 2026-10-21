@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { CrewMember, CrewReport } from '../types'
 import { ago, cacheHit, cacheText, clip, clockText, contextText, dispatchText, effortText, gauge, modelsText, statusLine, tokens, totalTokens } from './format'
-import { activityLane, activityState, dashboardLayout, fleetModels, harnessColor, memberKey, normalizeMember, recentLog, sortedTools, toggleExpanded } from './dashboard'
+import { activityLane, crewState, dashboardLayout, fleetModels, harnessColor, laneGeometry, memberKey, normalizeMember, recentLog, sortedTools, toggleExpanded } from './dashboard'
 
 type Dollar = EngineInterface
 
@@ -106,7 +106,7 @@ export const register: Register = (on, options) => {
     const crew = (report?.crew ?? []).map(normalizeMember)
     const now = report?.generatedAt ?? 0
     const layout = dashboardLayout(W, e.props.placement, crew.length)
-    const active = crew.filter(m => activityState(m.lastAt, now).label === 'active').length
+    const active = crew.filter(m => ['working', 'active'].includes(crewState(m, now).label)).length
     const row = (text: string, color = 'text', width = W) => <Text color={color} wrap="truncate">{clip(text, width)}</Text>
     const title = `CREW · ${crew.length} live · ${active} active`
     const age = (m: CrewMember) => m.lastAt > 0 ? `${ago(Math.max(0, now - m.lastAt))} ago` : 'no activity'
@@ -128,7 +128,7 @@ export const register: Register = (on, options) => {
           {header}
           {report ? row(`${tokens(totalTokens(report.totals))} tok · ${report.totals.requests} req · ${report.totals.toolCalls} tools`, 'suggestion') : row('Reading the crew logs…', 'subtle')}
           {report ? row(cacheText(report.totals, 6), 'permission') : null}
-          {crew.slice(0, layout.shown).map(m => row(`${activityState(m.lastAt, now).mark} ${'  '.repeat(m.depth)}${m.id} · ${dispatchText(m)} · ${age(m)}`, harnessColor(m.harness)))}
+          {crew.slice(0, layout.shown).map(m => row(`${crewState(m, now).mark} ${'  '.repeat(m.depth)}${m.id} · ${dispatchText(m)} · ${age(m)}`, harnessColor(m.harness)))}
           {crew.length > layout.shown ? row(`+${crew.length - layout.shown} more · dock /crew for details`, 'subtle') : null}
           {report && crew.length === 0 ? row('No crewmates are live.', 'subtle') : null}
           {failure}
@@ -138,7 +138,7 @@ export const register: Register = (on, options) => {
 
     const card = (m: CrewMember, i: number, width: number, detail = false) => {
       const color = harnessColor(m.harness)
-      const state = activityState(m.lastAt, now)
+      const state = crewState(m, now)
       const inner = Math.max(1, width - 4)
       const line = (text: string, tone = 'text') => row(text, tone, inner)
       const top = detail ? sortedTools(m.tools) : m.topTools.map(t => [t.name, t.count] as const)
@@ -147,7 +147,8 @@ export const register: Register = (on, options) => {
         <Box key={`panel-${memberKey(m)}`} flexDirection="column" borderStyle="round" borderColor={color} width={width} paddingX={1}>
           {detail ? <Text weight="bold" wrap="wrap">{m.description}</Text> : control(m, i, inner)}
           {line(`${m.kind} · ${m.project || 'no project'}${m.depth > 0 ? ` · nested ${m.depth}` : ''}`, 'subtle')}
-          {line(`${state.mark} ${state.label} · ${age(m)}`, state.color)}
+          {line(`${state.mark} ${state.label}`, state.color)}
+          {line(age(m), 'subtle')}
           {line(dispatchText(m), color)}
           {line(effortText(m.effort), color)}
           {line(modelsText(m.models) || 'no model requests yet', color)}
@@ -172,15 +173,17 @@ export const register: Register = (on, options) => {
       )
     }
 
-    const laneWidth = Math.max(4, Math.min(60, W - 28))
+    const geometry = laneGeometry(W)
+    const laneWidth = geometry.cells
     const lanes = (
       <Box flexDirection="column" width={W}>
         {row(`ACTIVITY · last ${laneWidth} minutes · 1 cell/min`, 'subtle')}
-        {row(`                  -${laneWidth - 1}m${' '.repeat(Math.max(1, laneWidth - 9))}now`, 'subtle')}
+        <Box width={W}><Box key="lane-axis-gutter" width={geometry.offset} flexShrink={0} /><Text key="lane-axis" color="subtle">{geometry.axis}</Text></Box>
         {crew.map((m, i) => (
           <Box width={W}>
-            <Text color={activityState(m.lastAt, now).color}>{activityState(m.lastAt, now).mark + ' '}</Text>
-            <Box width={16} flexShrink={0}>{layout.mode === 'lanes' ? control(m, i, 16) : row(`${'  '.repeat(m.depth)}${m.id}`, harnessColor(m.harness), 16)}</Box>
+            <Box width={geometry.markWidth} flexShrink={0}><Text color={crewState(m, now).color}>{crewState(m, now).mark + ' '}</Text></Box>
+            <Box width={geometry.nameWidth} flexShrink={0}>{layout.mode === 'lanes' ? control(m, i, geometry.nameWidth) : row(`${'  '.repeat(m.depth)}${m.id}`, harnessColor(m.harness), geometry.nameWidth)}</Box>
+            <Box key={`lane-gap-${memberKey(m)}`} width={geometry.gap} flexShrink={0} />
             <Text color={harnessColor(m.harness)}>{activityLane(m.activity, now, laneWidth)}</Text>
             <Text dimColor wrap="truncate">{' ' + age(m)}</Text>
           </Box>
@@ -212,7 +215,7 @@ export const register: Register = (on, options) => {
         {crew.length > 0 ? lanes : null}
         {viewed ? card(viewed, crew.indexOf(viewed), W, true) : null}
         <Box flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1} width={W} marginTop={1}>
-          <Text dimColor>CREW LOG · UTC</Text>
+          <Text dimColor>CREW LOG</Text>
           {log.length === 0 ? row('No events yet.', 'subtle', inner) : null}
           {log.map(event => row(`${clockText(event.at)} ${event.who} · ${event.kind === 'tool' ? '▸' : '◇'} ${event.text}`, event.color, inner))}
         </Box>

@@ -87,7 +87,7 @@ class TelemetryTest(unittest.TestCase):
             transcript.parent.mkdir(parents=True)
             transcript.write_text(json.dumps({"type": "assistant", "timestamp": "2026-10-21T17:00:00Z", "message": {
                 "id": "one", "model": "claude-test", "usage": {"input_tokens": 10},
-                "content": [{"type": "tool_use", "name": "Read", "input": {"path": "/file"}}]}}) + "\n")
+                "content": [{"type": "tool_use", "name": "Read", "input": {"path": worktree + "/src/main.py"}}]}}) + "\n")
             reports = []
             for _ in range(2):
                 with redirect_stdout(io.StringIO()) as output:
@@ -97,6 +97,8 @@ class TelemetryTest(unittest.TestCase):
             child = reports[1]["crew"][1]
             self.assertEqual(child["depth"], 1)
             self.assertEqual(child["tools"], {"Read": 1})
+            self.assertEqual(child["lastTool"], "Read: src/main.py")
+            self.assertEqual(child["recentTools"][0]["text"], "Read: src/main.py")
             self.assertEqual([event["kind"] for event in child["events"]], ["tool", "status"])
             self.assertEqual(reports[1]["totals"]["toolCalls"], 1)
             self.assertIsNone(child["contextWindow"])
@@ -111,6 +113,41 @@ class TelemetryTest(unittest.TestCase):
         usage.parse_claude(self.path, entry)
         self.assertEqual(entry["agg"]["events"], [])
         self.assertEqual(entry["agg"]["requests"], 1)
+
+    def test_codex_wrappers_show_the_real_command_without_evaluating_js(self):
+        wrappers = [
+            'text(await tools.exec_command({cmd: "git status", workdir: "/repo"}));',
+            'text(await tools.exec_command({"cmd": "git status"}));',
+            "text(await tools.exec_command({'cmd': 'git status'}));",
+        ]
+        for wrapper in wrappers:
+            self.assertEqual(usage.describe_tool("exec", wrapper), "exec: git status")
+        self.assertEqual(usage.describe_tool("exec", {"code": wrappers[0]}), "exec: git status")
+        command = 'echo "hello"'
+        wrapper = 'text(await tools.exec_command({cmd: ' + json.dumps(command) + '}));'
+        self.assertEqual(usage.describe_tool("exec", wrapper), 'exec: echo "hello"')
+
+    def test_codex_wrapper_events_are_abbreviated_before_being_cached(self):
+        command = "cd /pool/own && git status"
+        wrapper = 'text(await tools.exec_command({cmd: ' + json.dumps(command) + '}));'
+        self.append({"type": "response_item", "timestamp": "2026-10-21T17:00:00Z", "payload": {
+            "type": "custom_tool_call", "name": "exec", "input": wrapper}})
+        entry = usage.fresh_entry()
+        usage.parse_codex(self.path, entry, "/pool/own")
+        self.assertEqual(entry["agg"]["lastTool"], "exec: git status")
+        self.assertEqual(entry["agg"]["events"][0]["text"], "exec: git status")
+
+    def test_tool_paths_and_leading_cd_are_relative_only_to_the_own_worktree(self):
+        home = "/pool/my worktree"
+        for lead in (f"cd '{home}' && ", f'cd "{home}"; '):
+            self.assertEqual(usage.describe_tool("Bash", {"command": lead + "git status"}, home), "Bash: git status")
+        self.assertEqual(usage.describe_tool("Read", {"file_path": home + "/src/main.py"}, home), "Read: src/main.py")
+        self.assertEqual(usage.describe_tool("Bash", {"command": f'git -C "{home}" status'}, home), 'Bash: git -C "." status')
+        self.assertEqual(usage.describe_tool("Bash", {"command": "cd /elsewhere && pwd"}, home), "Bash: cd /elsewhere && pwd")
+        self.assertEqual(usage.describe_tool("Read", {"path": "/pool/my worktree-other/file"}, home), "Read: /pool/my worktree-other/file")
+        self.assertEqual(usage.describe_tool("Read", {"path": "/other/pool/my worktree/file"}, home), "Read: /other/pool/my worktree/file")
+        long_home = "/pool/" + "x" * 200
+        self.assertEqual(usage.describe_tool("Bash", {"command": f"cd {long_home} && git status"}, long_home), "Bash: git status")
 
 
 if __name__ == "__main__":

@@ -16,13 +16,15 @@ A secondmate's own home is followed recursively for its crew.
 """
 
 import argparse
+import ast
 import json
 import os
 import re
+import shlex
 import sys
 import time
 
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 HOME = os.path.expanduser("~")
 CLAUDE_PROJECTS = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR", os.path.join(HOME, ".claude")), "projects")
 CODEX_SESSIONS = os.path.join(os.environ.get("CODEX_HOME", os.path.join(HOME, ".codex")), "sessions")
@@ -101,14 +103,47 @@ def ts_ms(value):
         return 0
 
 
-def describe_tool(name, args):
+def wrapped_command(script):
+    """Read a literal cmd in a code-mode exec_command call, never execute JS."""
+    literal = r'''("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')'''
+    match = re.search(r'''\bexec_command\s*\(\s*\{[\s\S]*?(?<![\w$])(?:["']cmd["']|cmd)\s*:\s*''' + literal, script)
+    if not match:
+        return None
+    try:
+        value = json.loads(match[1]) if match[1].startswith('"') else ast.literal_eval(match[1])
+    except (ValueError, SyntaxError):
+        return None
+    return value if isinstance(value, str) else None
+
+
+def relative_detail(text, worktree):
+    """Abbreviate only this task's own worktree; leave other directories intact."""
+    root = worktree.rstrip("/")
+    if not root:
+        return text
+    lead = re.match(r'''^\s*cd\s+("(?:[^"\\]|\\.)*"|'[^']*'|[^\s;&]+)\s*(?:&&|;)\s*''', text)
+    if lead:
+        try:
+            directory = shlex.split(lead[1])[0]
+        except (ValueError, IndexError):
+            directory = ""
+        if os.path.normpath(directory) == os.path.normpath(root):
+            text = text[lead.end():]
+    path = re.compile(r'''(?<![\w/.-])''' + re.escape(root) + r'''(/|(?=$|[\s'";]))''')
+    return path.sub(lambda match: "" if match[1] == "/" else ".", text)
+
+
+def tool_summary(name, value, worktree):
+    return one_line(f"{name}: {relative_detail(str(value), worktree)}")
+
+
+def describe_tool(name, args, worktree=""):
     if not isinstance(args, dict):
         try:
             args = json.loads(args) if isinstance(args, str) else {}
         except ValueError:
-            # Codex code-mode tools wrap the real call in a script.
-            cmd = re.search(r'"cmd"\s*:\s*"((?:[^"\\]|\\.)*)"', args)
-            return one_line(f"{name}: {cmd.group(1) if cmd else args}")
+            command = wrapped_command(args)
+            return tool_summary(name, command if command is not None else args, worktree)
         if not isinstance(args, dict):
             args = {}
     for key in ("command", "cmd", "file_path", "path", "pattern", "url", "description", "prompt", "query"):
@@ -116,7 +151,13 @@ def describe_tool(name, args):
         if val:
             if isinstance(val, list):
                 val = " ".join(str(v) for v in val)
-            return one_line(f"{name}: {val}")
+            return tool_summary(name, val, worktree)
+    for key in ("code", "script", "input"):
+        script = args.get(key)
+        if isinstance(script, str):
+            command = wrapped_command(script)
+            if command is not None:
+                return tool_summary(name, command, worktree)
     return name
 
 
@@ -159,7 +200,7 @@ def apply_claude_usage(agg, usage, sign):
     agg["reasoning"] += sign * (details.get("thinking_tokens") or 0)
 
 
-def parse_claude(path, entry):
+def parse_claude(path, entry, worktree=""):
     for row in read_new_lines(path, entry):
         agg = entry["agg"]
         if row.get("type") != "assistant":
@@ -197,7 +238,7 @@ def parse_claude(path, entry):
                 name = block.get("name") or "?"
                 agg["toolCalls"] += 1
                 agg["tools"][name] = agg["tools"].get(name, 0) + 1
-                agg["lastTool"] = describe_tool(name, block.get("input"))
+                agg["lastTool"] = describe_tool(name, block.get("input"), worktree)
                 note_event(agg, at, agg["lastTool"])
             elif block.get("type") == "text" and (block.get("text") or "").strip():
                 agg["lastText"] = one_line(block["text"])
@@ -205,7 +246,7 @@ def parse_claude(path, entry):
             agg["lastAt"] = max(agg["lastAt"], at)
 
 
-def parse_codex(path, entry):
+def parse_codex(path, entry, worktree=""):
     for row in read_new_lines(path, entry):
         agg = entry["agg"]
         meta = entry["meta"]
@@ -250,7 +291,7 @@ def parse_codex(path, entry):
                 agg["toolCalls"] += 1
                 agg["tools"][name] = agg["tools"].get(name, 0) + 1
                 args = payload.get("arguments") or payload.get("input") or payload.get("action") or {}
-                agg["lastTool"] = describe_tool(name, args)
+                agg["lastTool"] = describe_tool(name, args, worktree)
                 note_event(agg, at, agg["lastTool"])
                 note_activity(agg, at)
             elif ptype == "message" and payload.get("role") == "assistant":
@@ -422,7 +463,7 @@ def main():
         if worktree and harness.startswith("claude"):
             for path in claude_files(worktree):
                 entry = files.setdefault(path, fresh_entry())
-                parse_claude(path, entry)
+                parse_claude(path, entry, worktree)
                 touched.add(path)
                 merge(agg, entry["agg"])
                 sessions += 1
@@ -433,7 +474,7 @@ def main():
             for path, cwd in codex_index:
                 if cwd == worktree or cwd.startswith(prefix):
                     entry = files.setdefault(path, fresh_entry())
-                    parse_codex(path, entry)
+                    parse_codex(path, entry, worktree)
                     touched.add(path)
                     merge(agg, entry["agg"])
                     sessions += 1

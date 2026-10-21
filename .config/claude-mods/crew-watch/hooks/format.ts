@@ -1,4 +1,5 @@
 import type { CrewMember, CrewTotals } from '../types'
+import { crewState } from './dashboard'
 
 /** 1234 -> 1.2k, 1234567 -> 1.23M. */
 export const tokens = (n: number): string => {
@@ -41,7 +42,7 @@ export const dispatchText = (m: CrewMember): string => {
 /** The one-line summary the status line carries. */
 export const statusLine = (crew: readonly CrewMember[], totals: CrewTotals, now: number): string | undefined => {
   if (crew.length === 0) return undefined
-  const active = crew.filter(m => m.lastAt > 0 && now - m.lastAt < 2 * 60_000).length
+  const active = crew.filter(m => ['working', 'active'].includes(crewState(m, now).label)).length
   const all = totals.input + totals.output + totals.cacheRead + totals.cacheWrite
   return `crew ${crew.length} (${active} active) · ${tokens(all)} tok · ${totals.toolCalls} tools · /crew`
 }
@@ -70,7 +71,9 @@ export const clip = (text: string, width: number): string => {
   return cells.length <= width ? cells.join('') : cells.slice(0, Math.max(0, width - 1)).join('') + (width > 0 ? '…' : '')
 }
 
-export const clockText = (at: number): string => at > 0 ? new Date(at).toISOString().slice(11, 19) : '--:--:--'
+export const clockText = (at: number, timeZone?: string): string => at > 0
+  ? new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', ...(timeZone ? { timeZone } : {}) }).format(new Date(at))
+  : '--:--:--'
 
 export const totalTokens = (u: CrewTotals): number => u.input + u.output + u.cacheRead + u.cacheWrite
 

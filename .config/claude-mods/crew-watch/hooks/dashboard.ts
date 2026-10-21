@@ -37,6 +37,28 @@ export const activityState = (lastAt: number, now: number): { mark: string; labe
       : { mark: '○', label: 'stale', color: 'subtle' }
 }
 
+/** A terminal status remains authoritative while the worker awaits its supervisor. */
+export const crewState = (m: Pick<CrewMember, 'lastAt' | 'status'>, now: number) => {
+  const status = /^\s*([a-z-]+)\b/i.exec(m.status)?.[1]?.toLowerCase()
+  if (status === 'done') return { mark: '✓', label: 'done · waiting for firstmate', color: 'merged' }
+  if (status === 'blocked' || status === 'failed' || status === 'needs-decision') return { mark: '×', label: 'blocked', color: 'error' }
+  if (status === 'paused' || status === 'waiting') return { mark: '◷', label: 'paused / waiting', color: 'permission' }
+  const idle = activityState(m.lastAt, now)
+  return status === 'working' && idle.label === 'active' ? { ...idle, label: 'working' } : idle
+}
+
+/** The axis gutter is the same geometry as each mark, name and explicit gap. */
+export const laneGeometry = (width: number) => {
+  const markWidth = 2
+  const nameWidth = 16
+  const gap = 1
+  const offset = markWidth + nameWidth + gap
+  const cells = Math.max(4, Math.min(60, width - offset - 10))
+  const start = `-${cells - 1}m`
+  const axis = start.padEnd(Math.max(start.length, cells - 3), ' ').slice(0, cells - 3) + 'now'
+  return { markWidth, nameWidth, gap, offset, cells, axis }
+}
+
 /** Every lane ends in the same current minute; at most 60 cells, one per minute. */
 export const activityLane = (activity: readonly ActivityBucket[], now: number, width: number): string => {
   const cells = Math.max(1, Math.min(60, Math.floor(width)))

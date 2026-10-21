@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
-import { clip, contextText, effortText, gauge } from '../hooks/format'
-import { activityLane, dashboardLayout, fleetModels, normalizeMember, recentLog, toggleExpanded } from '../hooks/dashboard'
+import { clockText, clip, contextText, effortText, gauge, statusLine } from '../hooks/format'
+import { activityLane, dashboardLayout, crewState, fleetModels, laneGeometry, normalizeMember, recentLog, toggleExpanded } from '../hooks/dashboard'
 
 test('layout keeps cards readable and inline output bounded', () => {
   expect(dashboardLayout(40, 'dock', 1)).toMatchObject({ mode: 'cards', columns: 1, cardWidth: 40 })
@@ -41,4 +41,38 @@ test('fleet reducers merge models and keep a bounded chronological crew log', ()
 test('reports from a pre-dashboard session retain a safe fallback during reload', () => {
   const legacy = { id: 'a', topTools: [{ name: 'Read', count: 2 }] } as import('../types').CrewMember
   expect(normalizeMember(legacy)).toMatchObject({ description: 'a', contextWindow: null, events: [], activity: [], tools: { Read: 2 } })
+})
+
+test('clocks use local wall time and can be checked in a fixed timezone', () => {
+  const at = Date.parse('2026-10-21T17:23:04Z')
+  expect(clockText(at, 'Asia/Ho_Chi_Minh')).toBe('00:23:04')
+  expect(clockText(at, 'America/New_York')).toBe('13:23:04')
+  const local = new Date(at)
+  expect(clockText(at)).toBe([local.getHours(), local.getMinutes(), local.getSeconds()].map(n => String(n).padStart(2, '0')).join(':'))
+})
+
+test('axis and lane cells share an explicit gutter and a gap after the name', () => {
+  for (const width of [40, 80, 120]) {
+    const geometry = laneGeometry(width)
+    expect(geometry.offset).toBe(geometry.markWidth + geometry.nameWidth + geometry.gap)
+    expect(geometry.gap).toBe(1)
+    expect(geometry.axis.length).toBe(geometry.cells)
+    expect(geometry.axis.endsWith('now')).toBe(true)
+    expect(geometry.offset + geometry.cells <= width).toBe(true)
+  }
+})
+
+test('latest protocol state overrides fresh transcript activity', () => {
+  const now = 1000000
+  const state = (status: string, lastAt = now - 60000) => crewState({ status, lastAt }, now)
+  expect(state('done [at=900]: committed')).toMatchObject({ mark: '✓', label: 'done · waiting for firstmate', color: 'merged' })
+  expect(state('blocked [at=900]: needs help')).toMatchObject({ label: 'blocked', color: 'error' })
+  expect(state('paused [at=900]: validating')).toMatchObject({ label: 'paused / waiting', color: 'permission' })
+  expect(state('waiting: CI')).toMatchObject({ label: 'paused / waiting' })
+  expect(state('working [at=900]: tests')).toMatchObject({ label: 'working', color: 'success' })
+  expect(state('working: tests', now - 300000)).toMatchObject({ label: 'quiet', color: 'warning' })
+  expect(state('working: tests', 0)).toMatchObject({ label: 'stale', color: 'subtle' })
+  expect(state('resolved [at=900]: done is only in the detail')).toMatchObject({ label: 'active' })
+  const done = { lastAt: now - 1000, status: 'done [at=900]: waiting' } as import('../types').CrewMember
+  expect(statusLine([done], { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, requests: 0, reasoning: 0, toolCalls: 0 }, now)).toContain('(0 active)')
 })

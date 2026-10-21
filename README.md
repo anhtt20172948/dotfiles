@@ -192,8 +192,9 @@ Context percentages appear only when the transcript supplies a window size.
 `/crew` opens or closes the pane; `/crew refresh` reads the logs immediately.
 Keys `1`–`9` expand a crewmate's details, branch, model/tool counts and recent
 calls. Cards sit side by side when they fit; larger fleets use activity lanes
-on a shared minute axis. A timestamped crew log follows them. Inline above the
-prompt, the dashboard shrinks to at most eight rows; dock it for full details.
+on a shared minute axis. A crew log with local-time timestamps follows them.
+Inline above the prompt, the dashboard shrinks to at most eight rows; dock it
+for full details.
 It reads Claude Code transcripts and Codex rollouts, follows secondmate homes,
 and shows a summary in the status line. The layout takes inspiration from
 [claude-flightdeck](https://github.com/scasella/claude-flightdeck).

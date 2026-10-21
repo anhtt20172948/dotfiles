@@ -138,11 +138,14 @@ test('dashboard matrix draws every fleet size, width, placement and surface', as
           expect(await ui.find({ text: new RegExp(`CREW · ${size} live`) })).toBeDefined()
           if (placement === 'inline') {
             expect((tree.children ?? []).filter(Boolean).length <= 8).toBe(true)
-            expect(await ui.find({ text: 'CREW LOG · UTC' })).toBeUndefined()
+            expect(await ui.find({ text: 'CREW LOG' })).toBeUndefined()
           } else {
             expect(await ui.find({ text: 'FLEET' })).toBeDefined()
-            expect(await ui.find({ text: 'CREW LOG · UTC' })).toBeDefined()
+            expect(await ui.find({ text: 'CREW LOG' })).toBeDefined()
             if (size > 0) {
+              expect((await ui.find({ key: 'lane-axis-gutter' }))?.props.width).toBe(19)
+              expect((await ui.find({ key: 'lane-gap-/fm:crew-0' }))?.props.width).toBe(1)
+              expect(await ui.find({ type: 'Text', text: /^-\d+m\s+now$/ })).toBeDefined()
               await ui.press({ key: 'card-/fm:crew-0' })
               expect(await ui.find({ text: /Fix login validation/ })).toBeDefined()
               expect(await ui.find({ text: /branch fm\/fix-login/ })).toBeDefined()
