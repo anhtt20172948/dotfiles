@@ -196,8 +196,8 @@ on a shared minute axis. A crew log with local-time timestamps follows them.
 Inline above the prompt, the dashboard shrinks to at most eight rows; dock it
 for full details.
 It reads the Claude Code transcripts and Codex rollouts each task wrote since it
-was spawned (worktree slots are reused), follows secondmate homes,
-and shows a summary in the status line. The layout takes inspiration from
+first started (worktree slots are reused; a relaunch keeps earlier usage),
+follows secondmate homes, and shows a summary in the status line. The layout takes inspiration from
 [claude-flightdeck](https://github.com/scasella/claude-flightdeck).
 
 Its two options in `/config` are `homes` (Firstmate homes, comma-separated;

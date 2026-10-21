@@ -2,8 +2,8 @@
 """Summarize what every live Firstmate crewmate is doing and what it costs.
 
 Reads each home's state/*.meta (one per live task), finds the task's own
-transcripts by its worktree, written since the task was spawned (pooled
-worktrees are reused), and prints one JSON document on stdout:
+transcripts by its worktree, written since the task first started (pooled
+worktrees are reused; a relaunch keeps earlier usage), and prints one JSON document on stdout:
 
   {"generatedAt": ms, "crew": [...], "totals": {...}, "errors": [...]}
 
@@ -312,10 +312,21 @@ def modified_ms(path):
         return -1
 
 
-def task_start(meta, path):
-    """When this incarnation was spawned; an older log in its worktree is another task's."""
-    match = re.match(r"s(\d+)", meta.get("spawn_gen") or "")
-    return int(match[1]) * 1000 if match else max(0, modified_ms(path))
+def task_start(meta, meta_path, status_path):
+    """When the task first started; an older log in its worktree is another task's.
+
+    A relaunch writes a new spawn_gen, but the status log keeps the first [at=].
+    """
+    starts = []
+    try:
+        with open(status_path, "rb") as f:
+            starts = [int(at) * 1000 for at in re.findall(rb"\[at=(\d+)\]", f.read())]
+    except OSError:
+        pass
+    spawned = re.match(r"s(\d+)", meta.get("spawn_gen") or "")
+    if spawned:
+        starts.append(int(spawned[1]) * 1000)
+    return min(starts) if starts else max(0, modified_ms(meta_path))
 
 
 def claude_project_dir(worktree):
@@ -434,7 +445,7 @@ def collect_tasks(home, depth, seen):
         tid = name[: -len(".meta")]
         meta = read_meta(os.path.join(state, name))
         status, status_at = last_status(os.path.join(state, tid + ".status"))
-        since = task_start(meta, os.path.join(state, name))
+        since = task_start(meta, os.path.join(state, name), os.path.join(state, tid + ".status"))
         tasks.append({"id": tid, "home": home, "depth": depth, "meta": meta, "since": since,
                       "status": status, "statusAt": status_at})
         if meta.get("kind") == "secondmate" and meta.get("worktree") and not meta.get("remote_host"):

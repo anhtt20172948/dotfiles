@@ -149,6 +149,34 @@ class TelemetryTest(unittest.TestCase):
         self.assertEqual((crew["a"]["models"], crew["a"]["toolCalls"], crew["a"]["sessions"]), ({"claude-new": 1}, 1, 1))
         self.assertEqual((crew["b"]["input"], crew["b"]["requests"], crew["b"]["sessions"]), (30, 1, 1))
 
+    def test_relaunch_keeps_usage_from_the_first_incarnation(self):
+        root = Path(self.tmp.name)
+        fm = root / "fm"
+        (fm / "state").mkdir(parents=True)
+        now = int(usage.time.time())
+        claude_slot, codex_slot = str(root / "slot1"), str(root / "slot2")
+        for tid, harness, slot in (("a", "claude", claude_slot), ("b", "codex", codex_slot)):
+            (fm / "state" / f"{tid}.meta").write_text(f"harness={harness}\nworktree={slot}\nspawn_gen=s{now - 60}.1.2\n")
+            (fm / "state" / f"{tid}.status").write_text(
+                f"working [at={now - 7200}]: started\nworking [at={now - 30}]: relaunched with new effort\n")
+        with patch.object(usage, "CLAUDE_PROJECTS", str(root / "projects")), patch.object(
+            usage, "CODEX_SESSIONS", str(root / "sessions")
+        ), patch.object(usage, "CACHE_PATH", str(root / "cache" / "cache.json")):
+            project = Path(usage.claude_project_dir(claude_slot))
+            self.claude_turn(project / "other-task.jsonl", "other", "claude-other")
+            self.claude_turn(project / "first.jsonl", "first", "claude-first")
+            self.claude_turn(project / "relaunched.jsonl", "second", "claude-second")
+            self.codex_rollout(root / "sessions" / "rollout-other-task.jsonl", codex_slot, 5000)
+            self.codex_rollout(root / "sessions" / "rollout-first.jsonl", codex_slot, 200)
+            self.codex_rollout(root / "sessions" / "rollout-relaunched.jsonl", codex_slot, 30)
+            for path, age in ((project / "other-task.jsonl", 10000), (project / "first.jsonl", 3600),
+                              (root / "sessions" / "rollout-other-task.jsonl", 10000),
+                              (root / "sessions" / "rollout-first.jsonl", 3600)):
+                os.utime(path, (now - age, now - age))
+            crew = {m["id"]: m for m in self.report(fm)["crew"]}
+        self.assertEqual(crew["a"]["models"], {"claude-first": 1, "claude-second": 1})
+        self.assertEqual((crew["b"]["input"], crew["b"]["requests"], crew["b"]["sessions"]), (230, 2, 2))
+
     def test_sessions_watching_other_homes_keep_each_others_cached_offsets(self):
         root = Path(self.tmp.name)
         homes = [root / "fm1", root / "fm2"]
