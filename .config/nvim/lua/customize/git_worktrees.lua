@@ -4,11 +4,6 @@
 -- state của firstmate; `status` dùng --no-optional-locks để khỏi làm mới index.
 local M = {}
 
--- Seam cho test (giống aiterm_flow): mở file picker.
-function M.open_files(path)
-	Snacks.picker.files({ cwd = path })
-end
-
 local function home()
 	return vim.env.HOME or vim.fn.expand("~")
 end
@@ -109,10 +104,16 @@ end
 local function fill_status(entries)
 	local jobs = {}
 	for i, entry in ipairs(entries) do
-		jobs[i] = vim.system(
-			{ "git", "--no-optional-locks", "-C", entry.path, "status", "--porcelain=v2", "--branch", "--untracked-files=no" },
-			{ text = true }
-		)
+		jobs[i] = vim.system({
+			"git",
+			"--no-optional-locks",
+			"-C",
+			entry.path,
+			"status",
+			"--porcelain=v2",
+			"--branch",
+			"--untracked-files=no",
+		}, { text = true })
 	end
 	for i, entry in ipairs(entries) do
 		local res = jobs[i]:wait()
@@ -202,11 +203,10 @@ end
 
 function M.open(entry)
 	-- Không xóa buffer: giữ nguyên cả các thay đổi chưa lưu.
-	local ok, err = pcall(vim.cmd.cd, entry.path)
+	local ok, err = pcall(vim.api.nvim_set_current_dir, entry.path)
 	if not ok then
 		return vim.notify("Cannot switch Git worktree: " .. tostring(err), vim.log.levels.ERROR)
 	end
-	M.open_files(entry.path)
 end
 
 function M.pick()

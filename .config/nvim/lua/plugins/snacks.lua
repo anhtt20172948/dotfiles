@@ -881,6 +881,15 @@ return {
 						})
 						:map("<leader>ub")
 					Snacks.toggle.inlay_hints():map("<leader>uh")
+					Snacks.toggle({
+						name = "Harper",
+						get = function()
+							return vim.lsp.is_enabled("harper_ls")
+						end,
+						set = function(state)
+							vim.lsp.enable("harper_ls", state)
+						end,
+					}):map("<leader>uH")
 					Snacks.toggle.indent():map("<leader>ug")
 					Snacks.toggle.dim():map("<leader>uD")
 				end,

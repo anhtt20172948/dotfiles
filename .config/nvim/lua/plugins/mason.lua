@@ -70,7 +70,7 @@ return {
 		},
 
 		opts = {
-			automatic_enable = true,
+			automatic_enable = { exclude = { "harper_ls" } },
 		},
 	},
 }
