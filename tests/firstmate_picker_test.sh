@@ -10,7 +10,7 @@ trap '/bin/rm -rf -- "$TMP"' EXIT
 export HOME="$TMP/home" FIRSTMATE_DIR="$TMP/firstmate" TMUX=mock
 export LOG="$TMP/tmux.log" PICKER="$TMP/picker" QUOTA_LOG="$TMP/quota.log"
 mkdir -p "$TMP/bin" "$HOME" "$FIRSTMATE_DIR/.git"
-for tool in bash dirname readlink realpath awk jq cat sleep mktemp stat mv rm sed perl; do
+for tool in bash dirname readlink realpath awk jq cat sleep mktemp stat mv rm sed perl ps; do
   path=$(command -v "$tool") || { echo "missing required tool: $tool" >&2; exit 1; }
   ln -s "$path" "$TMP/bin/$tool"
 done
