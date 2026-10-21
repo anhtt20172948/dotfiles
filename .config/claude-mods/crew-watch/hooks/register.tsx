@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { CrewMember, CrewReport } from '../types'
 import { ago, cacheHit, cacheText, clip, clockText, contextText, dispatchText, effortText, gauge, modelsText, statusLine, tokens, totalTokens } from './format'
-import { activityLane, crewState, dashboardLayout, fleetModels, harnessColor, laneGeometry, memberKey, normalizeMember, recentLog, sortedTools, toggleExpanded } from './dashboard'
+import { activityLane, crewState, dashboardLayout, fleetModels, harnessColor, laneGeometry, memberKey, recentLog, sortedTools, toggleExpanded } from './dashboard'
 
 type Dollar = EngineInterface
 
@@ -103,7 +103,7 @@ export const register: Register = (on, options) => {
     const error = await read($, errorAtom)
     const expanded = await read($, expandedAtom)
     const W = Math.max(1, e.props.bodyColumns)
-    const crew = (report?.crew ?? []).map(normalizeMember)
+    const crew = report?.crew ?? []
     const now = report?.generatedAt ?? 0
     const layout = dashboardLayout(W, e.props.placement, crew.length)
     const active = crew.filter(m => ['working', 'active'].includes(crewState(m, now).label)).length

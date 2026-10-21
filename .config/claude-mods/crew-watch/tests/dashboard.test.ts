@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { clockText, clip, contextText, effortText, gauge, statusLine } from '../hooks/format'
-import { activityLane, dashboardLayout, crewState, fleetModels, laneGeometry, normalizeMember, recentLog, toggleExpanded } from '../hooks/dashboard'
+import { activityLane, dashboardLayout, crewState, fleetModels, laneGeometry, recentLog, toggleExpanded } from '../hooks/dashboard'
 
 test('layout keeps cards readable and inline output bounded', () => {
   expect(dashboardLayout(40, 'dock', 1)).toMatchObject({ mode: 'cards', columns: 1, cardWidth: 40 })
@@ -36,11 +36,6 @@ test('fleet reducers merge models and keep a bounded chronological crew log', ()
   expect(toggleExpanded(null, '/one:a')).toBe('/one:a')
   expect(toggleExpanded('/one:a', '/one:a')).toBe(null)
   expect(crew[0].models.opus).toBe(2)
-})
-
-test('reports from a pre-dashboard session retain a safe fallback during reload', () => {
-  const legacy = { id: 'a', topTools: [{ name: 'Read', count: 2 }] } as import('../types').CrewMember
-  expect(normalizeMember(legacy)).toMatchObject({ description: 'a', contextWindow: null, events: [], activity: [], tools: { Read: 2 } })
 })
 
 test('clocks use local wall time and can be checked in a fixed timezone', () => {

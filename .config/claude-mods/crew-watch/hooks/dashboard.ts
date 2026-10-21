@@ -1,18 +1,6 @@
 /** Pure dashboard geometry and reducers. No engine calls or UI elements. */
 import type { ActivityBucket, CrewEvent, CrewMember } from '../types'
 
-/** A report saved before dashboard fields existed can still draw during reload. */
-export const normalizeMember = (m: CrewMember): CrewMember => ({
-  ...m,
-  description: m.description || m.id,
-  worktree: m.worktree || '',
-  contextWindow: m.contextWindow ?? null,
-  events: m.events ?? [],
-  recentTools: m.recentTools ?? (m.events ?? []).filter(event => event.kind === 'tool').slice(-5),
-  activity: m.activity ?? [],
-  tools: m.tools ?? Object.fromEntries(m.topTools.map(t => [t.name, t.count])),
-})
-
 export const memberKey = (m: Pick<CrewMember, 'home' | 'id'>): string => `${m.home}:${m.id}`
 
 export const toggleExpanded = (current: string | null, key: string): string | null => current === key ? null : key
