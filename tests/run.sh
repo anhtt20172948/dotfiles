@@ -3,7 +3,9 @@
 # (.no-mistakes.yaml gọi `tests/run.sh lint` / `tests/run.sh test`).
 #
 #   tests/run.sh lint   shellcheck các script đã sạch (danh sách LINT_FILES)
-#   tests/run.sh test   chạy mọi tests/*.lua trong nvim headless và tests/*_test.sh
+#   tests/run.sh test   chạy mọi tests/*.lua trong nvim headless, tests/*_test.sh và
+#                       tests/test_material_folder_icons.py (SKIP rõ ràng nếu thiếu
+#                       python 3.11+/luac). Case fail in log ngay; TEST_LOG_DIR giữ log từng case.
 #   tests/run.sh        cả hai
 set -euo pipefail
 
@@ -62,6 +64,29 @@ with_timeout() {
 	fi
 }
 
+# Chạy một case trong HOME/XDG riêng; log giữ ở $LOG_DIR/<tên>.log, in ra khi fail.
+#   run_case <tên> <lệnh...>
+run_case() {
+	local name=$1
+	shift
+	local case_dir="$CFG/$name" log="$LOG_DIR/$name.log"
+	mkdir -p "$case_dir/home" "$case_dir/config" "$case_dir/cache" "$case_dir/data" "$case_dir/state"
+	if HOME="$case_dir/home" XDG_CONFIG_HOME="$case_dir/config" XDG_CACHE_HOME="$case_dir/cache" \
+		XDG_DATA_HOME="$case_dir/data" XDG_STATE_HOME="$case_dir/state" CODEX_HOME="$case_dir/home/.codex" \
+		TMUX='' with_timeout 120 "$@" >"$log" 2>&1; then
+		echo "ok   $name"
+	else
+		echo "FAIL $name (rerun: TMUX= $*)"
+		sed 's/^/     | /' "$log"
+		FAILED=1
+	fi
+}
+
+# Case cần thêm công cụ: thiếu thì báo SKIP rõ ràng, không im lặng coi như pass.
+python_has_tomllib() {
+	python3 -c 'import tomllib' >/dev/null 2>&1
+}
+
 run_test() {
 	command -v nvim >/dev/null || {
 		echo "nvim not found" >&2
@@ -69,43 +94,35 @@ run_test() {
 	}
 	# XDG_CONFIG_HOME rỗng: nếu không, runtimepath chứa ~/.config/nvim (bản đã
 	# link) và require() nạp code ở đó thay vì code của checkout/worktree này.
-	local cfg
-	cfg=$(mktemp -d)
-	local failed=0 t case_dir
+	CFG=$(mktemp -d)
+	# TEST_LOG_DIR cho CI upload log từng case; mặc định nằm trong thư mục tạm.
+	LOG_DIR=${TEST_LOG_DIR:-$CFG/logs}
+	mkdir -p "$LOG_DIR"
+	FAILED=0
+	local t
 	for t in tests/*.lua; do
-		local -a cmd
 		# Test bất đồng bộ cần event loop -> luafile; -l thoát trước khi timer chạy.
 		if grep -q 'luafile' "$t"; then
-			cmd=(nvim --headless -u NONE -i NONE -c "luafile $t")
+			run_case "${t##*/}" nvim --headless -u NONE -i NONE -c "luafile $t"
 		else
-			cmd=(nvim --headless -u NONE -i NONE -l "$t" "$ROOT")
-		fi
-		case_dir="$cfg/lua-${t##*/}"
-		mkdir -p "$case_dir/home" "$case_dir/config" "$case_dir/cache" "$case_dir/data" "$case_dir/state"
-		if HOME="$case_dir/home" XDG_CONFIG_HOME="$case_dir/config" XDG_CACHE_HOME="$case_dir/cache" \
-			XDG_DATA_HOME="$case_dir/data" XDG_STATE_HOME="$case_dir/state" CODEX_HOME="$case_dir/home/.codex" \
-			TMUX='' with_timeout 120 "${cmd[@]}" >/dev/null 2>&1; then
-			echo "ok   $t"
-		else
-			echo "FAIL $t (rerun: TMUX= ${cmd[*]})"
-			failed=1
+			run_case "${t##*/}" nvim --headless -u NONE -i NONE -l "$t" "$ROOT"
 		fi
 	done
 	for t in tests/*_test.sh; do
 		[[ -f "$t" ]] || continue
-		case_dir="$cfg/shell-${t##*/}"
-		mkdir -p "$case_dir/home" "$case_dir/config" "$case_dir/cache" "$case_dir/data" "$case_dir/state"
-		if HOME="$case_dir/home" XDG_CONFIG_HOME="$case_dir/config" XDG_CACHE_HOME="$case_dir/cache" \
-			XDG_DATA_HOME="$case_dir/data" XDG_STATE_HOME="$case_dir/state" CODEX_HOME="$case_dir/home/.codex" \
-			with_timeout 120 bash "$t" >/dev/null 2>&1; then
-			echo "ok   $t"
-		else
-			echo "FAIL $t (rerun: bash $t)"
-			failed=1
-		fi
+		run_case "${t##*/}" bash "$t"
 	done
-	rm -rf "$cfg"
-	return "$failed"
+	t=tests/test_material_folder_icons.py
+	if ! command -v python3 >/dev/null || ! python_has_tomllib; then
+		echo "SKIP ${t##*/} (needs python3 >= 3.11 with tomllib)"
+	elif ! command -v luac >/dev/null; then
+		echo "SKIP ${t##*/} (needs luac)"
+	else
+		run_case "${t##*/}" python3 "$t"
+	fi
+	[[ -n ${TEST_LOG_DIR:-} ]] || rm -rf "$LOG_DIR"
+	rm -rf "$CFG"
+	return "$FAILED"
 }
 
 case "${1:-all}" in

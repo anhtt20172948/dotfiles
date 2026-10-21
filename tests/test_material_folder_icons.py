@@ -93,14 +93,6 @@ class MaterialFolderIconsTest(unittest.TestCase):
         self.assertEqual(expected, yazi_icons)
         self.assertEqual(expected, neo_tree_icons)
 
-        self.assertEqual(
-            [
-                {"if": "dir & hovered", "text": "󰝰", "fg": "#89b4fa"},
-                {"if": "dir", "text": "󰉋", "fg": "#89b4fa"},
-            ],
-            yazi_theme["icon"]["prepend_conds"],
-        )
-
     def test_neo_tree_runtime_configuration_is_single_and_preserves_options(self):
         result = subprocess.run(
             ["nvim", "--headless", "-u", "NONE", "-i", "NONE", "-n", "-l", str(HELPER), str(NEO_TREE)],

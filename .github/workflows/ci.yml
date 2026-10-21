@@ -43,24 +43,97 @@ jobs:
 
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
+    env:
+      TEST_LOG_DIR: ${{ runner.temp }}/test-logs
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - run: sudo apt-get update && sudo apt-get install -y jq tmux python3 zsh
-      # Run the complete shell-test subset of tests/run.sh. Skip tests/*.lua:
-      # they need newer Neovim APIs and plugin fixtures rather than stock Ubuntu
-      # Neovim. No plugin downloads, network-dependent tests or display are used.
-      - name: Shell and Python CLI tests
+      # lua5.4 provides luac for tests/test_material_folder_icons.py.
+      - run: sudo apt-get update && sudo apt-get install -y jq tmux python3 zsh lua5.4
+      # The Lua tests need newer Neovim APIs than stock Ubuntu ships.
+      - name: Install Neovim 0.11.7
+        working-directory: ${{ runner.temp }}
         run: |
+          curl -fsSL https://github.com/neovim/neovim/releases/download/v0.11.7/nvim-linux-x86_64.tar.gz -o nvim.tar.gz
+          echo '38a7c6317f94503841096c00e8fde05ef04b9472fc9d7d62b6e033cecd6f7991  nvim.tar.gz' | sha256sum -c -
+          tar -xzf nvim.tar.gz
+          echo "$PWD/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
+      # Complete test entry point (Lua, shell and Python cases). No plugin
+      # downloads, network-dependent tests or display are used.
+      - name: Tests
+        run: |
+          nvim --version | head -n 1
+          luac -v
+          python3 --version
           HOME=$(mktemp -d)
           export HOME
           export XDG_CONFIG_HOME="$HOME/.config" XDG_CACHE_HOME="$HOME/.cache"
           export XDG_DATA_HOME="$HOME/.local/share" XDG_STATE_HOME="$HOME/.local/state"
           export CODEX_HOME="$HOME/.codex"
-          for test in tests/*_test.sh; do
-            echo "Running $test"
-            timeout 120 bash "$test"
-          done
+          bash tests/run.sh test
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-logs-ubuntu
+          path: ${{ runner.temp }}/test-logs
+          if-no-files-found: ignore
+
+  # Stock macOS: /bin/bash 3.2, BSD tools and no GNU timeout. PATH is curated so
+  # Homebrew's GNU tools cannot mask the compatibility paths this job exists to test.
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 15
+    env:
+      TEST_LOG_DIR: ${{ runner.temp }}/test-logs
+    defaults:
+      run:
+        shell: /bin/bash --noprofile --norc -eo pipefail {0}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install test tools
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        working-directory: ${{ runner.temp }}
+        run: |
+          brew install jq tmux lua python@3.12
+          curl -fsSL https://github.com/neovim/neovim/releases/download/v0.11.7/nvim-macos-arm64.tar.gz -o nvim.tar.gz
+          echo '9c84686ce84bbab725ff3d88ca3ac1d6da5a72128b68d9dd8094e34d4049a126  nvim.tar.gz' | shasum -a 256 -c -
+          tar -xzf nvim.tar.gz
+          curl -fsSL https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz -o shellcheck.tar.xz
+          echo '56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79  shellcheck.tar.xz' | shasum -a 256 -c -
+          tar -xJf shellcheck.tar.xz
+          mkdir ci-bin
+          ln -s "$PWD/nvim-macos-arm64/bin/nvim" "$PWD/shellcheck-v0.11.0/shellcheck" ci-bin/
+          ln -s "$(brew --prefix jq)/bin/jq" "$(brew --prefix tmux)/bin/tmux" "$(brew --prefix lua)/bin/luac" ci-bin/
+          ln -s "$(brew --prefix python@3.12)/bin/python3.12" ci-bin/python3
+      - name: Stock-shell lint and tests
+        run: |
+          export PATH="$RUNNER_TEMP/ci-bin:/usr/bin:/bin:/usr/sbin:/sbin"
+          /bin/bash --version | head -n 1
+          nvim --version | head -n 1
+          shellcheck --version | sed -n 2p
+          tmux -V
+          jq --version
+          luac -v
+          python3 --version
+          ruby -ryaml -e 'puts "Ruby YAML available"'
+          command -v bash stat wc sed readlink perl
+          if command -v timeout gtimeout; then echo "GNU timeout must not be on PATH" >&2; exit 1; fi
+          HOME=$(mktemp -d)
+          export HOME
+          export XDG_CONFIG_HOME="$HOME/.config" XDG_CACHE_HOME="$HOME/.cache"
+          export XDG_DATA_HOME="$HOME/.local/share" XDG_STATE_HOME="$HOME/.local/state"
+          export CODEX_HOME="$HOME/.codex" TMUX=''
+          /bin/bash tests/run.sh lint
+          /bin/bash tests/run.sh test
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-logs-macos
+          path: ${{ runner.temp }}/test-logs
+          if-no-files-found: ignore
 
   secrets:
     runs-on: ubuntu-24.04
