@@ -242,7 +242,7 @@ print_claude_usage() {
   local messages input output cache_read cache_write first last
 
   print_section 'LOCAL USAGE'
-  project_dir="$HOME/.claude/projects/${PWD//\//-}"
+  project_dir="$HOME/.claude/projects/$(ai_claude_project_slug "$(ai_physical_dir "$PWD")")"
   if ! have jq || [[ ! -d "$project_dir" ]]; then
     printf '  %sNo local Claude usage data found for this directory.%s\n' "$yellow" "$reset"
     printf '  Use %s/usage%s inside Claude Code for subscription limits.\n' "$bold" "$reset"
