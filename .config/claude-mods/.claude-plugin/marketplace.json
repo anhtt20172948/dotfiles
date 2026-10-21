@@ -1,7 +1,7 @@
 {
   "name": "dotfiles-mods",
   "description": "Claude Code mods kept in these dotfiles",
-  "owner": { "name": "thanh.nguyen" },
+  "owner": { "name": "anh.tran" },
   "plugins": [
     { "name": "pixel-pet", "source": "./pixel-pet" }
   ]
