@@ -8,7 +8,7 @@ trap '/bin/rm -rf -- "$TMP"' EXIT
 export HOME="$TMP/home" FIRSTMATE_DIR="$TMP/firstmate" TMUX=mock
 export LOG="$TMP/tmux.log" PICKER="$TMP/picker" QUOTA_LOG="$TMP/quota.log"
 mkdir -p "$TMP/bin" "$HOME" "$FIRSTMATE_DIR/.git"
-for tool in bash dirname readlink realpath awk jq timeout cat sleep mktemp stat mv rm sed; do
+for tool in bash dirname readlink realpath awk jq timeout cat sleep mktemp stat mv rm sed sha256sum; do
   ln -s "$(command -v "$tool")" "$TMP/bin/$tool"
 done
 cat > "$TMP/bin/tmux" <<'MOCK'

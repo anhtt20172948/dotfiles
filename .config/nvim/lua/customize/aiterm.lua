@@ -933,7 +933,8 @@ function M.skills_use()
 		vim.schedule_wrap(function(r)
 			local out = r.stdout and vim.trim(r.stdout) or ""
 			if r.code ~= 0 or out == "" then
-				local why = (r.stderr and vim.trim(r.stderr) ~= "") and vim.trim(r.stderr) or ("exit " .. tostring(r.code))
+				local why = (r.stderr and vim.trim(r.stderr) ~= "") and vim.trim(r.stderr)
+					or ("exit " .. tostring(r.code))
 				notify(("skills use failed (%s) — thử kèm @skill"):format(why), "warn")
 				return
 			end
@@ -1922,7 +1923,11 @@ function M.pick(opts)
 					local e = target.entry
 					lines[#lines + 1] = ("  %s: %s [%s]"):format(target.tool.name, e.title or e.id, e.id)
 				end
-				local prompt = ("Delete %d past session(s) (%s)?\n%s"):format(#targets, table.concat(tools, ", "), table.concat(lines, "\n"))
+				local prompt = ("Delete %d past session(s) (%s)?\n%s"):format(
+					#targets,
+					table.concat(tools, ", "),
+					table.concat(lines, "\n")
+				)
 				if skipped > 0 then
 					prompt = prompt .. ("\nSkipped %d non-past item(s)."):format(skipped)
 				end
@@ -2388,8 +2393,7 @@ end
 local function build_message(instruction, ctx)
 	local l = { instruction, "" }
 	if ctx.file then
-		l[#l + 1] = ctx.l1 and ("@%s (lines %d-%d)"):format(ctx.file, ctx.l1, ctx.l2)
-			or ("@%s"):format(ctx.file)
+		l[#l + 1] = ctx.l1 and ("@%s (lines %d-%d)"):format(ctx.file, ctx.l1, ctx.l2) or ("@%s"):format(ctx.file)
 	end
 	if ctx.code then
 		l[#l + 1] = "```" .. (ctx.lang or "")

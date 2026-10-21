@@ -215,8 +215,9 @@ print(json.dumps({'providers': [p]}))
         fzf = self.home / 'bin/fzf'
         fzf.write_text('#!/bin/sh\ncat > "$HOME/menu-input"\nexit 130\n')
         fzf.chmod(0o700)
+        env = {k: v for k, v in self.env.items() if k != 'NO_COLOR'}
         result = subprocess.run(['bash', str(ROOT / '.config/tmux/scripts/ai-account.sh')],
-                                env={**self.env, 'TMUX': ''}, capture_output=True,
+                                env={**env, 'TMUX': ''}, capture_output=True,
                                 text=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         menu = (self.home / 'menu-input').read_text()
@@ -283,7 +284,8 @@ print(json.dumps({'providers': [p]}))
 
     def test_forced_color_for_pipes_but_no_color_wins(self):
         self.run_cli('status')
-        forced = subprocess.run([str(ACCT), 'list', '--quota'], env={**self.env, 'AI_ACCT_COLOR': '1'},
+        env = {k: v for k, v in self.env.items() if k != 'NO_COLOR'}
+        forced = subprocess.run([str(ACCT), 'list', '--quota'], env={**env, 'AI_ACCT_COLOR': '1'},
                                 capture_output=True, text=True, timeout=15).stdout
         self.assertIn('\x1b[32m', forced)
         silenced = subprocess.run([str(ACCT), 'list', '--quota'],
