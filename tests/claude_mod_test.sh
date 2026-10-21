@@ -10,7 +10,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
 MODS=.config/claude-mods
 MARKET=dotfiles-mods
-NAMES=(pixel-pet)
+NAMES=(pixel-pet crew-watch)
 TMP=$(mktemp -d)
 trap 'rm -rf -- "$TMP"' EXIT
 export HOME="$TMP/home"
@@ -62,6 +62,14 @@ jq -e --arg id "pixel-pet@$MARKET" '.enabledPlugins[$id] == false and .enabledPl
 	"$settings" >/dev/null || fail "install.sh overrode enabledPlugins"
 jq -e --arg gone "gone@$MARKET" '.enabledPlugins | has($gone) | not' "$settings" >/dev/null ||
 	fail "install.sh kept a mod the marketplace no longer lists"
+
+# Parser tests also run on hosts without Claude Code.
+for name in "${NAMES[@]}"; do
+	for parser_test in "$ROOT/$MODS/$name"/tests/*_test.py; do
+		[[ -f "$parser_test" ]] || continue
+		python3 "$parser_test" || fail "$name parser tests"
+	done
+done
 
 if ! command -v claude >/dev/null; then
 	echo "skip: claude not installed, mod validate/test not run"

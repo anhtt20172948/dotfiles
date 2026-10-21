@@ -3,6 +3,7 @@
   "description": "Claude Code mods kept in these dotfiles",
   "owner": { "name": "anh.tran" },
   "plugins": [
-    { "name": "pixel-pet", "source": "./pixel-pet" }
+    { "name": "pixel-pet", "source": "./pixel-pet" },
+    { "name": "crew-watch", "source": "./crew-watch" }
   ]
 }

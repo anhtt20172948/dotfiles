@@ -1,0 +1,71 @@
+/** Pure dashboard geometry and reducers. No engine calls or UI elements. */
+import type { ActivityBucket, CrewEvent, CrewMember } from '../types'
+
+export const memberKey = (m: Pick<CrewMember, 'home' | 'id'>): string => `${m.home}:${m.id}`
+
+export const toggleExpanded = (current: string | null, key: string): string | null => current === key ? null : key
+
+export const dashboardLayout = (width: number, placement: string, count: number) => {
+  const columns = Math.max(1, Math.min(count, Math.floor((width + 1) / 37)))
+  return {
+    mode: placement === 'inline' ? 'mini' as const : count > columns ? 'lanes' as const : 'cards' as const,
+    columns,
+    cardWidth: Math.floor((width - columns + 1) / columns),
+    shown: placement === 'inline' ? Math.min(count, 3) : count,
+  }
+}
+
+export const harnessColor = (harness: string): string =>
+  harness.startsWith('claude') ? 'claude' : harness === 'codex' ? 'suggestion' : harness === 'pi' ? 'merged' : 'permission'
+
+export const activityState = (lastAt: number, now: number): { mark: string; label: string; color: string } => {
+  const age = lastAt > 0 ? Math.max(0, now - lastAt) : Infinity
+  return age < 120000 ? { mark: '●', label: 'active', color: 'success' }
+    : age < 900000 ? { mark: '◐', label: 'quiet', color: 'warning' }
+      : { mark: '○', label: 'stale', color: 'subtle' }
+}
+
+/** A terminal status remains authoritative while the worker awaits its supervisor. */
+export const crewState = (m: Pick<CrewMember, 'lastAt' | 'status'>, now: number) => {
+  const status = /^\s*([a-z-]+)\b/i.exec(m.status)?.[1]?.toLowerCase()
+  if (status === 'done') return { mark: '✓', label: 'done · waiting for firstmate', color: 'merged' }
+  if (status === 'blocked' || status === 'failed' || status === 'needs-decision') return { mark: '×', label: 'blocked', color: 'error' }
+  if (status === 'paused' || status === 'waiting') return { mark: '◷', label: 'paused / waiting', color: 'permission' }
+  const idle = activityState(m.lastAt, now)
+  return status === 'working' && idle.label === 'active' ? { ...idle, label: 'working' } : idle
+}
+
+/** The axis gutter is the same geometry as each mark, name and explicit gap. */
+export const laneGeometry = (width: number) => {
+  const markWidth = 2
+  const nameWidth = 16
+  const gap = 1
+  const offset = markWidth + nameWidth + gap
+  const cells = Math.max(4, Math.min(60, width - offset - 10))
+  const start = `-${cells - 1}m`
+  const axis = start.padEnd(Math.max(start.length, cells - 3), ' ').slice(0, cells - 3) + 'now'
+  return { markWidth, nameWidth, gap, offset, cells, axis }
+}
+
+/** Every lane ends in the same current minute; at most 60 cells, one per minute. */
+export const activityLane = (activity: readonly ActivityBucket[], now: number, width: number): string => {
+  const cells = Math.max(1, Math.min(60, Math.floor(width)))
+  const end = Math.floor(now / 60000)
+  const counts = new Map(activity.map(b => [b.minute, b.count]))
+  return Array.from({ length: cells }, (_, i) => (counts.get(end - cells + i + 1) ?? 0) > 0 ? '▰' : '·').join('')
+}
+
+type ModelSource = { models: Readonly<Record<string, number>> }
+export const fleetModels = (crew: readonly ModelSource[]): [string, number][] => {
+  const totals = crew.reduce<Record<string, number>>((sum, m) =>
+    Object.entries(m.models).reduce((next, [model, n]) => ({ ...next, [model]: (next[model] ?? 0) + n }), sum), {})
+  return Object.entries(totals).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+}
+
+type LogSource = Pick<CrewMember, 'home' | 'id' | 'harness'> & { events: readonly CrewEvent[] }
+export const recentLog = (crew: readonly LogSource[], limit = 8) =>
+  crew.flatMap(m => m.events.map(event => ({ ...event, who: m.id, key: memberKey(m), color: harnessColor(m.harness) })))
+    .sort((a, b) => a.at - b.at || a.key.localeCompare(b.key)).slice(-Math.max(1, limit))
+
+export const sortedTools = (tools: Readonly<Record<string, number>>) =>
+  Object.entries(tools).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))

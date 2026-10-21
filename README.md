@@ -177,9 +177,35 @@ while working on a mod, start a session with `claude --plugin-dir
 
 Check a change to a mod with `claude plugin validate`, `tsc -p` and
 `claude plugin test` on its folder (`tests/claude_mod_test.sh` checks the
-marketplace and the settings `install.sh` writes, and runs the first and last
-for every mod when `claude` is installed). `tsc -p` needs the types the engine
+marketplace and the settings `install.sh` writes, runs each mod's
+`tests/*_test.py` with `python3`, and runs the first and last for every mod
+when `claude` is installed). `tsc -p` needs the types the engine
 lays in `.claude-plugin/types` the first time it loads the mod.
+
+### crew-watch
+
+`.config/claude-mods/crew-watch` draws a fleet dashboard with rounded crew
+cards, theme colours, token/request/tool totals, per-model counts and cache-hit
+gauges. Each card shows activity and status, models and effort,
+input/output/thinking tokens, context usage, cache reads/writes and top tools.
+Context percentages appear only when the transcript supplies a window size.
+
+`/crew` opens or closes the pane; `/crew refresh` reads the logs immediately.
+Keys `1`–`9` expand a crewmate's details, branch, model/tool counts and recent
+calls. Cards sit side by side when they fit, above activity lanes on a shared
+minute axis; larger fleets get only the lanes. A crew log with local-time
+timestamps follows them.
+Inline above the prompt, the dashboard shrinks to at most eight rows; dock it
+for full details.
+It reads the Claude Code transcripts and Codex rollouts each task wrote since it
+first started (worktree slots are reused; a relaunch keeps earlier usage),
+follows secondmate homes, and shows a summary in the status line. The layout takes inspiration from
+[claude-flightdeck](https://github.com/scasella/claude-flightdeck).
+
+Its two options in `/config` are `homes` (Firstmate homes, comma-separated;
+empty defaults to the session's working directory) and `intervalSeconds`
+(refresh interval in seconds, default `5`). Parsed log offsets are cached in
+`~/.cache/crew-watch/cache.json` so refreshes read only appended content.
 
 ### pixel-pet
 
