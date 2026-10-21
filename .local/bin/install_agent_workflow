@@ -61,9 +61,17 @@ have() { command -v "$1" >/dev/null 2>&1; }
 check_deps() {
 	local missing=()
 	local bin
-	for bin in git tmux curl tar sha256sum node npm npx; do
+	for bin in git tmux curl tar node npm npx; do
 		have "$bin" || missing+=("$bin")
 	done
+	# macOS < 15 không có sha256sum, nhưng luôn có shasum.
+	if have sha256sum; then
+		SHA256=(sha256sum)
+	elif have shasum; then
+		SHA256=(shasum -a 256)
+	else
+		missing+=(sha256sum)
+	fi
 	((${#missing[@]} == 0)) || die "thiếu: ${missing[*]}"
 
 	local node_major
@@ -73,14 +81,20 @@ check_deps() {
 	local platform
 	platform="$(uname -s)-$(uname -m)"
 	case "$platform" in
-	Linux-x86_64) RELEASE_ARCH=amd64 ;;
-	Linux-aarch64) RELEASE_ARCH=arm64 ;;
-	*) die "chỉ hỗ trợ Linux x86_64/aarch64 (đang chạy $platform)" ;;
+	Linux-x86_64) RELEASE_PLATFORM=linux-amd64 ;;
+	Linux-aarch64) RELEASE_PLATFORM=linux-arm64 ;;
+	Darwin-x86_64) RELEASE_PLATFORM=darwin-amd64 ;;
+	Darwin-arm64) RELEASE_PLATFORM=darwin-arm64 ;;
+	*) die "chỉ hỗ trợ Linux/macOS x86_64/arm64 (đang chạy $platform)" ;;
 	esac
 
 	# gh không chặn việc cài, nhưng no-mistakes / firstmate cần nó để mở PR.
 	if ! have gh; then
-		warn "chưa có 'gh': sudo pacman -S github-cli && gh auth login"
+		if [[ "$platform" == Darwin-* ]]; then
+			warn "chưa có 'gh': brew install gh && gh auth login"
+		else
+			warn "chưa có 'gh': sudo pacman -S github-cli && gh auth login"
+		fi
 	elif ! gh auth status >/dev/null 2>&1; then
 		warn "'gh' chưa đăng nhập: gh auth login"
 	fi
@@ -102,7 +116,7 @@ install_go_release() {
 	fi
 
 	local base="https://github.com/kunchenguid/$name/releases/download/v$ver"
-	local asset="$name-v$ver-linux-$RELEASE_ARCH.tar.gz"
+	local asset="$name-v$ver-$RELEASE_PLATFORM.tar.gz"
 	local tmp
 	tmp=$(mktemp -d)
 	# Không dùng trap RETURN: nó còn dính sau khi hàm return và đụng biến local.
@@ -116,7 +130,7 @@ install_go_release() {
 	# Tự so hash thay vì `sha256sum -c` để chỉ kiểm đúng một dòng của asset này.
 	local want got
 	want=$(awk -v f="$asset" '$2 == f || $2 == "*" f { print $1 }' "$tmp/checksums.txt")
-	got=$(sha256sum "$tmp/$asset" | awk '{ print $1 }')
+	got=$("${SHA256[@]}" "$tmp/$asset" | awk '{ print $1 }')
 	if [[ -z "$want" || "$want" != "$got" ]]; then
 		rm -rf "$tmp"
 		die "checksum $asset không khớp (want=${want:-?} got=$got)"
