@@ -1,10 +1,11 @@
 local root = assert(arg[1], "repository root is required")
 package.path = root .. "/.config/nvim/lua/?.lua;" .. package.path
+vim.opt.rtp:prepend(root .. "/.config/nvim")
 local original = vim.fn.getcwd()
 local tmp = vim.fn.tempname()
 vim.fn.mkdir(tmp, "p")
 local repo = tmp .. "/main"
-local linked = tmp .. "/linked space"
+local linked = tmp .. "/linked space%#"
 local detached = tmp .. "/detached"
 local function git(...)
 	local result = vim.system({ "git", ... }, { text = true }):wait()
@@ -33,18 +34,20 @@ local function run()
 	local buf = vim.api.nvim_get_current_buf()
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "keep unsaved edits" })
 	local opts, notices
-	local worktrees = require("customize.git_worktrees")
 	local opened = {}
-	worktrees.open_files = function(path)
-		opened[#opened + 1] = path
-	end
 	local home = tmp .. "/home"
 	vim.fn.mkdir(home, "p")
 	vim.env.HOME, vim.env.TREEHOUSE_ROOT, vim.env.FIRSTMATE_DIR = home, nil, nil
 	_G.Snacks = {
-		picker = function(value)
-			opts = value
-		end,
+		picker = setmetatable({
+			files = function(value)
+				opened[#opened + 1] = value.cwd
+			end,
+		}, {
+			__call = function(_, value)
+				opts = value
+			end,
+		}),
 	}
 	vim.notify = function(message)
 		notices = message
@@ -70,7 +73,7 @@ local function run()
 			assert(item.text:find("current", 1, true))
 		end
 	end
-	assert(target, "path with spaces must remain intact")
+	assert(target, "path with spaces and literal %/# must remain intact")
 	local closed = false
 	local picker = {
 		close = function()
@@ -81,7 +84,8 @@ local function run()
 	assert(vim.fn.getcwd() == repo, "empty selection must not change cwd")
 	opts.confirm(picker, target)
 	assert(closed and vim.fn.getcwd() == linked, "confirmation must close picker and switch cwd")
-	assert(opened[#opened] == linked, "confirmation must open a file picker in the worktree: " .. vim.inspect(opened))
+	assert(#opened == 0, "confirmation must not open a file picker")
+	assert(vim.api.nvim_get_current_buf() == buf, "switch must keep the current buffer")
 	assert(vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].modified, "switch must preserve dirty buffers")
 	assert(vim.api.nvim_buf_get_lines(buf, 0, -1, false)[1] == "keep unsaved edits")
 	mapping[2]()
@@ -132,17 +136,7 @@ local function run()
 	git("-C", other, "worktree", "add", "-b", "fm/other-task", pool_other)
 	vim.fn.writefile({ "tracked" }, pool_main2 .. "/tracked.txt")
 	git("-C", pool_main2, "add", "tracked.txt")
-	git(
-		"-C",
-		pool_main2,
-		"-c",
-		"user.name=Test",
-		"-c",
-		"user.email=test@example.com",
-		"commit",
-		"-qm",
-		"tracked"
-	)
+	git("-C", pool_main2, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "tracked")
 	vim.fn.writefile({ "untracked" }, pool_main1 .. "/untracked.txt")
 	vim.fn.writefile({ "modified" }, pool_main2 .. "/tracked.txt")
 	local state = home .. "/.local/share/firstmate/state"
@@ -187,13 +181,13 @@ local function run()
 	mapping[2]()
 	assert(index_of(other) == 1 and index_of(pool_other) == 2, "cwd repo must sort first from another repo")
 
-	-- Mở worktree treehouse: cwd đổi, file picker mở ở đó, git tools chạy trong đó.
+	-- Mở worktree treehouse: chỉ đổi cwd, git tools chạy trong đó.
 	vim.cmd.cd(repo)
 	mapping[2]()
 	local pool_item = opts.items[index_of(pool_main2)]
 	opts.confirm(picker, pool_item)
 	assert(vim.fn.getcwd() == vim.uv.fs_realpath(pool_main2), "opening a treehouse worktree must change cwd")
-	assert(opened[#opened] == pool_main2)
+	assert(#opened == 0, "treehouse switch must not open a file picker")
 	assert(git("-C", vim.fn.getcwd(), "rev-parse", "--show-toplevel") == vim.uv.fs_realpath(pool_main2))
 
 	assert(git("-C", pool_main2, "status", "--porcelain") == before, "picker must leave worktrees untouched")

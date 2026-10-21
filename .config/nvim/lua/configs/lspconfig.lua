@@ -137,11 +137,7 @@ vim.lsp.config("lua_ls", {
 	},
 })
 
--- Harper (grammar/spell) — restrict to prose filetypes ONLY.
--- mason-lspconfig auto-enables it under the real name `harper_ls`, whose default
--- filetypes include C/C++/Python/etc. That made Harper spell-check code comments
--- (the "Did you mean to spell 's'" noise). Pin its filetypes to prose.
+-- Harper is opt-in via <leader>uH; keep grammar/spell checks limited to prose.
 vim.lsp.config("harper_ls", {
 	filetypes = { "markdown", "text", "tex", "typst", "gitcommit" },
 })
-vim.lsp.enable("harper_ls")
