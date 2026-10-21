@@ -162,7 +162,7 @@ ai_iso_to_epoch() {
 }
 
 # --- Files by mtime -----------------------------------------
-# ai_recent_files <dir> <maxdepth> <limit> [name-glob]
+# ai_recent_files <dir> <maxdepth> <limit> [name-glob] (limit 0 means all)
 #   Newest-first absolute paths, one per line.
 #
 # Replaces `find -printf '%T@ %p\n'`, which is GNU-only and produced ZERO output
@@ -181,10 +181,24 @@ ai_recent_files() {
       find "$dir" -maxdepth "$depth" -type f -name "$glob" \
         -exec stat -f '%m	%N' {} + 2>/dev/null
     fi
-  } | sort -rn | cut -f2- | head -n "$limit"
+  } | sort -rn | cut -f2- | {
+    if [ "$limit" = 0 ]; then cat; else head -n "$limit"; fi
+  }
 }
 
 # --- Misc ---------------------------------------------------
+# Resolve host symlinks as the native session pickers do. Container paths and
+# deleted directories can still be encoded without existing on this host.
+ai_physical_dir() {
+  (cd -P -- "$1" 2>/dev/null && pwd -P) || printf '%s' "$1"
+}
+
+# Claude project directories replace punctuation, including dots and underscores.
+ai_claude_project_slug() {
+  local path=$1 LC_COLLATE=C
+  printf '%s' "${path//[^a-zA-Z0-9]/-}"
+}
+
 # ai_capitalize <word> -> Word   (replaces the bash-4 ${word^})
 ai_capitalize() {
   local value=${1:-} first rest
@@ -495,7 +509,7 @@ extract_container_sessions() {
         ai_run_limited 30 docker cp \
           "$name:$chome/.claude/projects" "$dest/.claude/projects" >/dev/null 2>&1 || return 1
       else
-        cslug=${cpath//\//-}
+        cslug=$(ai_claude_project_slug "$cpath")
         mkdir -p "$dest/.claude/projects" || return 1
         ai_run_limited 30 docker cp \
           "$name:$chome/.claude/projects/$cslug" \

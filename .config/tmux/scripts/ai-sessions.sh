@@ -110,14 +110,18 @@ clean_title() {
 # all-mode, where it may differ from the currently scoped one.
 list_codex_sessions() {
   local root=${1:-$HOME} cwd=${2:-$PWD} all=${3:-0}
-  local files id epoch title dir file
+  local files id epoch title dir file limit=100
   have jq || return 0
   [ -d "$root/.codex/sessions" ] || return 0
+  if [ "$all" != 1 ]; then
+    limit=0
+    [ "$root" != "$HOME" ] || cwd=$(ai_physical_dir "$cwd")
+  fi
 
   files=()
   while IFS= read -r file; do
     [ -n "$file" ] && files+=("$file")
-  done < <(ai_recent_files "$root/.codex/sessions" 6 100)
+  done < <(ai_recent_files "$root/.codex/sessions" 6 "$limit")
   [ ${#files[@]} -gt 0 ] || return 0
 
   while IFS=$'\t' read -r id epoch title dir; do
@@ -180,21 +184,25 @@ list_opencode_sessions() {
 
 list_claude_sessions() {
   local root=${1:-$HOME} cwd=${2:-$PWD} all=${3:-0}
-  local scan_dir depth files id epoch title dir file
+  local scan_dir depth files id epoch title dir file limit=100
   have jq || return 0
   # Scoped: the one project's slug dir (files one level down). All: the whole
   # projects tree (slug dir + its files, so two levels down).
   if [ "$all" = 1 ]; then
     scan_dir="$root/.claude/projects"; depth=2
   else
-    scan_dir="$root/.claude/projects/${cwd//\//-}"; depth=1
+    [ "$root" != "$HOME" ] || cwd=$(ai_physical_dir "$cwd")
+    scan_dir="$root/.claude/projects/$(ai_claude_project_slug "$cwd")"; depth=1
+    # Different directories can share a slug. Filter cwd after reading every
+    # candidate so newer sessions from a colliding path cannot hide this cwd.
+    limit=0
   fi
   [ -d "$scan_dir" ] || return 0
 
   files=()
   while IFS= read -r file; do
     [ -n "$file" ] && files+=("$file")
-  done < <(ai_recent_files "$scan_dir" "$depth" 100)
+  done < <(ai_recent_files "$scan_dir" "$depth" "$limit")
   [ ${#files[@]} -gt 0 ] || return 0
 
   while IFS=$'\t' read -r id epoch title dir; do
@@ -353,7 +361,7 @@ delete_saved_session() {
         printf 'invalid session ID'
         return 2
       }
-      project_dir="$HOME/.claude/projects/${PWD//\//-}"
+      project_dir="$HOME/.claude/projects/$(ai_claude_project_slug "$(ai_physical_dir "$PWD")")"
       session_file="$project_dir/${session_id}.jsonl"
       session_dir="$project_dir/$session_id"
       [[ -f "$session_file" ]] && trash_targets+=("$session_file")
