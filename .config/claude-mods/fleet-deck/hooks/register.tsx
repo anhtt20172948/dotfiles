@@ -295,18 +295,20 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    // What draws beneath (another mod's band, the engine's) stays, below the fleet row.
+    const below = await next(e)
     const fleet = await read($, fleetAtom)
     const segments = fleet === null ? [] : bandSegments(fleet)
 
     if (e.props.hasSurvey || segments.length === 0) {
-      return next(e)
+      return below
     }
 
     const { Box, Text } = $.ui.resolve(e)
     const fit = fitSegments(segments, e.props.bodyColumns)
 
     return (
-      <Box>
+      <Box flexDirection="column">
         <Text wrap="truncate-end">
           <Text {...tone('dim')}>{BAND_LABEL}</Text>
           {fit.map(segment => (
@@ -316,6 +318,7 @@ export const register: Register = (on, options) => {
             </Text>
           ))}
         </Text>
+        {below}
       </Box>
     )
   })
