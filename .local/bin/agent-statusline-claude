@@ -84,10 +84,10 @@ exec jq -r --argjson totals "$totals" '
     elif . >= 1000 then "\(. / 100 | round / 10 | trim)k"
     else "\(. | round)" end;
   def field($name): if type == "object" then .[$name] else null end;
-  def limit($label; $fmt):
+  def limit($title; $fmt):
     . as $w
     | if ($w | field("used_percentage") | valid_number) then
-        "\($label) \($w.used_percentage | round)%"
+        "\($title) \($w.used_percentage | round)%"
         + (if ($w.resets_at | valid_number)
            then " (resets \($w.resets_at | strflocaltime($fmt)))" else "" end)
       else empty end;

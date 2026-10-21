@@ -38,13 +38,17 @@ done
 expected=$(IFS=:; echo "${want[*]}")
 
 # .zshenv adds each path once, even when sourced again by a nested shell, and
-# skips a folder that is not a mod.
-mkdir -p "$ROOT/$MODS/not-a-mod"
-trap 'rmdir -- "$ROOT/$MODS/not-a-mod"; rm -rf -- "$TMP"' EXIT
-dirs=$(ROOT=$ROOT zsh -c 'source "$ROOT/.zshenv"; source "$ROOT/.zshenv"; print -r -- "$CLAUDE_CODE_PLUGIN_DIRS"')
-[[ $dirs == "$expected" ]] || fail "CLAUDE_CODE_PLUGIN_DIRS is '$dirs', want $expected"
-dirs=$(ROOT=$ROOT CLAUDE_CODE_PLUGIN_DIRS=/other zsh -c 'source "$ROOT/.zshenv"; print -r -- "$CLAUDE_CODE_PLUGIN_DIRS"')
-[[ $dirs == "/other:$expected" ]] || fail "an existing CLAUDE_CODE_PLUGIN_DIRS must be kept, got '$dirs'"
+# skips a folder that is not a mod. Without zsh nothing reads .zshenv.
+if command -v zsh >/dev/null; then
+	mkdir -p "$ROOT/$MODS/not-a-mod"
+	trap 'rmdir -- "$ROOT/$MODS/not-a-mod"; rm -rf -- "$TMP"' EXIT
+	dirs=$(ROOT=$ROOT zsh -c 'source "$ROOT/.zshenv"; source "$ROOT/.zshenv"; print -r -- "$CLAUDE_CODE_PLUGIN_DIRS"')
+	[[ $dirs == "$expected" ]] || fail "CLAUDE_CODE_PLUGIN_DIRS is '$dirs', want $expected"
+	dirs=$(ROOT=$ROOT CLAUDE_CODE_PLUGIN_DIRS=/other zsh -c 'source "$ROOT/.zshenv"; print -r -- "$CLAUDE_CODE_PLUGIN_DIRS"')
+	[[ $dirs == "/other:$expected" ]] || fail "an existing CLAUDE_CODE_PLUGIN_DIRS must be kept, got '$dirs'"
+else
+	echo "skip: zsh not installed, .zshenv not checked"
+fi
 
 if ! command -v claude >/dev/null; then
 	echo "skip: claude not installed, mod validate/test not run"

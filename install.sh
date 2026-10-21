@@ -8,6 +8,9 @@
 # (~/.config/nvim -> repo/.config/nvim); đích là thư mục thật -> đi vào trong
 # và link từng con. File/symlink lạ đang chiếm chỗ được chuyển vào
 # ~/.dotfiles-backup/<thời điểm>/, không bao giờ xoá. Chạy lại an toàn.
+# Chỉ link thứ git track (hoặc đã `git add`): thứ untracked nằm trong repo, như
+# một bản clone firstmate, không bao giờ bị link ra $HOME. Checkout không có git
+# (tải tarball) thì link mọi thứ như trước.
 # ~/... trong chuỗi chỉ là nhãn hiển thị, không cần expand.
 # shellcheck disable=SC2088
 set -euo pipefail
@@ -37,7 +40,11 @@ NO_FOLD=(
 	.no-mistakes .gnhf .config/treehouse
 )
 
-linked=0 backed_up=0 unchanged=0
+linked=0 backed_up=0 unchanged=0 skipped=0
+
+# Mọi path git track, mỗi dòng một path, có dòng trống ở hai đầu; rỗng khi repo
+# không phải git checkout. Dạng chuỗi vì bash 3.2 của macOS không có mảng kết hợp.
+TRACKED=
 
 usage() {
 	echo "usage: ./install.sh [-n|--dry-run]" >&2
@@ -66,6 +73,20 @@ is_ignored() {
 	README* | LICENSE* | COPYING) return 0 ;;
 	esac
 	contains "$name" "${ROOT_IGNORE[@]}"
+}
+
+load_tracked() {
+	command -v git >/dev/null || return 0
+	git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+	# -z: tên có dấu (tiếng Việt) không bị git quote.
+	TRACKED=$'\n'$(git -C "$REPO" ls-files -z | tr '\0' '\n')$'\n'
+}
+
+# rel là file được track, hoặc thư mục chứa ít nhất một file được track.
+is_tracked() {
+	local rel=$1
+	[[ -z "$TRACKED" ]] && return 0
+	[[ "$TRACKED" == *$'\n'"$rel"$'\n'* || "$TRACKED" == *$'\n'"$rel"/* ]]
 }
 
 run() {
@@ -157,6 +178,11 @@ link_children() {
 		[[ -e "$path" || -L "$path" ]] || continue
 		child="${rel:+$rel/}${path##*/}"
 		is_ignored "$child" && continue
+		if ! is_tracked "$child"; then
+			[[ $DRY_RUN -eq 0 ]] || echo "skip    ~/$child (git không track)"
+			skipped=$((skipped + 1))
+			continue
+		fi
 		link_entry "$child" "$fresh"
 	done
 }
@@ -178,6 +204,7 @@ main() {
 	done
 
 	[[ $DRY_RUN -eq 1 ]] && echo "(dry-run: không thay đổi gì)"
+	load_tracked
 	link_children ""
 	# Global Claude instructions live outside the repo-only .claude directory.
 	if [[ -f "$REPO/.config/agents/CLAUDE.md" ]]; then
@@ -188,7 +215,7 @@ main() {
 		[[ $DRY_RUN -eq 0 ]] || status_args+=(--check)
 		"$REPO/.local/bin/install-agent-statusline" "${status_args[@]}" >/dev/null
 	fi
-	echo "done: $linked linked, $backed_up backed up, $unchanged already linked"
+	echo "done: $linked linked, $backed_up backed up, $unchanged already linked, $skipped untracked skipped"
 	if [[ $backed_up -gt 0 ]]; then
 		echo "backups in $BACKUP_DIR"
 	fi
