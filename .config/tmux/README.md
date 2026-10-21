@@ -1,6 +1,8 @@
 # tmux config
 
-Modular dotfile-based tmux configuration.
+Modular dotfile-based tmux configuration. Provision server tools through
+[workflow](https://github.com/anhtt20172948/workflow); this repository links
+configuration with `install.sh`.
 
 ## Structure
 

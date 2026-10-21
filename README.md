@@ -1,306 +1,180 @@
 # dotfiles
 
-Personal configuration files for an Arch Linux + Hyprland desktop. Each
-top-level entry mirrors its location in `$HOME`. `install.sh` links shared
-configs and merges the agent status-line fields - no root access or GNU stow.
+Personal shell, terminal, editor and desktop configuration for an Arch Linux +
+Hyprland setup, with shared CLI settings for servers. `install.sh` links the
+configuration into `$HOME` and merges agent status-line and context settings;
+it requires no root access or GNU Stow.
 
-## Repository layout
+## Quick start
 
+```bash
+git clone https://github.com/anhtt20172948/dotfiles.git ~/dotfiles
+cd ~/dotfiles
+./install.sh -n     # dry run
+./install.sh
 ```
-~/dotfiles/
-├── .config/            → XDG config (symlinked to ~/.config)
-│   ├── atuin/          → shell history database + sync
-│   ├── agents/         → canonical global rules + Claude import file
-│   ├── btop/           → resource monitor (config + themes)
-│   ├── clangd/         → C/C++ language server settings
-│   ├── hypr/           → Hyprland window manager
-│   ├── kitty/          → kitty terminal
-│   ├── lazydocker/     → Docker TUI
-│   ├── lazygit/        → Git TUI
-│   ├── nvim/           → Neovim (Lua, lazy.nvim)
-│   ├── opencode/       → global rules linked to agents/AGENTS.md
-│   ├── tmux/           → tmux (modular) + AI-session popups
-│   └── yazi/           → terminal file manager
-├── .local/bin/         → user scripts placed on $PATH
-├── .local/share/firstmate/config/crew-dispatch.json → worker dispatch rules
-├── .local/share/firstmate/data/captain.md → captain preferences for firstmate
-├── .tmux.conf          → tmux entrypoint (sources ~/.config/tmux/*)
-├── install.sh          → links the repo into $HOME
-├── .gitignore
-└── README.md
-```
+
+Server tool provisioning is managed by the separate
+[workflow](https://github.com/anhtt20172948/workflow) repository.
 
 ## Installation
 
-Prerequisites: `bash` and coreutils (`ln`, `mkdir`, `mv`, `readlink`). No
-`sudo` needed.
+The linker needs Bash, coreutils (including `readlink -f`) and Python 3.11+
+for the agent settings merge. Keep `~/.local/bin` on `PATH` to use the helpers.
+Install the applications you need separately.
 
-1. Clone the repository into your home directory:
+- Missing destinations are symlinked to this checkout. Existing real directories
+  are traversed so machine-only files stay in place.
+- Conflicting files or links are moved to `~/.dotfiles-backup/<timestamp>/`.
+  Links already pointing here are left alone.
+- Shared directories such as `~/.config`, `~/.local/bin` and agent state
+  directories stay real; existing directory symlinks outside this checkout are
+  preserved, so runtime data stays outside the checkout.
+- Root documentation, tests and project-only settings are excluded from linking.
 
-   ```bash
-   git clone https://github.com/yourusername/dotfiles.git ~/dotfiles
-   ```
+Global agent rules live in `.config/agents/AGENTS.md`; OpenCode links to them,
+and `.config/agents/CLAUDE.md` is linked to `~/.claude/CLAUDE.md` to import them.
+The installer preserves Claude credentials and leaves `~/.codex/AGENTS.md` alone.
 
-2. Preview, then create the symlinks:
+The settings merge preserves unrelated fields in `~/.claude/settings.json` and
+`~/.codex/config.toml`. Its values and footer items are defined in
+[install-agent-statusline](.local/bin/install-agent-statusline). Claude's status
+line uses [agent-statusline-claude](.local/bin/agent-statusline-claude) and needs
+`jq`; Codex uses its native footer. Preview just the merge with:
 
-   ```bash
-   ~/dotfiles/install.sh --dry-run
-   ~/dotfiles/install.sh
-   ```
+```bash
+~/.local/bin/install-agent-statusline --home "$HOME" --check
+```
 
-The installer folds directories the way stow does:
-
-- Destination missing: link it as a whole (`~/.config/nvim` →
-  `~/dotfiles/.config/nvim`).
-- Destination is a real directory: keep it and link its children one by one,
-  so files that only exist on this machine stay put.
-- Destination already links to the repo (including relative links left by an
-  earlier stow install): leave it.
-- Anything else in the way (a file, or a symlink pointing elsewhere) is moved to
-  `~/.dotfiles-backup/<timestamp>/` before linking; nothing is deleted.
-
-`~/.config`, `~/.local`, `~/.local/{bin,share,state}` and the agent-tool state
-dirs (`~/.no-mistakes`, `~/.gnhf`, `~/.config/treehouse`,
-`~/.local/share/firstmate`, `~/.local/share/firstmate/{config,data}`) are always kept as
-real directories (or left as-is if they are symlinks to another disk), so apps
-and the bootstrap scripts never write into the repo. Repo-only entries (`docs/`,
-`tests/`, the repo-level `.claude/`, `.no-mistakes.yaml`, `README.md`,
-`install.sh`, git files, editor backups) are never linked. Re-running is safe:
-it prints what it linked or backed up and touches nothing that is already in
-place.
-
-Global agent rules live in `~/.config/agents/AGENTS.md`. OpenCode's
-`~/.config/opencode/AGENTS.md` links to that file. The installer also maps
-`.config/agents/CLAUDE.md` to `~/.claude/CLAUDE.md`, importing the canonical
-rules with `@~/.config/agents/AGENTS.md`; the real `~/.claude` directory and its
-credentials stay in place. Existing instruction files receive the same backup
-treatment as other files. The repo-level `.claude/` remains project-only.
-Codex's externally managed `~/.codex/AGENTS.md` is left untouched; incorporating
-these rules there requires a later change through its managing tool.
-
-The installer also merges status-line and context settings into the existing
-`~/.claude/settings.json` and `~/.codex/config.toml`, preserving unrelated settings.
-Claude's `env` gets `CLAUDE_CODE_AUTO_COMPACT_WINDOW="1000000"` and
-`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE="60"`: a 1M auto-compact window with a 60%
-threshold (about 600k tokens, allowing for CLI output reserves). The explicit
-window avoids a smaller tuned default; the percentage applies to proactive
-compaction. Model and effort defaults are preserved, including `opus[1m]`.
-[Claude's model documentation](https://code.claude.com/docs/en/model-config#extended-context)
-explains which models support 1M, when `[1m]` is needed, and access requirements.
-Smaller models remain capped at their supported window. See the
-[Claude environment reference](https://code.claude.com/docs/en/env-vars).
-Codex gets global `model_context_window = 872000` and
-`model_auto_compact_token_limit = 523200` (60%), using the installed model
-catalog's maximum of 872k rather than an unavailable 1M window. These
-[Codex keys](https://developers.openai.com/codex/config-reference) are top-level,
-not per-model; neither setting grants a model more server-side capacity.
-
-Claude renders its live model, effort, context percentages,
-current input tokens, 5-hour and weekly rate-limit usage with reset times,
-session input/output token totals, and their average per-second rate over API
-time through `.local/bin/agent-statusline-claude` (`jq` required). Session totals
-are summed from the session transcript; rate limits exist only for claude.ai
-subscriptions. Codex uses its native footer items for model with reasoning,
-context used and remaining percentages, context window size, 5-hour and weekly
-limits, and total input/output tokens (it has no throughput item). Segments
-without data are omitted. Python 3.11 or newer is required
-for the settings merge. To run only that merge after another linker has placed
-the scripts, use `~/.local/bin/install-agent-statusline --home "$HOME"`; add
-`--check` for a no-write preview. It prints a JSON `changed` flag and a list of
-the affected CLIs.
-
-Firstmate's dispatch config is linked as a single file. Its home and `config/`
-directory stay real so private settings and runtime state remain outside git.
-Captain preferences (`data/captain.md`) are linked the same way, with `data/`
-left real for the backlog and task records. Firstmate's own later edits to
-captain preferences land in the dotfiles copy, so commit them from the repo.
+Firstmate's `config/crew-dispatch.json` and `data/captain.md` are linked
+individually under `~/.local/share/firstmate`, keeping its runtime directories
+real. Edits to those linked files change this checkout.
 
 ## Configurations
 
-| Directory | Tool | Notes |
-|-----------|------|-------|
-| `.config/nvim` | Neovim | Lua config bootstrapped from `init.lua` → `core` → `configs.lazy`. Plugins managed by [lazy.nvim](https://github.com/folke/lazy.nvim) (~65 plugins) under `lua/plugins/`, with `lua/{core,configs,customize,lib}` for options, setup and helpers. Pinned by `lazy-lock.json`. |
-| `.config/hypr` | Hyprland | Modular config: `hyprland.conf` sources `conf/`, `keybindings*.conf`, `monitors.conf`, `workspaces.conf`, `effects/`, plus `hyprlock` (lock screen), `hyprpaper.conf` (wallpaper) and `scripts/`. Integrates [DankMaterialShell](https://github.com/AvengeMedia/DankMaterialShell) via `dms/`. |
-| `.config/kitty` | kitty terminal | `SFMono Nerd Font`, modular theme files. Includes a `symbol_map` setup that enlarges Nerd Font icons — see [.config/kitty/README.md](.config/kitty/README.md). |
-| `.config/tmux` | tmux | Split across module files sourced by `~/.tmux.conf`, with fzf-driven popups and persistent per-project AI coding sessions — see [.config/tmux/README.md](.config/tmux/README.md). |
-| `.config/yazi` | yazi | Terminal file manager: `yazi.toml`, `theme.toml`, `keymap` and `init.lua`. `flavors/` holds vendored upstream color themes (catppuccin, rose-pine, dracula, tokyo-night). |
-| `.config/btop` | btop | Resource monitor `btop.conf` plus a `themes/` collection. |
-| `.config/atuin` | atuin | Shell-history replacement (`config.toml`) for searchable, synced history. |
-| `.config/lazygit` | lazygit | Terminal UI for Git (`config.yml`). |
-| `.config/lazydocker` | lazydocker | Terminal UI for Docker (`config.yml`). |
-| `.config/clangd` | clangd | C/C++ language-server options (`config.yaml`). |
+| Directory | Configuration |
+|-----------|---------------|
+| `.config/nvim` | Neovim: Lua, lazy.nvim and `lazy-lock.json`; see [Neovim](#neovim). |
+| `.config/tmux` | Modular tmux config and persistent AI popups; see [tmux](#tmux). |
+| `.config/kitty` | Terminal font and themes; see [font configuration](.config/kitty/README.md). |
+| `.config/hypr` | Hyprland, lock screen, wallpaper and DankMaterialShell integration. |
+| `.config/yazi` | File manager settings and vendored color themes. |
+| `.config/btop` | Resource monitor settings and themes. |
+| `.config/atuin` | Shell history settings. |
+| `.config/lazygit`, `.config/lazydocker` | Git and Docker TUI settings. |
+| `.config/clangd` | C/C++ language server settings. |
+
+### tmux
+
+[.tmux.conf](.tmux.conf) sources the modules in `.config/tmux`. The prefix is
+`Ctrl-b`. `prefix a` opens the AI tool/session picker; `prefix A` attaches the
+most recent live agent for the project. `prefix F` opens the agent workflow
+menu, `prefix C` the crew view, `prefix E` the Claude account menu, and
+`prefix Q` the quota TUI.
+
+See the [tmux README](.config/tmux/README.md) for bindings and dependencies,
+including `fzf`, `fd`, `rg`, `bat`, `jq`, `sqlite3` and `sesh`. Install tmux and
+TPM through `workflow` on servers; the local tmux entrypoint also has a TPM
+bootstrap for other installations.
+
+### Neovim
+
+[init.lua](.config/nvim/init.lua) loads `core`, `configs.lazy` and
+`current-theme`. Plugin declarations live in `.config/nvim/lua/plugins`, with
+setup and helpers in `lua/core`, `lua/configs`, `lua/customize` and `lua/lib`.
+The leader key is Space.
+
+| Binding | Action |
+|---------|--------|
+| `<leader>gw` | Pick a Git or treehouse worktree. |
+| `<leader>ap` / `<leader>aP` | Push through no-mistakes / view pipelines. |
+| `<leader>ag` / `<leader>aW` | Start a gnhf loop / an AI session in a worktree. |
+| `<leader>aF` / `<leader>aR` | Open Firstmate / review a worker's changes. |
+| `<leader>au` | Open the Claude account menu. |
 
 ## Agent workflow
 
-Worktree pool, pre-push quality gate, overnight agent loops and a multi-agent
-orchestrator on top of the AI CLIs (treehouse, no-mistakes, gnhf, firstmate).
-Install with `install_agent_workflow`; tmux `prefix F` / `prefix C`, Neovim
-`<leader>ap` / `<leader>ag` / `<leader>aW` / `<leader>aF` / `<leader>aR`. See
-[docs/agent-workflow.md](docs/agent-workflow.md). The first mate launcher shows
-remaining quota and offers Claude account, model and effort choices before starting a new session.
+The configuration integrates treehouse, no-mistakes, gnhf and Firstmate with
+the AI CLIs. Firstmate's launcher offers agent, Claude account, model and
+effort choices; an existing Firstmate window is focused directly. See
+[docs/agent-workflow.md](docs/agent-workflow.md) for daily use.
+Use `workflow` for supported server provisioning; `install.sh` links the
+configuration and does not install these tools.
+
+## Claude account switching
+
+`ai-acct` selects named Claude OAuth tokens while keeping one shared
+`~/.claude` directory and `~/.claude.json`, so history survives account switches.
+Codex retains its single account. Requirements: `claude`, `jq`, Python 3 and
+`quota-axi`; tmux is optional.
+
+```bash
+ai-acct add personal      # enter the token at the hidden prompt
+ai-acct use personal
+ai-acct list
+ai-acct status            # quota for Claude accounts and Codex
+```
+
+Names start with a lowercase letter or digit and contain only lowercase
+letters, digits, `-` and `_` (up to 32 characters). Tokens are read from stdin,
+never arguments, and stored in `~/.config/claude-accounts/NAME.token` with mode
+`600`; new account directories use mode `700`. Never commit tokens or put them
+in shell commands or logs.
+
+`ai-acct edit NAME` replaces a token, `ai-acct rename OLD NEW` renames an account,
+and `ai-acct remove NAME` deletes it. `ai-acct use NAME` writes the `active`
+selector, marks Claude onboarding complete and updates tmux's environment for
+future panes. It validates the local token without an authentication request.
+Running processes retain their token, and the parent shell is unchanged.
+Launch with `ai-acct exec claude`, a new zsh shell, or exit the main Claude
+process and run `ai-acct resume` to continue it from
+`${FM_HOME:-$HOME/.local/share/firstmate}`.
+
+`ai-acct list --quota` adds compact quota bars. Quota readings are cached;
+older readings show their age and missing readings show an explicit unknown or
+unavailable state. The account menu remains usable while quota refreshes.
+In Neovim, `:AiAccount` shows quota and `:AiAccount use NAME` selects an account;
+the status line shows `AI:NAME`.
 
 ## Remote helper scripts
 
-`.local/bin/show` and `.local/bin/download` search a list of SSH hosts in
-parallel for a given path, then open it or copy it down. They live in
-`.local/bin` so `install.sh` puts them on `$PATH`.
+`show` and `download` search SSH hosts in parallel for a path. `show` mounts
+the remote root with `sshfs` and opens the item using a local application;
+`download` copies it with `rsync`.
 
 ```bash
-show     /home/user/project/report.pdf          # sshfs-mount + xdg-open
-download /home/user/project/data.csv            # rsync into ./data.csv
-download /home/user/project/dir ./local-dir     # explicit destination
-```
-
-Both derive their host list directly from `~/.ssh/config` — every non-wildcard
-name on a `Host` line. There is no separate list to keep in sync: adding a host
-to your ssh config is enough.
-
-Each host costs one parallel ssh probe (3s connect timeout) per lookup. To
-narrow a single run:
-
-```bash
+show /home/user/project/report.pdf
+download /home/user/project/data.csv
+download /home/user/project/dir ./local-dir
 REMOTE_HOSTS="rack jupyter" download /path/to/file
 SSH_CONFIG=~/.ssh/config.work show /path/to/file
 ```
 
-`Include` directives in the ssh config are not followed; use `REMOTE_HOSTS` or
-`SSH_CONFIG` if your config is split across files.
+Hosts come from non-wildcard aliases on `Host` lines in `~/.ssh/config`.
+`Include` directives are not followed. Both helpers prompt when multiple hosts
+match. `download` defaults to the remote basename in the current directory.
 
-If a path exists on several hosts, both scripts prompt for a choice. Piping
-works too: `echo 1 | download /path`.
-
-`show` mounts the remote root under `/tmp/mnt_show_<host>` and schedules an
-unmount 10 minutes later. To unmount early:
-
-```bash
-fusermount3 -u /tmp/mnt_show_<host>
-```
-
-Unmount failures are appended to `${TMPDIR:-/tmp}/show-unmount.log`.
+`show` schedules an unmount after ten minutes. The mount path is
+`/tmp/mnt_show_<host>` with `@` and `.` replaced by `_`; to unmount early, use
+`fusermount3 -u` with that path. Failures are logged to
+`${TMPDIR:-/tmp}/show-unmount.log`.
 
 ## Bootstrap scripts
 
-These live in `.local/bin` and build tooling into `~/.local`, so a
-fresh machine needs no root to get a working userland:
+The supported way to provision servers is
+[workflow](https://github.com/anhtt20172948/workflow), which owns tool installs
+and shell setup. These standalone helpers remain in `.local/bin`:
 
-- `install_zsh.sh` — build ncurses + zsh from source into `~/.local`.
-- `install_neovim.sh` — build Neovim from source (run with `bash`, or `chmod +x`
-  it first).
+- `install_zsh`: builds ncurses and zsh into `~/.local` and updates
+  `~/.bash_profile` to launch zsh in interactive shells.
+- `install_neovim`: builds a selected Neovim version into `~/.local` and adds
+  environment settings to `~/.zshrc` when needed.
+- `install_agent_workflow`: installs its pinned agent tools and AXI skills;
+  `--update` reinstalls those pins.
 
-## Requirements
+These helpers are separate from `install.sh` and are not the supported server
+provisioning path.
 
-- `bash` + coreutils - to run `install.sh`.
-- The individual tools you intend to use: `nvim`, `hypr`(land), `kitty`, `tmux`
-  (+ TPM, auto-bootstrapped on first launch), `yazi`, `btop`, `atuin`,
-  `lazygit`, `lazydocker`, `clangd`.
-- See [.config/tmux/README.md](.config/tmux/README.md) for the extra CLI tools
-  its popups and AI-session scripts depend on (`fzf`, `fd`, `rg`, `bat`, `jq`,
-  `sqlite3`, `sesh`, …).
+## License
 
-### Claude account switching
-
-`ai-acct` manages named, long-lived Claude OAuth tokens and selects one. All
-accounts use one shared `~/.claude` directory and `~/.claude.json`, so history and
-`claude --continue` survive an account switch. Codex keeps its single account.
-Install with `./install.sh`, keep `~/.local/bin` on `PATH`, and install `jq`,
-`claude`, `quota-axi`, Python 3, and optionally tmux.
-
-1. Add each account with `ai-acct add NAME` (or **prefix E** / `<leader>au`).
-   Names use lowercase letters, digits, `-` and `_`. The token is typed hidden
-   or piped on stdin, never passed as an argument, and stored outside this
-   repository as `~/.config/claude-accounts/NAME.token` (directory `700`, file
-   `600`). `ai-acct edit NAME` replaces a token, `ai-acct rename OLD NEW` keeps
-   the selection, and `ai-acct remove NAME` deletes it (removing the active one
-   clears the selection). `ai-acct list` shows them. Never put tokens in shell
-   commands, logs, or version control. Do not use Claude `/login`.
-2. Run `ai-acct use NAME`. This validates the local token file,
-   atomically writes `~/.config/claude-accounts/active`, and sets
-   `"hasCompletedOnboarding": true` in the shared `~/.claude.json`, preserving
-   other settings. It does not make an authentication request.
-3. Exit the main Claude process and run `ai-acct resume` to continue it from
-   `${FM_HOME:-$HOME/.local/share/firstmate}` with the selected account.
-   Already-running processes keep their token; new zsh shells, including
-   non-interactive worker shells, load the active token through `.zshenv`.
-
-Switching inside tmux also updates its global environment for future panes
-and clears legacy config/API-key overrides. A switch cannot update the parent
-shell's environment: use `ai-acct exec claude`, `ai-acct resume`, or a new zsh
-shell to launch immediately with the selected token. `ai-acct status` draws one
-framed box per Claude account (active marker and icon in the title), with one
-remaining-quota bar and reset time per quota window (session, week, ...), plus
-Codex the same way. Bars are green/yellow/red by level on a terminal; piped
-output and Neovim notifications have no ANSI colors (`NO_COLOR` also disables
-color; `AI_ACCT_COLOR=1` forces it for pipes, as the tmux menu does for fzf).
-
-Each account shows the best reading available, newest first: a fresh
-`quota-axi` reading, otherwise the newest of the last good `quota-axi` reading
-and the rate limits Claude Code last passed to the statusline for that account.
-Anything not fresh is labeled with its age (`stale, 2h ago`, `via statusline,
-4m ago`), and a fallback window that reset since that reading shows full
-instead of its old percentage, never counting as the limiting window (the box
-labels it `reset since last reading`). Only when nothing was ever read does the
-account show `could not read quota - usage API limited until HH:MM` (the usage
-API is throttled; this says nothing about how much quota is left) or `unknown`.
-
-`agent-statusline-claude` records those rate limits on every render, offline and
-best-effort: Claude Code strips `CLAUDE_CODE_OAUTH_TOKEN` from statusline
-commands, so `ai-acct` and `.zshenv` also export `AI_ACCT_FINGERPRINT`, a one-way
-fingerprint of the same token. The statusline finds the account whose stored token
-has that fingerprint (not the active selector, so older sessions still land on
-their own account; sessions started before this existed need a relaunch) and writes `claude-NAME.limits.json` (mode `600`) holding
-the percentages, reset times and a one-way SHA-256 fingerprint of the token,
-never the token. Replacing the token discards the capture.
-
-Quota reads run in parallel background processes, each Claude token supplied only
-through its own child environment using the same validation as `ai-acct exec`.
-Opening a menu never waits for a quota request: it shows one compact bar for the
-most limiting window of the best reading on hand, an explicit label when nothing
-has ever been read, and reopening after the refresh shows results. If quota cannot
-be read at all, the menus still list every account, with names padded so the
-bars line up. `ai-acct status` and `:AiAccount` wait up to twelve seconds for
-missing or expired readings, then show whatever is known. Only normalized
-percentages, reset times, states and one-way token fingerprints are cached in
-`${XDG_CACHE_HOME:-~/.cache}/ai-acct` (directory `700`, files `600`), never
-tokens or raw quota diagnostics. Successful
-readings are reused for five minutes and rate limits until the vendor's retry
-time (fifteen minutes when it gives none, at most an hour); failed reads are
-retried on the next view. A throttled answer keeps the previous good reading
-beside it so the bars survive. Concurrent opens share one refresh per account,
-and replacing a token invalidates its cached result. Requests time out after ten
-seconds and never refresh credentials. `ai-acct list --quota` appends the same
-compact display as a third tab-separated column; plain `ai-acct list` is
-unchanged.
-
-The no-mistakes daemon runs under systemd and never reads `.zshenv`, so
-`.no-mistakes/config.yaml` points its Claude agent at `ai-acct-claude`
-(`ai-acct exec claude`). Every pipeline agent launch reads the active account,
-so a switch applies to the next review step without restarting the daemon.
-
-For migration from the previous login profiles, remove the old
-`${FM_HOME:-$HOME/.local/share/firstmate}/config/claude-account` pin yourself
-before launching Firstmate. A pin makes Firstmate discard the token and use
-stored login credentials. Stop exporting `CLAUDE_CONFIG_DIR` and remove any
-custom `QUOTA_AXI_CLAUDE_PROFILES` entry for the old secondary profile. The
-old secondary directory is no longer used; no history or credentials are
-copied or deleted by this workflow.
-
-In tmux, **prefix Q** opens the quota TUI with the active token and **prefix E**
-opens the account menu with per-account quota bars: use, add, replace token,
-rename or remove. If the quota helper fails, is missing, or does not answer
-within one second, the menus still list and switch accounts with an explicit
-`unknown` quota state. In Neovim,
-`<leader>au` opens the same menu, `:AiAccount` shows quota, and
-`:AiAccount use|add|edit|rename|remove [NAME]` (or `:AiAccount NAME`) runs one
-action; tokens are entered with hidden input and sent to `ai-acct` on stdin.
-The statusline shows `AI:NAME` from the selector, refreshed on
-focus/buffer/terminal events without spawning a process during redraws
-(`AI:-` means unconfigured; `AI:?` means invalid).
-
-Starting Firstmate through tmux **prefix F** or Neovim uses the same picker:
-agent, Claude account, model, then effort. The account step lists every
-account with the active one first; with none installed it reports
-the missing setup instead of launching. `AI_FIRSTMATE_AGENT=claude|codex`
-bypasses only the agent picker. Cancelling any picker leaves the account
-unchanged. Existing Firstmate windows are focused without prompting or
-switching; restart the main session to change its token. Rate-limit switching
-remains manual.
+[MIT](LICENSE). Vendored components retain their own license notices.
