@@ -14,8 +14,8 @@ for tool in bash dirname readlink realpath awk jq cat sleep mktemp stat mv rm se
   path=$(command -v "$tool") || { echo "missing required tool: $tool" >&2; exit 1; }
   ln -s "$path" "$TMP/bin/$tool"
 done
-# GNU-only: stock macOS has neither, and the code falls back to perl / cksum.
-for tool in timeout sha256sum; do
+# Optional: stock macOS lacks timeout (perl fallback) and, before 15, sha256sum (shasum fallback).
+for tool in timeout sha256sum shasum; do
   if path=$(command -v "$tool"); then ln -s "$path" "$TMP/bin/$tool"; fi
 done
 cat > "$TMP/bin/tmux" <<'MOCK'
