@@ -202,6 +202,39 @@ first started (worktree slots are reused; a relaunch keeps earlier usage),
 follows secondmate homes, and shows a summary in the status line. The layout takes inspiration from
 [claude-flightdeck](https://github.com/scasella/claude-flightdeck).
 
+Tokens per tool call. The API bills requests, not calls, so each call is
+charged with the output tokens of the request that emitted it (split evenly
+when one request emits several calls) plus the input its result added to the
+next request: the growth of the context window, `next context - this context -
+this output`, split between the request's calls by result size. When no next
+request exists yet, or the growth is unusable (a compaction shrank the
+context), the input is estimated from the result size at four characters per
+token and shown with `~`. The expanded crewmate lists `out N in M` per recent
+call and `total · avg` per tool; Codex rollouts work the same from their
+`token_count` events, and a log without usage fields says so instead of
+guessing.
+
+Weekly quota share. Vendors do not publish weekly caps in tokens, so none is
+hard-coded. The estimate is `window % used x weighted tokens of the crewmate
+(or of its tool calls) since the window started / weighted tokens of every
+local session of that provider since then`, scanning `~/.claude/projects` and
+`~/.codex/sessions`. Tokens are weighted by relative price per type and model
+family (a cache read costs a tenth of an input token, an output token several
+times more; the table is `PRICE_RATIO`/`FAMILY_PRICE` in `crew_usage.py`).
+The percent, reset time and plan come from local sources only, freshest
+reading still in force first: the rate limits the Claude Code engine reports
+(`$.session.usage()`), quota-axi's cache file (`~/.cache/quota-axi/quotas.json`,
+never run), Claude Code's cached usage in `~/.claude.json`, and the rate-limit
+events in Codex rollouts. The plan comes from local auth metadata (Claude's
+rate-limit tier or subscription type, Codex's ChatGPT plan type). Each card
+shows the plan, the session's and the tool calls' share of the week, and the
+fleet box the total. A reading whose window has reset is ignored; with no
+current percent the card shows the raw share of local usage and says the weekly
+percent is unavailable. Usage from other machines or the web is not seen
+locally, so the share is an upper bound for local work. The first run indexes
+the last week of local logs within a ten second budget and shows "indexing
+local logs" until it finishes.
+
 Its two options in `/config` are `homes` (Firstmate homes, comma-separated;
 empty defaults to the session's working directory) and `intervalSeconds`
 (refresh interval in seconds, default `5`). Parsed log offsets are cached in

@@ -1,7 +1,53 @@
 /** One tool and how often a crewmate called it. */
 export type ToolCount = { name: string; count: number }
 
-export type CrewEvent = { at: number; kind: 'tool' | 'status'; text: string }
+/**
+ * One logged event. A tool call also carries the tokens charged to it: the
+ * output of the request that emitted it plus the input its result added to
+ * the next request; `estimated` marks an input guessed from the result size.
+ * The token fields are absent when the transcript has no usage for the call.
+ */
+export type CrewEvent = {
+  at: number
+  kind: 'tool' | 'status'
+  text: string
+  tool?: string
+  outTokens?: number
+  inTokens?: number
+  estimated?: boolean
+}
+
+/** Tokens charged to one tool's calls; `estimated` of `input` was guessed from result size. */
+export type ToolTokens = { calls: number; output: number; input: number; estimated: number; estCalls: number }
+
+/** A share of local usage (0 to 1) and, when the weekly percent is known, of the weekly limit (0 to 100). */
+export type QuotaShare = { share: number | null; percent: number | null }
+
+export type MemberQuota = { session: QuotaShare; tools: QuotaShare }
+
+/** One provider's weekly window as local sources report it. */
+export type QuotaProvider = {
+  /** Plan label from local auth metadata, empty when unknown. */
+  plan: string
+  /** Null when no current reading exists. */
+  percentUsed: number | null
+  resetsAt: number | null
+  windowStart: number
+  windowStartKnown: boolean
+  source: string
+  readAt: number | null
+  /** Readings exist but the window they describe has reset. */
+  stale: boolean
+  /** False while local logs are still being indexed. */
+  indexed: boolean
+  localCost: number
+}
+
+export type QuotaReport = {
+  providers: Record<string, QuotaProvider>
+  fleet: Record<string, MemberQuota>
+}
+
 export type ActivityBucket = { minute: number; count: number }
 
 /** One live Firstmate task, as scripts/crew_usage.py reports it. */
@@ -43,7 +89,10 @@ export type CrewMember = {
   activity: ActivityBucket[]
   tools: Record<string, number>
   toolCalls: number
+  toolTokens: Record<string, ToolTokens>
   topTools: ToolCount[]
+  /** Estimated weekly-limit share by provider; absent for a provider the crewmate never used. */
+  quota: Record<string, MemberQuota>
   lastTool: string
   lastText: string
   lastAt: number
@@ -63,6 +112,7 @@ export type CrewReport = {
   generatedAt: number
   crew: CrewMember[]
   totals: CrewTotals
+  quota: QuotaReport
   errors: string[]
 }
 

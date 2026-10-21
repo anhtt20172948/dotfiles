@@ -1,4 +1,4 @@
-import type { CrewMember, CrewTotals } from '../types'
+import type { CrewEvent, CrewMember, CrewTotals, MemberQuota, QuotaProvider, QuotaShare, ToolTokens } from '../types'
 import { crewState } from './dashboard'
 
 /** 1234 -> 1.2k, 1234567 -> 1.23M. */
@@ -76,3 +76,43 @@ export const cacheText = (u: CrewTotals, width = 8): string => {
   const hit = cacheHit(u)
   return `cache ${gauge(Number.parseFloat(hit), width)} ${hit} · r ${tokens(u.cacheRead)} w ${tokens(u.cacheWrite)}`
 }
+
+const percentText = (n: number): string => n > 0 && n < 0.1 ? '<0.1%' : `${n < 10 ? n.toFixed(1) : Math.round(n)}%`
+
+/** Tokens charged to a tool call: its request's output share and the input its result added (~ estimated). */
+export const callTokensText = (e: Pick<CrewEvent, 'outTokens' | 'inTokens' | 'estimated'>): string =>
+  e.outTokens === undefined || e.inTokens === undefined
+    ? 'tok n/a'
+    : `out ${tokens(e.outTokens)} in ${e.estimated ? '~' : ''}${tokens(e.inTokens)}`
+
+export const toolTokenTotal = (tt: ToolTokens | undefined): number => (tt?.output ?? 0) + (tt?.input ?? 0)
+
+/** Per-tool total and the average per call; ~ when some of the input was estimated. */
+export const toolTokenText = (tt: ToolTokens | undefined): string =>
+  tt && tt.calls > 0 ? `${tokens(toolTokenTotal(tt))} tok · avg ${tt.estCalls > 0 ? '~' : ''}${tokens(Math.round(toolTokenTotal(tt) / tt.calls))}` : 'tok n/a'
+
+/** Says why a crewmate's per-call tokens are missing or approximate; empty when they are all measured. */
+export const toolTokenNote = (m: Pick<CrewMember, 'toolCalls' | 'toolTokens'>): string => {
+  const rows = Object.values(m.toolTokens)
+  const attributed = rows.reduce((n, tt) => n + tt.calls, 0)
+  if (m.toolCalls > 0 && attributed === 0) return 'per-call tokens unavailable: the transcript has no usage fields'
+  return rows.some(tt => tt.estCalls > 0) ? '~ estimated from result size: no later request measured it' : ''
+}
+
+const shareText = (s: QuotaShare): string =>
+  s.percent !== null ? percentText(s.percent) : s.share !== null ? `${percentText(s.share * 100)} of local` : '-'
+
+/** The plan and weekly-limit lines for one crewmate or the whole fleet. */
+export const quotaRows = (quota: Record<string, MemberQuota>, providers: Record<string, QuotaProvider>): { text: string; tone: string }[] =>
+  Object.entries(quota).flatMap(([name, q]) => {
+    const info = providers[name]
+    const head = `${name} ${info?.plan || 'plan unknown'}`
+    if (!info) return [{ text: head, tone: 'subtle' }]
+    if (!info.indexed) return [{ text: `${head} · indexing local logs…`, tone: 'subtle' }]
+    const pair = `session ${shareText(q.session)} · tools ${shareText(q.tools)}`
+    return info.percentUsed === null
+      ? [{ text: head, tone: 'subtle' }, { text: `week ${pair}`, tone: 'text' }, { text: info.stale ? 'weekly % unavailable: window reset' : 'weekly % unavailable', tone: 'warning' }]
+      : [{ text: `${head} · week ${percentText(info.percentUsed)} used`, tone: 'subtle' }, { text: `of week ${pair}`, tone: 'text' }]
+  })
+
+export const QUOTA_NOTE = 'local logs only: other machines and the web are not seen, so shares are upper bounds'
