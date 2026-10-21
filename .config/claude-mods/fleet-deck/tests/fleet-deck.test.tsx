@@ -183,6 +183,7 @@ test('with a Firstmate home the band and pane show the fleet, on every surface',
     const band = await $.ui.mount({ ...BAND, surface })
     const text = (await band.find({ type: 'Text', text: /need/ }))?.text ?? ''
     expect(text).toMatch(/1 needs you/)
+    expect((await band.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')
     await band.unmount()
 
     const pane = await $.ui.mount({ ...PANE, surface })

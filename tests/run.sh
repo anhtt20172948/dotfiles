@@ -51,6 +51,17 @@ run_lint() {
 	echo "lint: OK (${#files[@]} files)"
 }
 
+# macOS không có GNU timeout: alarm của perl (có sẵn) làm cùng việc.
+with_timeout() {
+	local secs=$1
+	shift
+	if command -v timeout >/dev/null; then
+		timeout "$secs" "$@"
+	else
+		perl -e 'alarm shift; exec @ARGV or die "exec: $!\n"' "$secs" "$@"
+	fi
+}
+
 run_test() {
 	command -v nvim >/dev/null || {
 		echo "nvim not found" >&2
@@ -73,7 +84,7 @@ run_test() {
 		mkdir -p "$case_dir/home" "$case_dir/config" "$case_dir/cache" "$case_dir/data" "$case_dir/state"
 		if HOME="$case_dir/home" XDG_CONFIG_HOME="$case_dir/config" XDG_CACHE_HOME="$case_dir/cache" \
 			XDG_DATA_HOME="$case_dir/data" XDG_STATE_HOME="$case_dir/state" CODEX_HOME="$case_dir/home/.codex" \
-			TMUX='' timeout 120 "${cmd[@]}" >/dev/null 2>&1; then
+			TMUX='' with_timeout 120 "${cmd[@]}" >/dev/null 2>&1; then
 			echo "ok   $t"
 		else
 			echo "FAIL $t (rerun: TMUX= ${cmd[*]})"
@@ -86,7 +97,7 @@ run_test() {
 		mkdir -p "$case_dir/home" "$case_dir/config" "$case_dir/cache" "$case_dir/data" "$case_dir/state"
 		if HOME="$case_dir/home" XDG_CONFIG_HOME="$case_dir/config" XDG_CACHE_HOME="$case_dir/cache" \
 			XDG_DATA_HOME="$case_dir/data" XDG_STATE_HOME="$case_dir/state" CODEX_HOME="$case_dir/home/.codex" \
-			timeout 120 bash "$t" >/dev/null 2>&1; then
+			with_timeout 120 bash "$t" >/dev/null 2>&1; then
 			echo "ok   $t"
 		else
 			echo "FAIL $t (rerun: bash $t)"
