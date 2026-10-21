@@ -32,6 +32,6 @@ metadata:
 
 ## Testing Patterns
 
-- There is no repo-wide automated test suite in the tracked history or top-level tree.
+- The repo-wide suite runs through `tests/run.sh` (`tests/run.sh lint`, `tests/run.sh test`).
 - Validation is usually manual or tool-driven: shell syntax checks for scripts, `luac -p` or headless Neovim load checks for Lua, and focused runtime checks for tmux behavior.
 - For Lua config changes, prefer a minimal parse or load check over broad test scaffolding.
