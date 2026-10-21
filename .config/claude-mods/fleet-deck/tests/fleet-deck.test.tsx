@@ -317,3 +317,26 @@ test('a Firstmate worker session never polls or registers the fleet command', as
 
   expect(calls).toEqual(['uname -s'])
 })
+
+test('with the status option off a pinned status entry is cleared', { options: { status: false } }, async ($, on) => {
+  const clock = mock.clock(on)
+  const statuses: (string | undefined)[] = []
+
+  mock.store(on)
+  mock.env(on, { HOME: '/home/x' })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('fs.stat', () => ({ deny: 'no such file' }))
+  on('process.run', () => ran('Linux\n'))
+  on('session.model', () => ({ value: 'claude-opus-4-7' }))
+  on('ui.status', (_, e) => {
+    statuses.push(e.text)
+
+    return { value: undefined }
+  })
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+
+  expect(statuses.length).toBeGreaterThan(0)
+  expect(statuses.every(text => text === undefined)).toBe(true)
+})

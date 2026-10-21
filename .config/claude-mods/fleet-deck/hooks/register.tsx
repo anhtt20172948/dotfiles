@@ -111,7 +111,10 @@ const refreshStatus = async (
   context: { percent?: number },
   limits: LiveLimit[],
 ) => {
+  // The engine keeps a pinned status across reloads, so turning it off clears it.
   if (options.status === false) {
+    $.ui.status(undefined)
+
     return
   }
 
