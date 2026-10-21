@@ -14,6 +14,18 @@ linked() {
 	[[ -L "$HOME/$1" ]] || fail "$1 not linked"
 	[[ $(readlink -f "$HOME/$1") == "$(readlink -f "$REPO/${2:-$1}")" ]] || fail "$1 wrong target"
 }
+# Every entry under $HOME with its type and link target; only GNU find has -printf.
+snapshot() {
+	(cd "$HOME" && find . | LC_ALL=C sort | while IFS= read -r p; do
+		if [[ -L "$p" ]]; then
+			echo "$p l $(readlink "$p")"
+		elif [[ -d "$p" ]]; then
+			echo "$p d"
+		else
+			echo "$p f"
+		fi
+	done)
+}
 
 mkdir -p "$REPO/.config/agents" "$REPO/.config/opencode" "$REPO/.local/bin" \
 	"$REPO/.local/share/firstmate/config" "$REPO/.local/share/firstmate/data" "$REPO/.claude" "$HOME"
@@ -26,9 +38,9 @@ ln -s ../agents/AGENTS.md "$REPO/.config/opencode/AGENTS.md"
 echo dispatch >"$REPO/.local/share/firstmate/config/crew-dispatch.json"
 echo repo-only >"$REPO/.claude/settings.json"
 
-before=$(find "$HOME" -printf '%p %y %l\n' | sort)
+before=$(snapshot)
 out=$("$REPO/install.sh" --dry-run)
-[[ $(find "$HOME" -printf '%p %y %l\n' | sort) == "$before" ]] || fail 'dry-run changed HOME'
+[[ $(snapshot) == "$before" ]] || fail 'dry-run changed HOME'
 grep -q '^link    ~/.local/share/firstmate/config/crew-dispatch.json ' <<<"$out" || fail 'dispatch folded in dry-run'
 ! grep -q 'firstmate/data/' <<<"$out" || fail 'dry-run links per-host firstmate data'
 grep -q '^link    ~/.claude/CLAUDE.md ' <<<"$out" || fail 'Claude mapping missing'
@@ -40,7 +52,16 @@ linked .claude/CLAUDE.md .config/agents/CLAUDE.md
 linked .config/opencode/AGENTS.md .config/agents/AGENTS.md
 jq -e '.statusLine.type == "command" and (.statusLine.command | contains("$HOME"))' "$HOME/.claude/settings.json" >/dev/null || fail 'Claude status line missing'
 python3 - "$HOME/.codex/config.toml" "$ROOT/.local/bin/install-agent-statusline" <<'PY' || fail 'Codex status line missing'
-import pathlib, re, sys, tomllib
+import pathlib, re, sys
+# Same fallback as install-agent-statusline, which skips Codex without either.
+try:
+    import tomllib
+except ImportError:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        print('skip: no TOML reader, Codex not checked', file=sys.stderr)
+        sys.exit(0)
 items = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())['tui']['status_line']
 expected = re.search(r'CODEX_ITEMS = (\[[^\]]*\])', pathlib.Path(sys.argv[2]).read_text()).group(1)
 assert items == tomllib.loads(f'v = {expected}')['v'] and 'five-hour-limit' in items
@@ -69,7 +90,16 @@ echo host-captain >"$HOME/.local/share/firstmate/data/captain.md"
 [[ $(cat "$HOME/.claude/credentials.json") == credential ]] || fail 'credentials lost'
 jq -e '.hooks.Stop == [] and .theme == "dark" and .statusLine.type == "command"' "$HOME/.claude/settings.json" >/dev/null || fail 'Claude settings lost'
 python3 - "$HOME/.codex/config.toml" <<'PY' || fail 'Codex settings lost'
-import pathlib, sys, tomllib
+import pathlib, sys
+# Same fallback as install-agent-statusline, which skips Codex without either.
+try:
+    import tomllib
+except ImportError:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        print('skip: no TOML reader, Codex not checked', file=sys.stderr)
+        sys.exit(0)
 data = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())
 assert data['model'] == 'gpt-6-astra'
 assert data['tui']['status_line'][0] == 'model-with-reasoning'
