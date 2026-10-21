@@ -19,7 +19,7 @@ DRY_RUN=0
 # Chỉ thuộc repo, không phải dotfile: không link ra $HOME. So với tên ở root repo
 # (một .config/x/docs vẫn được link bình thường).
 ROOT_IGNORE=(
-	.git .gitignore .gitmodules
+	.git .gitignore .gitmodules .github
 	docs tests .superpowers
 	# Config Claude CẤP REPO (project skill, settings.local.json) - link ra
 	# ~/.claude sẽ biến nó thành config toàn cục.

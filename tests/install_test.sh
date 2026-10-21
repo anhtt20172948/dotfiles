@@ -32,7 +32,7 @@ assert_absent() {
 
 # Repo giả mô phỏng layout thật, gồm cả các entry chỉ thuộc repo.
 mkdir -p "$REPO"/.config/{nvim/lua,tmux,yazi} "$REPO"/.local/bin "$REPO"/.no-mistakes \
-	"$REPO"/{docs,tests,.claude,.git,.superpowers}
+	"$REPO"/{docs,tests,.claude,.git,.github,.superpowers}
 cp "$ROOT/install.sh" "$REPO/install.sh"
 echo init >"$REPO/.config/nvim/init.lua"
 echo mod >"$REPO/.config/nvim/lua/mod.lua"
@@ -68,6 +68,7 @@ grep -q '^link    ~/.config/tmux ' <<<"$out" || fail "dry-run did not report lin
 grep -q '^unfold  ~/.local/bin$' <<<"$out" || fail "dry-run did not report unfold: $out"
 grep -q '^link    ~/.local/bin/show ' <<<"$out" || fail "dry-run did not link unfolded child: $out"
 ! grep -q '^backup  ~/.local/bin/' <<<"$out" || fail "dry-run reported backup of unfolded child: $out"
+! grep -q '~/.github' <<<"$out" || fail "dry-run linked repo-only .github: $out"
 
 out=$("$REPO/install.sh")
 
@@ -98,7 +99,7 @@ backup=$(find "$HOME/.dotfiles-backup" -mindepth 1 -maxdepth 1)
 # Link kiểu stow giữ nguyên.
 [[ "$(readlink "$HOME/.zshrc")" == ../dotfiles/.zshrc ]] || fail "stow-style link was replaced"
 # Entry chỉ thuộc repo không ra $HOME.
-for f in docs tests .claude .git .superpowers README.md LICENSE .gitignore \
+for f in docs tests .claude .git .github .superpowers README.md LICENSE .gitignore \
 	.no-mistakes.yaml install.sh; do
 	assert_absent "$f"
 done
