@@ -12,7 +12,9 @@ test('layout keeps cards readable and inline output bounded', () => {
 test('gauges clamp and context never invents a model window', () => {
   expect(gauge(150, 5)).toBe('▰▰▰▰▰')
   expect(gauge(-10, 5)).toBe('▱▱▱▱▱')
-  expect(contextText({ context: 50000, contextWindow: null })).toBe('ctx 50k · window unknown')
+  expect(contextText({ context: 50000, contextWindow: null })).toBe('ctx 50k · window not recorded')
+  expect(contextText({ context: 50000, contextWindow: null, contextModel: 'claude-test' })).toBe('ctx 50k · window n/a for test')
+  expect(contextText({ context: 0, contextWindow: null, contextModel: '' })).toBe('ctx - · no request yet')
   expect(contextText({ context: 50000, contextWindow: 200000 })).toBe('ctx ▰▰▱▱▱▱▱▱ 25% · 50k/200k')
   expect(effortText('high')).toBe('effort ▰▰▰▱ high')
   expect(effortText('default')).toBe('effort default')

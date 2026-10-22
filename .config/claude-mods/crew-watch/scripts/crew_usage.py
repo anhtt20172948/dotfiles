@@ -88,6 +88,55 @@ FAMILY_PRICE = {
 }
 
 
+# Context window of a Claude model, in tokens, matched against the model id with
+# any date or [1m] suffix removed. Claude transcripts never record the window and
+# no local catalog lists Claude models (the Codex one lists only OpenAI models),
+# so this small table is the one place that answers it: the window each model
+# supports, from the model list in Anthropic's docs. Claude Code may compact
+# earlier through its auto-compact setting; this is the model's own limit.
+CLAUDE_WINDOWS = (
+    (r"claude-3-.*|claude-haiku-4-5|claude-(opus|sonnet)-4(-[015])?", 200_000),
+    (r"claude-(opus-4-[6-9]|sonnet-4-[6-9]|(opus|sonnet|haiku|fable|mythos)-5(-\d+)?)", 1_000_000),
+)
+
+
+def claude_model_window(model):
+    """The window of a Claude model id, or None for one the table does not know."""
+    base = re.sub(r"(\[\w+\]|-\d{8})$", "", (model or "").lower())
+    return next((window for pattern, window in CLAUDE_WINDOWS if re.fullmatch(pattern, base)), None)
+
+
+def codex_model_window(model):
+    """The window ~/.codex/models_cache.json (Codex's own model catalog) gives a model slug."""
+    catalog = read_json(os.path.join(os.path.dirname(CODEX_SESSIONS), "models_cache.json"))
+    for entry in catalog.get("models") or []:
+        if isinstance(entry, dict) and entry.get("slug") == model:
+            window = entry.get("context_window")
+            return window if isinstance(window, (int, float)) and window > 0 else None
+    return None
+
+
+def resolve_window(harness, agg, pinned):
+    """(window, model, source): the transcript's own figure first, then the model catalogs.
+
+    The model is the one that served most requests, else the one the task was
+    dispatched with. A window stays None when no source knows that model.
+    """
+    models = agg["models"]
+    model = max(models, key=models.get) if models else (pinned if pinned and pinned != "default" else "")
+    if agg["contextWindow"]:
+        return agg["contextWindow"], model, "transcript"
+    if not model:
+        return None, "", ""
+    if harness.startswith("claude"):
+        window = claude_model_window(model)
+        return window, model, "claude model table" if window else ""
+    if harness == "codex":
+        window = codex_model_window(model)
+        return window, model, "codex model catalog" if window else ""
+    return None, model, ""
+
+
 def empty_agg():
     return {
         "requests": 0,
@@ -815,6 +864,19 @@ def claude_plan():
     return label + (" · Team" if account.get("organizationType") == "claude_team" else "")
 
 
+def claude_login():
+    """How this process signs in to Claude, from the environment's presence alone (no value is read).
+
+    A token login (CLAUDE_CODE_OAUTH_TOKEN, what ai-acct sets) leaves no
+    credentials file and no account record, so it carries no plan label.
+    """
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        return "token"
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "api-key"
+    return "account" if claude_plan() else ""
+
+
 def window_candidate(source, percent, resets_at, window_ms, read_at):
     if not isinstance(percent, (int, float)) or isinstance(percent, bool):
         return None
@@ -871,13 +933,14 @@ def pick_window(candidates, now):
     return max(live, key=lambda c: c["readAt"] or 0) if live else None
 
 
-def provider_window(candidates, plan, now):
+def provider_window(candidates, plan, now, login=""):
     candidates = [c for c in candidates if c]
     window = pick_window(candidates, now)
     known = bool(window and window["resetsAt"])
     start = window["resetsAt"] - window["windowMs"] if known else now - WEEK_MS
     return {
         "plan": plan,
+        "login": login,
         "percentUsed": window["percent"] if window else None,
         "resetsAt": window["resetsAt"] if window else None,
         "windowStart": max(start, now - WEEK_MS),
@@ -894,6 +957,7 @@ def main():
     ap.add_argument("--home", action="append", default=[], help="Firstmate home to read (repeatable)")
     ap.add_argument("--claude-limits", default="[]", help="JSON rate-limit windows of the pane session's last API response")
     ap.add_argument("--claude-session", default="", help="the pane session's id, to date those rate limits")
+    ap.add_argument("--claude-login", default="", choices=["", "token", "api-key"], help="how the pane session signs in, when this process cannot see its environment")
     args = ap.parse_args()
     deadline = time.monotonic() + SCAN_BUDGET_SECONDS
     homes = args.home or [os.environ.get("FM_HOME") or os.getcwd()]
@@ -961,8 +1025,8 @@ def main():
     limits_at = own_entry["agg"]["lastAt"] if own_entry else None
     codex_cands, codex_rollout_plan = codex_candidates(found["codex"])
     providers = {
-        "claude": provider_window(claude_candidates(limits, limits_at), claude_plan(), now),
-        "codex": provider_window(codex_cands, codex_rollout_plan.title(), now),
+        "claude": provider_window(claude_candidates(limits, limits_at), claude_plan(), now, args.claude_login or claude_login()),
+        "codex": provider_window(codex_cands, codex_rollout_plan.title(), now, "rollout"),
     }
     for name, info in providers.items():
         info["indexed"] = indexed[name]
@@ -974,6 +1038,7 @@ def main():
         harness = meta.get("harness") or "?"
         worktree = meta.get("worktree") or ""
         readable = harness.startswith("claude") or harness == "codex" or sessions > 0
+        window, window_model, window_source = resolve_window(harness, agg, meta.get("model"))
         top = sorted(agg["tools"].items(), key=lambda kv: -kv[1])[:4]
         statuses = status_events(os.path.join(task["home"], "state", task["id"] + ".status"))
         for event in statuses:
@@ -1007,7 +1072,9 @@ def main():
                 "cacheWrite": agg["cacheWrite"],
                 "reasoning": agg["reasoning"],
                 "context": agg["context"],
-                "contextWindow": agg["contextWindow"],
+                "contextWindow": window,
+                "contextModel": window_model,
+                "windowSource": window_source,
                 "events": events,
                 "recentTools": agg["events"][-5:],
                 "activity": activity,

@@ -3,6 +3,8 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { CrewMember, CrewReport } from '../types'
 import { QUOTA_NOTE, TOOLS_DIRECT_NOTE, ago, cacheHit, cacheText, callTokensText, clip, clockText, contextText, dispatchText, effortText, gauge, modelsText, quotaRows, statusLine, tokens, toolTokenNote, toolTokenText, toolTokenTotal, totalTokens } from './format'
+import { DEFAULT_THEME, isNoColorSet, isThemeName, isTruecolorTerm, themePainter } from './theme'
+import type { Paint } from './theme'
 import { activityLane, crewState, dashboardLayout, fleetModels, harnessColor, laneGeometry, memberKey, recentLog, sortedTools, toggleExpanded } from './dashboard'
 
 type Dollar = EngineInterface
@@ -24,6 +26,16 @@ const HELP = [
 let intervalMs = 5000
 let configuredHomes: string[] = []
 let inFlight: Promise<void> | null = null
+let themeName: string = DEFAULT_THEME
+let paint: Paint = themePainter(DEFAULT_THEME, { isNoColor: false, isTruecolor: true })
+
+/** Builds the painter from the Theme option and what the terminal says (NO_COLOR, COLORTERM). */
+async function loadPaint($: Dollar): Promise<void> {
+  paint = themePainter(themeName, {
+    isNoColor: isNoColorSet(await $.env.get('NO_COLOR')),
+    isTruecolor: isTruecolorTerm(await $.env.get('COLORTERM')),
+  })
+}
 
 /** Reads the crew once; a call made while a read runs waits for that read. */
 function poll($: Dollar): Promise<void> {
@@ -42,6 +54,16 @@ async function claudeLimits($: Dollar): Promise<string> {
   }
 }
 
+/**
+ * How this session signs in, as `crew_usage.py --claude-login` takes it. The
+ * engine keeps CLAUDE_CODE_OAUTH_TOKEN (what `ai-acct` sets) out of the script's
+ * environment, so only presence is read here: the value is never kept or shown.
+ */
+async function claudeLogin($: Dollar): Promise<string> {
+  if (await $.env.get('CLAUDE_CODE_OAUTH_TOKEN')) return 'token'
+  return (await $.env.get('ANTHROPIC_API_KEY')) ? 'api-key' : ''
+}
+
 async function readCrew($: Dollar): Promise<void> {
   try {
     const homes = configuredHomes.length > 0 ? configuredHomes : [await $.session.root()]
@@ -53,6 +75,8 @@ async function readCrew($: Dollar): Promise<void> {
       await claudeLimits($),
       '--claude-session',
       await $.session.id(),
+      '--claude-login',
+      await claudeLogin($),
       ...homes.flatMap(home => ['--home', home]),
     ]
     const run = await $.process.run(argv, { timeoutMs: POLL_TIMEOUT_MS })
@@ -72,12 +96,16 @@ async function readCrew($: Dollar): Promise<void> {
 
 export const register: Register = (on, options) => {
   intervalMs = Math.max(1, Number(options.intervalSeconds) || 5) * 1000
+  const chosen = String(options.theme ?? DEFAULT_THEME)
+  themeName = isThemeName(chosen) ? chosen : DEFAULT_THEME
+  paint = themePainter(themeName, { isNoColor: false, isTruecolor: true })
   configuredHomes = String(options.homes ?? '')
     .split(',')
     .map(h => h.trim())
     .filter(Boolean)
 
   on('session.start', async ($, e, next) => {
+    await loadPaint($)
     await $.command.register({
       name: 'crew',
       description: 'Show what each Firstmate crewmate is doing: models, tokens, cache and tool calls',
@@ -112,6 +140,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
+    const c = paint
     const report = await read($, reportAtom)
     const error = await read($, errorAtom)
     const expanded = await read($, expandedAtom)
@@ -121,7 +150,7 @@ export const register: Register = (on, options) => {
     const providers = report?.quota.providers ?? {}
     const layout = dashboardLayout(W, e.props.placement, crew.length)
     const active = crew.filter(m => ['working', 'active'].includes(crewState(m, now).label)).length
-    const row = (text: string, color = 'text', width = W) => <Text color={color} wrap="truncate">{clip(text, width)}</Text>
+    const row = (text: string, color = 'text', width = W) => <Text color={c(color)} wrap="truncate">{clip(text, width)}</Text>
     const title = `CREW · ${crew.length} live · ${active} active`
     const age = (m: CrewMember) => m.lastAt > 0 ? `${ago(Math.max(0, now - m.lastAt))} ago` : 'no activity'
     const keyOf = (m: CrewMember) => `card-${memberKey(m)}`
@@ -160,7 +189,7 @@ export const register: Register = (on, options) => {
       const spent = Object.values(m.toolTokens).reduce((n, tt) => n + toolTokenTotal(tt), 0)
       const note = toolTokenNote(m)
       return (
-        <Box key={`panel-${memberKey(m)}`} flexDirection="column" borderStyle="round" borderColor={color} width={width} paddingX={1}>
+        <Box key={`panel-${memberKey(m)}`} flexDirection="column" borderStyle="round" borderColor={c(color)} width={width} paddingX={1}>
           {detail ? <Text weight="bold" wrap="wrap">{m.description}</Text> : control(m, i, inner)}
           {line(`${m.kind} · ${m.project || 'no project'}${m.depth > 0 ? ` · nested ${m.depth}` : ''}`, 'subtle')}
           {line(`${state.mark} ${state.label}`, state.color)}
@@ -181,14 +210,14 @@ export const register: Register = (on, options) => {
           {m.lastText ? line(`“${m.lastText}”`, 'subtle') : null}
           {m.status ? line(`status ${m.status}`, 'permission') : null}
           {detail ? <Text wrap="wrap">{`branch ${m.branch || 'unknown'}\nworktree ${m.worktree || 'unknown'}\nhome ${m.home}\nharness ${m.harness} · ${m.sessions} transcripts`}</Text> : null}
-          {detail ? Object.entries(m.models).map(([model, count]) => <Text color={color} wrap="wrap">{`${model} ×${count}`}</Text>) : null}
+          {detail ? Object.entries(m.models).map(([model, count]) => <Text color={c(color)} wrap="wrap">{`${model} ×${count}`}</Text>) : null}
           {detail ? sortedTools(m.tools).map(([tool, count]) => <Text wrap="wrap">{`${tool} ×${count} · ${toolTokenText(m.toolTokens[tool])}`}</Text>) : null}
-          {detail && note ? <Text color="subtle" wrap="wrap">{note}</Text> : null}
-          {detail && Object.keys(m.quota).length > 0 ? <Text color="subtle" wrap="wrap">{QUOTA_NOTE}</Text> : null}
-          {detail && Object.keys(m.quota).length > 0 ? <Text color="subtle" wrap="wrap">{TOOLS_DIRECT_NOTE}</Text> : null}
-          {detail ? m.recentTools.map(event => <Text color="subtle" wrap="wrap">{`${clockText(event.at)} ${event.tool ? `${callTokensText(event)} · ` : ''}${event.text}`}</Text>) : null}
+          {detail && note ? <Text color={c('subtle')} wrap="wrap">{note}</Text> : null}
+          {detail && Object.keys(m.quota).length > 0 ? <Text color={c('subtle')} wrap="wrap">{QUOTA_NOTE}</Text> : null}
+          {detail && Object.keys(m.quota).length > 0 ? <Text color={c('subtle')} wrap="wrap">{TOOLS_DIRECT_NOTE}</Text> : null}
+          {detail ? m.recentTools.map(event => <Text color={c('subtle')} wrap="wrap">{`${clockText(event.at)} ${event.tool ? `${callTokensText(event)} · ` : ''}${event.text}`}</Text>) : null}
           {detail && m.lastText ? <Text wrap="wrap">{m.lastText}</Text> : null}
-          {detail && m.status ? <Text color="permission" wrap="wrap">{m.status}</Text> : null}
+          {detail && m.status ? <Text color={c('permission')} wrap="wrap">{m.status}</Text> : null}
         </Box>
       )
     }
@@ -198,13 +227,13 @@ export const register: Register = (on, options) => {
     const lanes = (
       <Box flexDirection="column" width={W}>
         {row(`ACTIVITY · last ${laneWidth} minutes · 1 cell/min`, 'subtle')}
-        <Box width={W}><Box key="lane-axis-gutter" width={geometry.offset} flexShrink={0} /><Text key="lane-axis" color="subtle">{geometry.axis}</Text></Box>
+        <Box width={W}><Box key="lane-axis-gutter" width={geometry.offset} flexShrink={0} /><Text key="lane-axis" color={c('subtle')}>{geometry.axis}</Text></Box>
         {crew.map((m, i) => (
           <Box width={W}>
-            <Box width={geometry.markWidth} flexShrink={0}><Text color={crewState(m, now).color}>{crewState(m, now).mark + ' '}</Text></Box>
+            <Box width={geometry.markWidth} flexShrink={0}><Text color={c(crewState(m, now).color)}>{crewState(m, now).mark + ' '}</Text></Box>
             <Box width={geometry.nameWidth} flexShrink={0}>{layout.mode === 'lanes' ? control(m, i, geometry.nameWidth) : row(`${'  '.repeat(m.depth)}${m.id}`, harnessColor(m.harness), geometry.nameWidth)}</Box>
             <Box key={`lane-gap-${memberKey(m)}`} width={geometry.gap} flexShrink={0} />
-            <Text color={harnessColor(m.harness)}>{activityLane(m.activity, now, laneWidth)}</Text>
+            <Text color={c(harnessColor(m.harness))}>{activityLane(m.activity, now, laneWidth)}</Text>
             <Text dimColor wrap="truncate">{' ' + age(m)}</Text>
           </Box>
         ))}
@@ -218,18 +247,18 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" width={W}>
         <Box justifyContent="center" width={W}>{header}</Box>
-        <Box columnGap={2} width={W}>{legend.map(harness => <Text color={harnessColor(harness)} wrap="truncate">{`■ ${harness}`}</Text>)}</Box>
+        <Box columnGap={2} width={W}>{legend.map(harness => <Text color={c(harnessColor(harness))} wrap="truncate">{`■ ${harness}`}</Text>)}</Box>
         {failure}
-        <Box flexDirection="column" borderStyle="round" borderColor="claude" paddingX={1} width={W}>
-          <Text weight="bold" color="claude">FLEET</Text>
+        <Box flexDirection="column" borderStyle="round" borderColor={c('claude')} paddingX={1} width={W}>
+          <Text weight="bold" color={c('claude')}>FLEET</Text>
           {report ? row(`${tokens(totalTokens(report.totals))} tokens · ${report.totals.requests} requests`, 'text', inner) : row('Reading the crew logs…', 'subtle', inner)}
           {report ? row(`${report.totals.toolCalls} tool calls`, 'text', inner) : null}
           {report ? row(`in ${tokens(report.totals.input)} · out ${tokens(report.totals.output)} · thinking ${tokens(report.totals.reasoning)}`, 'subtle', inner) : null}
           {report ? row(`cache ${gauge(Number.parseFloat(cacheHit(report.totals)))} ${cacheHit(report.totals)}`, 'permission', inner) : null}
           {report ? row(`read ${tokens(report.totals.cacheRead)} · write ${tokens(report.totals.cacheWrite)}`, 'subtle', inner) : null}
           {report ? quotaRows(report.quota.fleet, providers, now).map(r => row(r.text, r.tone, inner)) : null}
-          {report && Object.keys(report.quota.fleet).length > 0 ? <Text color="subtle" wrap="wrap">{QUOTA_NOTE}</Text> : null}
-          {report && Object.keys(report.quota.fleet).length > 0 ? <Text color="subtle" wrap="wrap">{TOOLS_DIRECT_NOTE}</Text> : null}
+          {report && Object.keys(report.quota.fleet).length > 0 ? <Text color={c('subtle')} wrap="wrap">{QUOTA_NOTE}</Text> : null}
+          {report && Object.keys(report.quota.fleet).length > 0 ? <Text color={c('subtle')} wrap="wrap">{TOOLS_DIRECT_NOTE}</Text> : null}
           {models.map(([model, count]) => row(`${model} ×${count}`, 'suggestion', inner))}
           {report && crew.length === 0 ? row('No crewmates are live.', 'subtle', inner) : null}
         </Box>
@@ -237,7 +266,7 @@ export const register: Register = (on, options) => {
         {layout.mode === 'cards' && crew.length > 0 ? <Box columnGap={1} width={W}>{crew.map((m, i) => card(m, i, layout.cardWidth))}</Box> : null}
         {crew.length > 0 ? lanes : null}
         {viewed ? card(viewed, crew.indexOf(viewed), W, true) : null}
-        <Box flexDirection="column" borderStyle="round" borderColor="subtle" paddingX={1} width={W} marginTop={1}>
+        <Box flexDirection="column" borderStyle="round" borderColor={c('border')} paddingX={1} width={W} marginTop={1}>
           <Text dimColor>CREW LOG</Text>
           {log.length === 0 ? row('No events yet.', 'subtle', inner) : null}
           {log.map(event => row(`${clockText(event.at)} ${event.who} · ${event.kind === 'tool' ? '▸' : '◇'} ${event.text}`, event.color, inner))}

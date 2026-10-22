@@ -71,6 +71,12 @@ for name in "${NAMES[@]}"; do
 	done
 done
 
+# crew-watch's Theme option offers the default plus exactly the palettes theme.ts defines.
+crew=$ROOT/$MODS/crew-watch
+offered=$(jq -r '.userConfig.theme | select(.default == "default") | .options[]' "$crew/.claude-plugin/plugin.json" | sed '/^default$/d' | sort)
+defined=$(sed -n "s/^  '\{0,1\}\([a-z-]*\)'\{0,1\}: {\$/\1/p" "$crew/hooks/theme.ts" | sort)
+[[ -n $offered && $offered == "$defined" ]] || fail "crew-watch Theme options '$offered' differ from theme.ts palettes '$defined'"
+
 if ! command -v claude >/dev/null; then
 	echo "skip: claude not installed, mod validate/test not run"
 	exit 0

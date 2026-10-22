@@ -28,8 +28,10 @@ export type MemberQuota = { session: QuotaShare; tools: QuotaShare }
 
 /** One provider's weekly window as local sources report it. */
 export type QuotaProvider = {
-  /** Plan label from local metadata, empty when unknown. */
+  /** Plan label from local metadata, empty when none is recorded. */
   plan: string
+  /** How the account signs in: token (CLAUDE_CODE_OAUTH_TOKEN, no local plan record), api-key, account, rollout (Codex), or empty. */
+  login: string
   /** Null when no current reading exists. */
   percentUsed: number | null
   resetsAt: number | null
@@ -86,8 +88,12 @@ export type CrewMember = {
   reasoning: number
   /** The latest request's whole input: its live context size. */
   context: number
-  /** Null unless the transcript explicitly supplies the window. */
+  /** From the transcript, else the model's catalog entry; null when no source knows the model. */
   contextWindow: number | null
+  /** The model that served most requests, else the dispatched one; empty before any request. */
+  contextModel: string
+  /** Where contextWindow came from: transcript, claude model table, codex model catalog, or empty. */
+  windowSource: string
   events: CrewEvent[]
   recentTools: CrewEvent[]
   activity: ActivityBucket[]

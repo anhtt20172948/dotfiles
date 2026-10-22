@@ -49,8 +49,12 @@ export const gauge = (pct: number, width = 8): string => {
   return '▰'.repeat(filled) + '▱'.repeat(size - filled)
 }
 
-export const contextText = (m: Pick<CrewMember, 'context' | 'contextWindow'>): string => {
-  if (!m.contextWindow || m.contextWindow <= 0) return `ctx ${tokens(m.context)} · window unknown`
+/** Says why a window is missing: no request yet, a model no catalog lists, or none recorded at all. */
+export const contextText = (m: Pick<CrewMember, 'context' | 'contextWindow'> & Partial<Pick<CrewMember, 'contextModel'>>): string => {
+  if (!m.contextWindow || m.contextWindow <= 0) {
+    if (m.context === 0 && !m.contextModel) return 'ctx - · no request yet'
+    return `ctx ${tokens(m.context)} · ${m.contextModel ? `window n/a for ${m.contextModel.replace(/^claude-/, '')}` : 'window not recorded'}`
+  }
   const pct = Math.round(m.context * 100 / m.contextWindow)
   return `ctx ${gauge(pct)} ${pct}% · ${tokens(m.context)}/${tokens(m.contextWindow)}`
 }
@@ -99,6 +103,17 @@ export const toolTokenNote = (m: Pick<CrewMember, 'toolCalls' | 'toolTokens'>): 
   return rows.some(tt => tt.estCalls > 0) ? '~ estimated from result size: no later request measured it' : ''
 }
 
+/** How the account is signed in when no plan label is recorded; says what is missing instead of "unknown". */
+const planRows = (name: string, info: QuotaProvider | undefined): { text: string; tone: string }[] => {
+  if (info?.plan) return [{ text: `${name} ${info.plan}`, tone: 'subtle' }]
+  switch (info?.login) {
+    case 'token': return [{ text: `${name} token login`, tone: 'subtle' }, { text: 'plan not exposed by token login', tone: 'subtle' }]
+    case 'api-key': return [{ text: `${name} API key`, tone: 'subtle' }, { text: 'billed by usage: no plan', tone: 'subtle' }]
+    case 'rollout': return [{ text: `${name} plan not in rollout`, tone: 'subtle' }]
+    default: return [{ text: `${name} plan not recorded locally`, tone: 'subtle' }]
+  }
+}
+
 const shareText = (s: QuotaShare): string =>
   s.percent !== null ? `${percentText(s.percent)} of week` : s.share !== null ? `${percentText(s.share * 100)} of local` : '-'
 
@@ -113,14 +128,14 @@ export const readingText = (info: Pick<QuotaProvider, 'source' | 'readAt'>, now:
 export const quotaRows = (quota: Record<string, MemberQuota>, providers: Record<string, QuotaProvider>, now: number): { text: string; tone: string }[] =>
   Object.entries(quota).flatMap(([name, q]) => {
     const info = providers[name]
-    const head = { text: `${name} ${info?.plan || 'plan unknown'}`, tone: 'subtle' }
-    if (!info) return [head]
-    if (!info.indexed) return [head, { text: 'indexing local logs…', tone: 'subtle' }]
+    const head = planRows(name, info)
+    if (!info) return head
+    if (!info.indexed) return [...head, { text: 'indexing local logs…', tone: 'subtle' }]
     const shares = [{ text: `session ${shareText(q.session)}`, tone: 'text' }, { text: `tools direct ${shareText(q.tools)}`, tone: 'text' }]
     return info.percentUsed === null
-      ? [head, ...shares, { text: info.reset ? 'week % unknown: window reset' : 'week % unknown', tone: 'warning' }]
+      ? [...head, ...shares, { text: info.reset ? 'week % unknown: window reset' : 'week % unknown', tone: 'warning' }]
       : [
-          head,
+          ...head,
           { text: `week ${percentText(info.percentUsed)} used · ${info.stale ? 'stale' : 'current'}`, tone: info.stale ? 'warning' : 'subtle' },
           { text: readingText(info, now), tone: 'subtle' },
           ...shares,
