@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { DEFAULT_THEME, PALETTES, ROLES, THEME_NAMES, contrast, isNoColorSet, isThemeName, isTruecolorTerm, themePainter, toAnsi256 } from '../hooks/theme'
+import { DEFAULT_THEME, PALETTES, ROLES, THEME_NAMES, contrast, isNoColorSet, isThemeName, isTruecolorTerm, paneStyles, themePainter, toAnsi256 } from '../hooks/theme'
 
 const TRUECOLOR = { isNoColor: false, isTruecolor: true }
 const HEX = /^#[0-9a-f]{6}$/
@@ -94,4 +94,19 @@ test('a terminal without truecolor gets the nearest 256-colour index', () => {
       expect(index >= 16 && index <= 255).toBe(true)
     }
   }
+})
+
+test('shared pane styles resolve through every theme and terminal colour mode', () => {
+  for (const name of THEME_NAMES) {
+    for (const support of [TRUECOLOR, { isNoColor: false, isTruecolor: false }, { isNoColor: true, isTruecolor: true }]) {
+      const paint = themePainter(name, support)
+      expect(paneStyles(paint)).toEqual({
+        frame: { borderStyle: 'round', borderColor: paint('border'), borderDimColor: false },
+        title: { color: paint('text'), weight: 'bold' },
+        meta: { color: paint('subtle'), weight: 'regular' },
+        rule: { color: paint('border'), weight: 'regular' },
+      })
+    }
+  }
+  expect(themePainter('default', TRUECOLOR)('codex')).toBe('permission')
 })

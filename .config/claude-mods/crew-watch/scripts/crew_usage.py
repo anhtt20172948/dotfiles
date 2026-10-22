@@ -46,6 +46,9 @@ rate limits of the pane session's last API response (--claude-limits, dated by
 the newest response in its own transcript, found by --claude-session), the
 reading history, ai-acct's stored limit windows (of unknown age) and Codex
 rollout rate-limit events. The freshest one whose window has not reset wins.
+Each weekly reading also carries the account's 5-hour window as the vendor
+reported it (fiveHour), from the same sources but the history: shown, never
+estimated or recorded.
 Every new observation is appended to ~/.local/state/crew-watch/readings.jsonl.
 Between readings the estimate is the anchor plus the weighted tokens since it,
 priced by PRICE_RATIO and FAMILY_PRICE below, with a slope that is an
@@ -81,6 +84,7 @@ SNIPPET = 180
 MAX_EVENTS = 10
 ACTIVITY_MINUTES = 60
 WEEK_MS = quota.WEEK_MS
+FIVE_HOUR_MINUTES = 300
 CHARS_PER_TOKEN = 4
 SCAN_BUDGET_SECONDS = 10
 RESIDUAL_LIMIT = 50
@@ -953,12 +957,20 @@ def pane_candidates(limits, limits_at, account, plan, session_id):
     return [c for c in out if c]
 
 
+def pane_five_hour(limits, limits_at, account):
+    """The pane session's 5-hour window, dated like its weekly one."""
+    return [c for c in (candidate("claude", account, "session", "five_hour", limit.get("percentUsed"), ts_ms(limit.get("resetsAt")),
+                                  FIVE_HOUR_MINUTES * 60000, limits_at)
+                        for limit in (limits if isinstance(limits, list) else [])
+                        if isinstance(limit, dict) and limit.get("kind") == "five_hour") if c]
+
+
 def ai_acct_cache_dir():
     return os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.join(HOME, ".cache")), "ai-acct")
 
 
-def account_cache_candidates():
-    """ai-acct's stored seven-day window per account: the window only, never the fingerprint beside it.
+def account_cache_candidates(kind="seven_day"):
+    """ai-acct's stored window of one kind per account: the window only, never the fingerprint beside it.
 
     The file's time is when a status-line callback wrote it, not when the vendor
     measured it, so these readings are of unknown age.
@@ -973,10 +985,10 @@ def account_cache_candidates():
         match = re.fullmatch(r"claude-([a-z0-9][a-z0-9_-]{0,31})\.limits\.json", name)
         if not match or quota.claude_account_name(match[1]) == quota.UNKNOWN:
             continue
-        week = (read_json(os.path.join(directory, name)).get("windows") or {}).get("seven_day")
-        if isinstance(week, dict) and number(week.get("resets_at")):
-            out.append(candidate("claude", match[1], "account cache", "seven_day", week.get("used"),
-                                 week["resets_at"] * 1000, WEEK_MS, None))
+        window = (read_json(os.path.join(directory, name)).get("windows") or {}).get(kind)
+        if isinstance(window, dict) and number(window.get("resets_at")):
+            out.append(candidate("claude", match[1], "account cache", kind, window.get("used"),
+                                 window["resets_at"] * 1000, WEEK_MS if kind == "seven_day" else FIVE_HOUR_MINUTES * 60000, None))
     return [c for c in out if c]
 
 
@@ -993,21 +1005,49 @@ def history_candidates(history):
                       r.get("durationMs"), r["observedAt"], r.get("plan") or "", r.get("session") or "") for r in newest.values()]
 
 
-def codex_candidates(found, sessions):
-    """The newest weekly rate-limit event of each Codex account's own limit (id "codex") any local rollout recorded."""
+def newest_codex_limits(found, sessions):
+    """The newest rate-limit event of each Codex account's own limit (id "codex") any local rollout recorded."""
     newest = {}
     for path, entry in found:
         account = entry_account("codex", path, entry, sessions)
         limits = (entry.get("meta") or {}).get("limits", {}).get("codex")
         if limits and (account not in newest or limits["at"] >= newest[account]["at"]):
             newest[account] = limits
+    return newest
+
+
+def codex_candidates(found, sessions):
+    """The weekly window of each Codex account's newest rate-limit event."""
     out = []
-    for account, limits in newest.items():
+    for account, limits in newest_codex_limits(found, sessions).items():
         week = weekly_window(limits["windows"])
         if week:
             out.append(candidate("codex", account, "codex log", f"codex:{week['minutes']}m", week.get("percent"),
                                  (week.get("resetsAt") or 0) * 1000, week["minutes"] * 60000, limits["at"], limits["plan"].title()))
     return [c for c in out if c]
+
+
+def codex_five_hour(found, sessions):
+    """The 300-minute window of each Codex account's newest rate-limit event."""
+    out = []
+    for account, limits in newest_codex_limits(found, sessions).items():
+        for w in limits["windows"]:
+            if w.get("minutes") == FIVE_HOUR_MINUTES:
+                out.append(candidate("codex", account, "codex log", "five_hour", w.get("percent"), (w.get("resetsAt") or 0) * 1000,
+                                     FIVE_HOUR_MINUTES * 60000, limits["at"]))
+    return [c for c in out if c]
+
+
+def five_hour_of(candidates, provider, account, now):
+    """An account's 5-hour window: the freshest vendor reading still in force, `reset` once it has passed, else None."""
+    mine = [c for c in candidates if c["provider"] == provider and c["account"] == account] if account != quota.UNKNOWN else []
+    if not mine:
+        return None
+    anchor = quota.pick_anchor(mine, now)
+    if anchor is None:
+        return {"percent": None, "resetsAt": None, "observedAt": None, "source": "", "stale": False, "reset": True}
+    return {"percent": anchor["percent"], "resetsAt": anchor["resetsAt"], "observedAt": anchor["observedAt"],
+            "source": anchor["source"], "stale": quota.is_stale(anchor["observedAt"], now), "reset": False}
 
 
 def new_records(pane, found, sessions, now):
@@ -1248,6 +1288,9 @@ def main():
         errors.append("reading history not saved")
     groups = {(provider, account) for provider, account in indexes} | {(c["provider"], c["account"]) for c in candidates}
     readings, inner = build_readings(groups, candidates, history, indexes, indexed, now, pane_account, plan, login)
+    five_hour = (pane_five_hour(limits, limits_at, pane_account) + account_cache_candidates("five_hour")
+                 + codex_five_hour(found["codex"], known_sessions))
+    readings = {key: {**r, "fiveHour": five_hour_of(five_hour, r["provider"], r["account"], now)} for key, r in readings.items()}
     ctx = {"now": now, "readings": readings, "inner": inner, "indexed": indexed}
 
     crew = []

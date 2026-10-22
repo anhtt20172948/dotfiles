@@ -6,19 +6,20 @@
  */
 import type { Elements, RenderChildren, RenderSurface } from 'claude-code'
 
-import type { CrewMember, CrewReport, LogFilter, PollState, ViewMode } from '../types'
+import type { CrewMember, CrewReport, LogFilter, PollState, QuotaReading, ViewMode } from '../types'
 import {
   QUOTA_NOTE, TOOLS_DIRECT_NOTE, ago, callTokensText, cells, clip, clockText, dispatchText, effortText, pad, previewText, quotaRows, tildeHome, tokens,
   toolTokenNote, toolTokenText, toolTokenTotal, totalTokens,
 } from './format'
 import { activityChart, activityCounts, fleetModels, harnessColor, memberKey, sortedTools } from './dashboard'
+import { paneStyles } from './theme'
 import type { Paint } from './theme'
 import {
   KPI_DEFINITIONS, NONE, TAG_CELLS, accountsOf, barParts, cardBorder, cardStats, contextExact, contextFigure, contextLine, crewCounts, effectiveFilter,
-  filterLabel, filterLogs, fitSegments, headingParts, kpiText, layoutFor, logEntries, logKey, logPreview, overviewTiles, quotaBrief, quotaEntries, quotaLine,
-  quotaNames, quotaSource, sectionParts, sourceState, statusMessage, statusOf, tilesPerRow, tokenBar, tokenFormulas, tokenParts, totalsText,
+  filterLabel, filterLogs, fitSegments, headingParts, wrapSegments, kpiText, layoutFor, logEntries, logKey, logPreview, logTokens, TOKEN_COLUMN_CELLS, overviewTiles, quotaBrief, quotaEntries, quotaLine,
+  fiveHourLine, fiveHourSource, quotaNames, quotaSource, sectionParts, sourceState, statusMessage, statusOf, tilesPerRow, tokenBar, tokenFormulas, tokenParts, totalsText,
 } from './view'
-import type { Layout, LogEntry, Segment, SourceState, Tile } from './view'
+import type { Layout, LogEntry, QuotaLine, Segment, SourceState, Tile } from './view'
 
 type Ui = Elements[RenderSurface]
 
@@ -63,8 +64,9 @@ const MINI_ROWS = 8
 /** Log rows the expanded zone lists at most: ten events per crewmate is all the collector keeps. */
 const LOG_CAP = 50
 
-/** The Overview's token bar (details mode) is never wider than this, so a wide pane does not draw a wall of blocks. */
-const TOKEN_BAR_CELLS = 60
+/** Blank cells between two parts of the Overview's token bar, and between two items of its legend. */
+const TOKEN_BAR_GAP = 1
+const TOKEN_LEGEND_GAP = 3
 
 /** Rows the activity chart is tall: two rows give each minute sixteen steps. */
 const CHART_ROWS = 2
@@ -117,11 +119,12 @@ type Split = (key: string, width: number, left: RenderChildren, right: RenderChi
 type Bar = (key: string, percent: number, width: number, tone: string) => Node
 
 /** Everything a zone draws with: the elements, the painter and the one-line helpers, `W` the zone's own width. */
-type Kit = { ui: Ui; c: Paint; W: number; row: Row; wrapped: Wrapped; line: Line; split: Split; bar: Bar }
+type Kit = { ui: Ui; c: Paint; style: ReturnType<typeof paneStyles>; W: number; row: Row; wrapped: Wrapped; line: Line; split: Split; bar: Bar }
 
 const kitFor = (ui: Ui, c: Paint, width: number): Kit => {
   const { Box, Text } = ui
   const W = Math.max(1, width)
+  const style = paneStyles(c)
   const row: Row = (text, tone = 'text', w = W, key) => <Text key={key} color={c(tone)} wrap="truncate">{clip(text, w)}</Text>
   const wrapped: Wrapped = (text, tone = 'text', key) => <Text key={key} color={c(tone)} wrap="wrap">{text}</Text>
   const line: Line = (segments, key, w = W) => (
@@ -143,11 +146,11 @@ const kitFor = (ui: Ui, c: Paint, width: number): Kit => {
     return (
       <Box key={key} width={w}>
         {part.fill ? <Text color={c(tone)} wrap="truncate">{part.fill}</Text> : null}
-        {part.track ? <Text color={c('border')} wrap="truncate">{part.track}</Text> : null}
+        {part.track ? <Text {...style.rule} wrap="truncate">{part.track}</Text> : null}
       </Box>
     )
   }
-  return { ui, c, W, row, wrapped, line, split, bar }
+  return { ui, c, style, W, row, wrapped, line, split, bar }
 }
 
 export const drawPane = (ui: Ui, c: Paint, view: ViewState, frame: Frame, act: Actions) => {
@@ -160,6 +163,7 @@ export const drawPane = (ui: Ui, c: Paint, view: ViewState, frame: Frame, act: A
   const source = sourceState(report, view.poll, frame.now, frame.staleMs)
   const layout = layoutFor(W, frame.rows, crew.length, frame.placement)
   const pane = kitFor(ui, c, W)
+  const { style } = pane
   const kit = kitFor(ui, c, layout.inner)
   const failure = view.poll?.failed ? view.error : ''
   const warning = !view.poll?.failed && view.error !== '' ? view.error : ''
@@ -177,10 +181,10 @@ export const drawPane = (ui: Ui, c: Paint, view: ViewState, frame: Frame, act: A
       return (
         <Box key={key} flexDirection="column" width={W}>
           <Box key={`${key}-title`} width={W}>
-            <Text color={c('border')} wrap="truncate">{part.lead}</Text>
-            <Text weight="bold" color={c('subtle')} wrap="truncate">{part.title}</Text>
-            <Text color={c('subtle')} wrap="truncate">{part.hint}</Text>
-            <Text color={c('border')} wrap="truncate">{part.rule}</Text>
+            <Text {...style.rule} wrap="truncate">{part.lead}</Text>
+            <Text {...style.title} wrap="truncate">{part.title}</Text>
+            <Text {...style.meta} wrap="truncate">{part.hint}</Text>
+            <Text {...style.rule} wrap="truncate">{part.rule}</Text>
           </Box>
           {children}
         </Box>
@@ -188,10 +192,10 @@ export const drawPane = (ui: Ui, c: Paint, view: ViewState, frame: Frame, act: A
     }
     const part = sectionParts(title, meta, layout.inner)
     return (
-      <Box key={key} flexDirection="column" borderStyle="round" borderColor={c('border')} paddingX={1} width={W}>
+      <Box key={key} flexDirection="column" {...style.frame} paddingX={1} width={W}>
         {kit.split(`${key}-title`, layout.inner,
-          <Text weight="bold" color={c('subtle')} wrap="truncate">{part.title}</Text>,
-          part.meta ? <Text color={c('subtle')} wrap="truncate">{part.meta}</Text> : null)}
+          <Text {...style.title} wrap="truncate">{part.title}</Text>,
+          part.meta ? <Text {...style.meta} wrap="truncate">{part.meta}</Text> : null)}
         {children}
       </Box>
     )
@@ -202,23 +206,23 @@ export const drawPane = (ui: Ui, c: Paint, view: ViewState, frame: Frame, act: A
   const brand = '▣ CREW'
   const header = cells(brand) + cells(' / monitor') + 2 + cells(state) + 2 <= W
     ? pane.split('header', W,
-      <Text key="brand" weight="bold" wrap="truncate">{brand}<Text color={c('subtle')} weight="regular">{' / monitor'}</Text></Text>,
+      <Text key="brand" {...style.title} wrap="truncate">{brand}<Text {...style.meta}>{' / monitor'}</Text></Text>,
       <Text key="state" color={c(source.tone)} wrap="truncate">{source.mark}<Text color={c('text')}>{` ${state}`}</Text></Text>)
     : (
       <Box key="header" flexDirection="column" width={W}>
-        <Text weight="bold" wrap="truncate">{clip(brand, W)}</Text>
+        <Text {...style.title} wrap="truncate">{clip(brand, W)}</Text>
         {pane.row(`${source.mark} ${state}`, source.tone)}
       </Box>
     )
 
   const help = view.help
     ? (
-      <Box key="help" flexDirection="column" borderStyle="round" borderColor={c('border')} paddingX={1} width={W}>
-        <Text weight="bold">HELP</Text>
+      <Box key="help" flexDirection="column" {...style.frame} paddingX={1} width={W}>
+        <Text {...style.title}>HELP</Text>
         {KEY_HELP.map((text, i) => pane.wrapped(text, 'text', `help-key-${i}`))}
-        <Text weight="bold">STATUS</Text>
+        <Text {...style.title}>STATUS</Text>
         {STATUS_HELP.map((text, i) => pane.wrapped(text, 'subtle', `help-status-${i}`))}
-        <Text weight="bold">METRICS</Text>
+        <Text {...style.title}>METRICS</Text>
         {METRIC_HELP.map((text, i) => pane.wrapped(text, 'subtle', `help-metric-${i}`))}
       </Box>
     )
@@ -234,7 +238,7 @@ export const drawPane = (ui: Ui, c: Paint, view: ViewState, frame: Frame, act: A
       {warning ? pane.wrapped(`! ${warning}`, 'warning', 'warning') : null}
       {zone('overview', 'OVERVIEW', 'fleet · since each task started', drawOverview(kit, view, at))}
       {zone('agents', 'AGENTS', agentMeta, drawAgents(kit, view, layout, at, act, frame.home))}
-      {zone('quota', 'QUOTA & LIMITS', `weekly · ${view.quotaInfo || view.mode === 'details' ? 'notes shown' : 'per account'}`, drawQuota(kit, view, frame.now))}
+      {zone('quota', 'QUOTA & LIMITS', `5h + week · ${view.quotaInfo || view.mode === 'details' ? 'notes shown' : 'per account'}`, drawQuota(kit, view, frame.now))}
       {zone('activity', 'ACTIVITY', activityMeta(view, kit.W, at), drawActivity(kit, view, layout, at))}
       {drawLogs(kit, view, layout, zone, act, frame.home)}
       {help}
@@ -247,7 +251,7 @@ export const drawPane = (ui: Ui, c: Paint, view: ViewState, frame: Frame, act: A
  * The key footer: a rule, then the engine's keys on the left and the pane's own hotkeys on the right.
  * When both do not fit on one row the hotkeys wrap on their own row, the engine's keys under them.
  */
-const drawFooter = ({ ui, c, W, row }: Kit, view: ViewState, frame: Frame, act: Actions, viewed: CrewMember | undefined) => {
+const drawFooter = ({ ui, style, W, row }: Kit, view: ViewState, frame: Frame, act: Actions, viewed: CrewMember | undefined) => {
   const { Box, Button, Text } = ui
   const filter = clip(filterLabel(effectiveFilter(view.logFilter, viewed ? memberKey(viewed) : null), viewed?.id), FILTER_LABEL_CELLS)
   const keys = [
@@ -266,11 +270,11 @@ const drawFooter = ({ ui, c, W, row }: Kit, view: ViewState, frame: Frame, act: 
   )
   return (
     <Box key="footer" flexDirection="column" width={W}>
-      <Text color={c('border')} wrap="truncate">{'─'.repeat(W)}</Text>
+      <Text {...style.rule} wrap="truncate">{'─'.repeat(W)}</Text>
       {cells(hint) + 2 + need <= W
         ? (
           <Box key="footer-row" width={W}>
-            <Text color={c('subtle')} wrap="truncate">{hint}</Text>
+            <Text {...style.meta} wrap="truncate">{hint}</Text>
             <Box flexGrow={1} />
             {buttons}
           </Box>
@@ -290,7 +294,7 @@ const drawFooter = ({ ui, c, W, row }: Kit, view: ViewState, frame: Frame, act: 
  * engine shows it, in zone order, one quota row per provider. Short of rows, the providers' quota
  * share one row before any crewmate gives way, so no account is ever scrolled out of sight.
  */
-const drawMini = ({ ui, row }: Kit, view: ViewState, frame: Frame, source: SourceState) => {
+const drawMini = ({ ui, c, style, row }: Kit, view: ViewState, frame: Frame, source: SourceState) => {
   const { Box, Text } = ui
   const { report } = view
   const crew = report?.crew ?? []
@@ -310,11 +314,16 @@ const drawMini = ({ ui, row }: Kit, view: ViewState, frame: Frame, source: Sourc
   const age = (m: CrewMember) => m.lastAt > 0 ? ago(Math.max(0, at - m.lastAt)) : NONE
   return (
     <Box flexDirection="column" width={W}>
-      <Text weight="bold" wrap="truncate">{clip(`CREW · ${counts} · ${source.mark} ${source.label} ${source.age}`, W)}</Text>
+      <Text {...style.title} wrap="truncate">{clip(`CREW · ${counts} · ${source.mark} ${source.label} ${source.age}`, W)}</Text>
       {row(kpiText(fleetTotals(report), true), 'suggestion', W, 'mini-kpi')}
       {crew.slice(0, shown).map(m => {
         const s = statusOf(m, at)
-        return row(`${s.mark} ${'  '.repeat(m.depth)}${m.id} · ${s.label} ${age(m)} · ${dispatchText(m)}`, harnessColor(m.harness), W, `mini-${memberKey(m)}`)
+        const parts = fitSegments([
+          { text: `${s.mark} ${'  '.repeat(m.depth)}${m.id} · ${s.label} ${age(m)} · `, tone: s.color },
+          { text: m.harness, tone: harnessColor(m.harness) },
+          { text: dispatchText(m).slice(m.harness.length), tone: 'subtle' },
+        ], W)
+        return <Text key={`mini-${memberKey(m)}`} wrap="truncate">{parts.map((part, i) => <Text key={String(i)} color={c(part.tone)}>{part.text}</Text>)}</Text>
       })}
       {more ? row(`+${crew.length - shown} more · dock /crew for details`, 'subtle') : null}
       {report && crew.length === 0 ? row('No crewmates are live.', 'subtle') : null}
@@ -333,7 +342,7 @@ const fleetTotals = (report: CrewReport | null) =>
  * figure over its label, and the fleet's usage under them. Details mode adds a bar of what Tokens is
  * made of, its legend and both sums written out with every term.
  */
-const drawOverview = ({ ui, c, W, row, wrapped, line }: Kit, view: ViewState, at: number) => {
+const drawOverview = ({ ui, c, style, W, row, wrapped }: Kit, view: ViewState, at: number) => {
   const { Box, Text } = ui
   const { report } = view
   const totals = fleetTotals(report)
@@ -342,8 +351,7 @@ const drawOverview = ({ ui, c, W, row, wrapped, line }: Kit, view: ViewState, at
   const unreadable = [...new Set((report?.crew ?? []).filter(m => !m.readable).map(m => m.harness))]
   const left = (report?.crew ?? []).filter(m => !m.readable).length
   const parts = totals ? tokenParts(totals) : []
-  const bar = details ? tokenBar(parts, Math.min(W, TOKEN_BAR_CELLS)) : []
-  const legend = parts.flatMap((p, i): Segment[] => [...(i > 0 ? [{ text: ' · ', tone: 'subtle' }] : []), { text: `${p.glyph} ${p.label} ${tokens(p.value)}`, tone: p.tone }])
+  const bar = details ? tokenBar(parts, W, TOKEN_BAR_GAP) : []
   const tiles = overviewTiles(report ? report.crew : null, totals, at)
   const across = tilesPerRow(W)
   // The cells a row of tiles leaves over go to its first tiles, one each, so the row spans the zone.
@@ -353,9 +361,9 @@ const drawOverview = ({ ui, c, W, row, wrapped, line }: Kit, view: ViewState, at
     const width = base + (i < spare ? 1 : 0)
     const inner = Math.max(1, width - 4)
     return (
-      <Box key={`tile-${t.key}`} flexDirection="column" borderStyle="round" borderColor={c('border')} paddingX={1} width={width}>
+      <Box key={`tile-${t.key}`} flexDirection="column" {...style.frame} paddingX={1} width={width}>
         <Text color={c(t.tone)} weight="bold" wrap="truncate">{clip(t.value, inner)}</Text>
-        <Text color={c('subtle')} wrap="truncate">{clip(cells(t.label) <= inner ? t.label : t.short, inner)}</Text>
+        <Text {...style.meta} wrap="truncate">{clip(cells(t.label) <= inner ? t.label : t.short, inner)}</Text>
       </Box>
     )
   }
@@ -366,8 +374,20 @@ const drawOverview = ({ ui, c, W, row, wrapped, line }: Kit, view: ViewState, at
       {row(totalsText(totals), totals ? 'text' : 'subtle', W, 'totals')}
       {!report ? row('Reading the crew logs…', 'subtle') : null}
       {left > 0 ? row(`${totals ? 'excludes' : 'no readable usage from'} ${left} crewmate${left === 1 ? '' : 's'}: ${unreadable.join(', ')} logs not readable`, 'subtle') : null}
-      {bar.length > 0 ? <Box key="token-bar" width={W}>{bar.map((s, i) => <Text key={`token-bar-${i}`} color={c(s.tone)} wrap="truncate">{s.text}</Text>)}</Box> : null}
-      {details && totalTokens(totals) > 0 ? line(legend, 'token-legend') : null}
+      {bar.length > 0 ? <Box key="token-bar" width={W}>{bar.map((s, i) => <Text key={`token-bar-${i}`} color={s.text.trim() ? c(s.tone) : undefined} wrap="truncate">{s.text}</Text>)}</Box> : null}
+      {details && totalTokens(totals) > 0
+        ? (
+          <Box key="token-legend" flexWrap="wrap" columnGap={TOKEN_LEGEND_GAP} width={W}>
+            {parts.map(p => (
+              <Box key={`token-legend-${p.label}`}>
+                <Text color={c(p.tone)}>{p.glyph}</Text>
+                <Text {...style.meta}>{` ${p.label} `}</Text>
+                <Text color={c('text')}>{tokens(p.value)}</Text>
+              </Box>
+            ))}
+          </Box>
+        )
+        : null}
       {details ? tokenFormulas(totals).map((text, i) => wrapped(text, i === 1 ? 'permission' : 'subtle', `token-formula-${i}`)) : null}
       {details ? models.map(([model, n]) => row(`${model} ×${n}`, 'suggestion', W, `model-${model}`)) : null}
       {details ? wrapped(KPI_DEFINITIONS, 'subtle', 'kpi-definitions') : null}
@@ -381,7 +401,7 @@ const drawOverview = ({ ui, c, W, row, wrapped, line }: Kit, view: ViewState, at
  * else known about it opens with its number (1-9).
  */
 const drawAgents = (kit: Kit, view: ViewState, layout: Layout, at: number, act: Actions, home: string) => {
-  const { ui, c, W, row, line, split, bar } = kit
+  const { ui, c, style, W, row, line, split, bar } = kit
   const { Box, Text, Button } = ui
   const { report } = view
   const crew = report?.crew ?? []
@@ -412,7 +432,7 @@ const drawAgents = (kit: Kit, view: ViewState, layout: Layout, at: number, act: 
     return split(`title-${memberKey(m)}`, width,
       [
         <Text key="mark" color={c(s.color)} wrap="truncate">{`${s.mark} `}</Text>,
-        <Button key={`card-${memberKey(m)}`} plain hotkey={hotkey} label={name} onPress={act.toggle(m)}><Text weight="bold">{name}</Text></Button>,
+        <Button key={`card-${memberKey(m)}`} plain hotkey={hotkey} label={name} onPress={act.toggle(m)}><Text {...style.title}>{name}</Text></Button>,
       ],
       <Text key="state" color={c(s.color)} wrap="truncate">{state}</Text>)
   }
@@ -427,16 +447,16 @@ const drawAgents = (kit: Kit, view: ViewState, layout: Layout, at: number, act: 
     const label = 'Context usage'
     const figure = clip(context.text, inner)
     return (
-      <Box key={`panel-${memberKey(m)}`} flexDirection="column" borderStyle="round" borderColor={c(border.color)} borderDimColor={border.dim} width={width} paddingX={1}>
+      <Box key={`panel-${memberKey(m)}`} flexDirection="column" {...style.frame} borderColor={c(border.color)} borderDimColor={border.dim} width={width} paddingX={1}>
         {title(m, i, inner)}
         {line(task(m), `task-${memberKey(m)}`, inner)}
         {split(`context-${memberKey(m)}`, inner,
-          cells(label) + 2 + cells(figure) <= inner ? <Text color={c('subtle')} wrap="truncate">{label}</Text> : null,
+          cells(label) + 2 + cells(figure) <= inner ? <Text {...style.meta} wrap="truncate">{label}</Text> : null,
           <Text color={c(context.percent === null ? 'subtle' : 'text')} weight={context.percent === null ? 'regular' : 'bold'} wrap="truncate">{figure}</Text>)}
         {context.percent !== null ? bar(`context-bar-${memberKey(m)}`, context.percent, inner, contextTone(m)) : null}
         {text(cardStats(m), 'subtle', `stats-${memberKey(m)}`)}
         {text(message.text, message.tone)}
-        {details ? text(effortText(m.effort), harnessColor(m.harness)) : null}
+        {details ? text(effortText(m.effort), 'subtle') : null}
         {details && m.lastTool && m.status ? text(`last ▸ ${previewText(m.lastTool, home)}`, 'subtle') : null}
       </Box>
     )
@@ -471,59 +491,106 @@ const drawAgents = (kit: Kit, view: ViewState, layout: Layout, at: number, act: 
   )
 }
 
-/** Everything known about one crewmate, for the one whose details are open; the home folder reads as `~`. */
-const drawDetails = ({ ui, c, W, wrapped }: Kit, view: ViewState, m: CrewMember, at: number, home: string) => {
+/**
+ * Everything known about one crewmate, for the one whose details are open; the home folder reads as `~`.
+ * Each section opens with a ruled heading in the zones' style, a blank row before it, and every line is
+ * wrapped here to the box's inner width, so no text can run past its border.
+ */
+const drawDetails = ({ ui, c, style, W }: Kit, view: ViewState, m: CrewMember, at: number, home: string) => {
   const { Box, Text } = ui
-  const color = harnessColor(m.harness)
+  const inner = Math.max(1, W - 4)
+  const border = cardBorder(m, at)
   const readings = view.report?.quota.readings ?? {}
   const note = toolTokenNote(m)
   const spent = Object.values(m.toolTokens).reduce((n, tt) => n + toolTokenTotal(tt), 0)
   const quota = quotaRows(m.quota, readings, at)
   const own = (text: string) => tildeHome(text, home)
   const cut = (text: string) => text.endsWith('…') ? `${text} (source truncated)` : text
-  const section = (name: string) => <Text key={`d-${name}`} weight="bold" color={c(color)}>{name}</Text>
+  const block = (segments: readonly Segment[], key: string) => (
+    <Box key={key} flexDirection="column" width={inner}>
+      {wrapSegments(segments, inner).map((parts, i) => (
+        <Text key={String(i)} wrap="truncate">
+          {parts.map((s, j) => <Text key={String(j)} color={c(s.tone)} weight={s.bold ? 'bold' : 'regular'}>{s.text}</Text>)}
+        </Text>
+      ))}
+    </Box>
+  )
+  const text = (body: string, tone: string, key: string) => block([{ text: body, tone }], key)
+  const section = (name: string, rows: RenderChildren[]) => {
+    const part = headingParts(name, '', inner)
+    return (
+      <Box key={`d-${name}`} flexDirection="column" width={inner}>
+        <Text key="gap"> </Text>
+        <Box key="heading" width={inner}>
+          <Text {...style.rule} wrap="truncate">{part.lead}</Text>
+          <Text {...style.title} wrap="truncate">{part.title}</Text>
+          <Text {...style.rule} wrap="truncate">{part.rule}</Text>
+        </Box>
+        {rows}
+      </Box>
+    )
+  }
   return (
-    <Box key={`details-${memberKey(m)}`} flexDirection="column" borderStyle="round" borderColor={c(color)} width={W} paddingX={1}>
-      <Text weight="bold" wrap="wrap">{`${m.id} · details`}</Text>
-      {m.description && m.description !== m.id ? wrapped(own(m.description), 'text', 'd-description') : null}
-      {wrapped(`status ${m.status ? own(m.status) : `${NONE} no status line yet`}`, 'permission', 'd-status')}
-      {section('MODEL')}
-      {wrapped(`dispatched ${dispatchText(m)} · ${effortText(m.effort)}`, color, 'd-dispatch')}
-      {Object.entries(m.models).length === 0 ? wrapped('no model requests yet', 'subtle', 'd-no-models') : null}
-      {Object.entries(m.models).map(([model, n]) => wrapped(`${model} ×${n}`, color, `d-model-${model}`))}
-      {section('CONTEXT & TOKENS')}
-      {wrapped(`context ${contextExact(m)}`, 'text', 'd-context')}
-      {m.readable
-        ? wrapped(`${m.requests} requests · uncached in ${tokens(m.input)} · out ${tokens(m.output)} · thinking ${m.reasoning > 0 ? `${tokens(m.reasoning)} (in out)` : 'not reported'}`, 'text', 'd-tokens')
-        : wrapped(`usage is not readable for the ${m.harness} harness`, 'subtle', 'd-tokens')}
-      {m.readable ? wrapped(`cache ${tokenFormulas(m)[1]?.replace(/^Cache /, '') ?? NONE}`, 'permission', 'd-cache') : null}
-      {m.readable && m.sessions === 0 ? wrapped('no transcript found for its worktree yet', 'subtle', 'd-sessions') : null}
-      {section('TOOLS')}
-      {wrapped(m.readable ? `tools ${m.toolCalls} · ${tokens(spent)} tok` : `tools ${NONE}: ${m.harness} logs not readable`, 'text', 'd-tools')}
-      {sortedTools(m.tools).map(([tool, n]) => wrapped(`${tool} ×${n} · ${toolTokenText(m.toolTokens[tool])}`, 'text', `d-tool-${tool}`))}
-      {note ? wrapped(note, 'subtle', 'd-tool-note') : null}
-      {m.recentTools.length > 0 ? wrapped('recent calls, newest first (full text: Tab to the event row, then Enter)', 'subtle', 'd-calls') : null}
-      {[...m.recentTools].reverse().map((event, i) => <Text key={`d-call-${i}`} color={c('subtle')} wrap="truncate">{clip(`${clockText(event.at)} ${event.tool ? `${callTokensText(event)} · ` : ''}${previewText(event.text, home)}`, Math.max(1, W - 4))}</Text>)}
-      {section('LAST ACTION')}
-      {wrapped(m.lastTool ? `▸ ${cut(own(m.lastTool))}` : `${NONE} no tool call yet`, 'text', 'd-last-tool')}
-      {m.lastText ? wrapped(`“${cut(own(m.lastText))}”`, 'subtle', 'd-last-text') : null}
-      {section('SOURCE & LIMITS')}
-      {quota.length === 0 ? wrapped(`${NONE} no quota figure: ${accountsOf(m, readings)}`, 'subtle', 'd-no-quota') : null}
-      {quota.map((r, i) => wrapped(r.text, r.tone, `d-quota-${i}`))}
-      {quota.length > 0 ? wrapped(QUOTA_NOTE, 'subtle', 'd-quota-note') : null}
-      {quota.length > 0 ? wrapped(TOOLS_DIRECT_NOTE, 'subtle', 'd-tools-note') : null}
-      {wrapped(`branch ${m.branch || 'unknown'}\nworktree ${m.worktree ? own(m.worktree) : 'unknown'}\nhome ${own(m.home)}\nharness ${m.harness} · ${m.readable ? `${m.sessions} transcripts` : 'transcripts not readable'}`, 'subtle', 'd-where')}
+    <Box key={`details-${memberKey(m)}`} flexDirection="column" {...style.frame} borderColor={c(border.color)} borderDimColor={border.dim} width={W} paddingX={1}>
+      {block([{ text: `${m.id} · details`, tone: 'text', bold: true }], 'd-title')}
+      {section('STATUS', [
+        m.description && m.description !== m.id ? text(own(m.description), 'text', 'd-description') : null,
+        text(`status ${m.status ? own(m.status) : `${NONE} no status line yet`}`, 'permission', 'd-status'),
+      ])}
+      {section('MODEL', [
+        block([{ text: 'dispatched ', tone: 'text' }, { text: m.harness, tone: harnessColor(m.harness) }, { text: `${dispatchText(m).slice(m.harness.length)} · ${effortText(m.effort)}`, tone: 'text' }], 'd-dispatch'),
+        Object.entries(m.models).length === 0 ? text('no model requests yet', 'subtle', 'd-no-models') : null,
+        ...Object.entries(m.models).map(([model, n]) => text(`${model} ×${n}`, 'text', `d-model-${model}`)),
+      ])}
+      {section('CONTEXT & TOKENS', [
+        text(`context ${contextExact(m)}`, 'text', 'd-context'),
+        m.readable
+          ? text(`${m.requests} requests · uncached in ${tokens(m.input)} · out ${tokens(m.output)} · thinking ${m.reasoning > 0 ? `${tokens(m.reasoning)} (in out)` : 'not reported'}`, 'text', 'd-tokens')
+          : text(`usage is not readable for the ${m.harness} harness`, 'subtle', 'd-tokens'),
+        m.readable ? text(`cache ${tokenFormulas(m)[1]?.replace(/^Cache /, '') ?? NONE}`, 'permission', 'd-cache') : null,
+        m.readable && m.sessions === 0 ? text('no transcript found for its worktree yet', 'subtle', 'd-sessions') : null,
+      ])}
+      {section('TOOLS', [
+        text(m.readable ? `tools ${m.toolCalls} · ${tokens(spent)} tok` : `tools ${NONE}: ${m.harness} logs not readable`, 'text', 'd-tools'),
+        ...sortedTools(m.tools).map(([tool, n]) => text(`${tool} ×${n} · ${toolTokenText(m.toolTokens[tool])}`, 'text', `d-tool-${tool}`)),
+        note ? text(note, 'subtle', 'd-tool-note') : null,
+      ])}
+      {m.recentTools.length > 0
+        ? section('RECENT CALLS', [
+          text('recent calls, newest first (full text: Tab to the event row, then Enter)', 'subtle', 'd-calls'),
+          ...[...m.recentTools].reverse().map((event, i) => <Text key={`d-call-${i}`} {...style.meta} wrap="truncate">{clip(`${clockText(event.at)} ${event.tool ? `${callTokensText(event)} · ` : ''}${previewText(event.text, home)}`, inner)}</Text>),
+        ])
+        : null}
+      {section('LAST ACTION', [
+        text(m.lastTool ? `▸ ${cut(own(m.lastTool))}` : `${NONE} no tool call yet`, 'text', 'd-last-tool'),
+        m.lastText ? text(`“${cut(own(m.lastText))}”`, 'subtle', 'd-last-text') : null,
+      ])}
+      {section('SOURCE & LIMITS', [
+        quota.length === 0 ? text(`${NONE} no quota figure: ${accountsOf(m, readings)}`, 'subtle', 'd-no-quota') : null,
+        ...quota.map((r, i) => text(r.text, r.tone, `d-quota-${i}`)),
+        quota.length > 0 ? text(QUOTA_NOTE, 'subtle', 'd-quota-note') : null,
+        quota.length > 0 ? text(TOOLS_DIRECT_NOTE, 'subtle', 'd-tools-note') : null,
+      ])}
+      {section('WORKSPACE', [
+        text(`branch ${m.branch || 'unknown'}\nworktree ${m.worktree ? own(m.worktree) : 'unknown'}\nhome ${own(m.home)}\nharness ${m.harness} · ${m.readable ? `${m.sessions} transcript${m.sessions === 1 ? '' : 's'}` : 'transcripts not readable'}`, 'subtle', 'd-where'),
+      ])}
     </Box>
   )
 }
 
+/** The cells of a window row's label (`  5h   `, `  week `), and the fewest cells a bar is drawn in beside its figure. */
+const WINDOW_LABEL_CELLS = 7
+const MIN_INLINE_BAR = 8
+
 /**
- * One block per account: its name, and against the right edge the vendor's weekly percent, a stale
- * mark once the reading is over half an hour old and the time to its reset; under it a bar of the
- * percent in the provider's accent, drawn only when there is a percent. The notes (source and age,
- * estimates, crew shares, caveats) show under each account with `i`, and in details mode.
+ * One block per account: its name, then a 5h row and a week row. Each row has its label, a bar of the
+ * vendor's percent in the provider's accent and, in a column shared by every row, the percent, a stale
+ * mark once the reading is over half an hour old and the time to its reset. A window with no percent
+ * shows `—` and why, and draws no bar. Too narrow for a bar beside the figure, the bar takes the next
+ * row. The notes (source and age, estimates, crew shares, caveats) show under each account with `i`,
+ * and in details mode.
  */
-const drawQuota = ({ ui, c, W, row, wrapped, split, bar }: Kit, view: ViewState, now: number) => {
+const drawQuota = ({ ui, c, style, W, row, wrapped, split, bar }: Kit, view: ViewState, now: number) => {
   const { Box, Text } = ui
   const { report } = view
   if (!report) return row(`${NONE} waiting for the first read`, 'subtle', W, 'quota-empty')
@@ -532,35 +599,45 @@ const drawQuota = ({ ui, c, W, row, wrapped, split, bar }: Kit, view: ViewState,
   const names = quotaNames(entries)
   const info = view.quotaInfo || view.mode === 'details'
   const fleet = report.quota.fleet
+  // The stale mark comes before the reset time, so a narrow row cuts the reset first.
+  const right = (q: QuotaLine) => `${q.figure}${[q.note, q.reset].filter(Boolean).map(text => ` · ${text}`).join('')}`
+  const windows = (r: QuotaReading) => [{ id: '5h', label: '5h', q: fiveHourLine(r, now) }, { id: 'week', label: 'week', q: quotaLine(r, now) }]
+  const column = Math.min(W - WINDOW_LABEL_CELLS, Math.max(...entries.flatMap(([, r]) => windows(r).map(w => cells(right(w.q))))))
+  const inline = W - WINDOW_LABEL_CELLS - 2 - column >= MIN_INLINE_BAR
+  const windowRow = (key: string, r: QuotaReading, w: ReturnType<typeof windows>[number]) => {
+    const { q } = w
+    const id = w.id === 'week' ? key : `5h-${key}`
+    const figureCells = inline ? column : W - WINDOW_LABEL_CELLS
+    const figure = (
+      <Text key="figure" wrap="truncate">
+        <Text color={c(q.tone)} weight={q.percent !== null ? 'bold' : 'regular'}>{q.figure}</Text>
+        <Text color={c(q.percent === null ? 'subtle' : q.note ? 'warning' : 'subtle')}>{pad(right(q).slice(q.figure.length), Math.max(0, figureCells - cells(q.figure)))}</Text>
+      </Text>
+    )
+    const label = <Text key="label" {...style.meta} wrap="truncate">{pad(`  ${w.label}`, Math.min(W, WINDOW_LABEL_CELLS))}</Text>
+    const barCells = W - WINDOW_LABEL_CELLS - 2 - column
+    return (
+      <Box key={`quota-${w.id}-${key}`} flexDirection="column" width={W}>
+        <Box key="window-line" width={W}>
+          {label}
+          {inline ? q.percent !== null ? bar(`quota-bar-${id}`, q.percent, barCells, harnessColor(r.provider)) : <Text key="no-bar">{' '.repeat(barCells)}</Text> : null}
+          {inline ? <Text key="gap">{'  '}</Text> : null}
+          {figure}
+        </Box>
+        {!inline && q.percent !== null ? bar(`quota-bar-${id}`, q.percent, W, harnessColor(r.provider)) : null}
+      </Box>
+    )
+  }
   return (
     <Box key="quota-body" flexDirection="column" width={W}>
       {entries.map(([key, r]) => {
-        const q = quotaLine(r, now)
-        const source = quotaSource(r, now)
-        const name = names.get(key) ?? key
-        // The stale mark comes before the reset time, so a narrow row cuts the reset first.
-        const tail = [q.note, q.reset].filter(Boolean).map(text => ` · ${text}`).join('')
-        const right = `${q.figure}${tail}`
-        const together = cells(name) + 2 + cells(right) <= W
-        const figure = (
-          <Text key="figure" wrap="truncate">
-            <Text color={c(q.tone)} weight={q.percent !== null ? 'bold' : 'regular'}>{q.figure}</Text>
-            <Text color={c(q.percent === null ? 'subtle' : q.note ? 'warning' : 'subtle')}>{clip(tail, Math.max(0, (together ? W - cells(name) - 2 : W - 2) - cells(q.figure)))}</Text>
-          </Text>
-        )
         const shares = info && fleet[key] ? quotaRows({ [key]: fleet[key] }, report.quota.readings, now, true).slice(1).filter(s => !/^(week|source) /.test(s.text)) : []
         return (
           <Box key={`quota-${key}`} flexDirection="column" width={W}>
-            {together
-              ? split(`quota-line-${key}`, W, <Text key="name" wrap="truncate">{name}</Text>, figure)
-              : (
-                <Box key={`quota-line-${key}`} flexDirection="column" width={W}>
-                  {row(name)}
-                  <Box key="figure-row" width={W}><Text key="indent">{'  '}</Text>{figure}</Box>
-                </Box>
-              )}
-            {q.percent !== null ? bar(`quota-bar-${key}`, q.percent, W, harnessColor(r.provider)) : null}
-            {info ? row(`  ${source.text}`, source.tone, W, `quota-source-${key}`) : null}
+            {split(`quota-line-${key}`, W, <Text key="name" color={c('text')} wrap="truncate">{names.get(key) ?? key}</Text>, null)}
+            {windows(r).map(w => windowRow(key, r, w))}
+            {info ? row(`  ${fiveHourSource(r, now).text}`, fiveHourSource(r, now).tone, W, `quota-source-5h-${key}`) : null}
+            {info ? row(`  ${quotaSource(r, now).text}`, quotaSource(r, now).tone, W, `quota-source-${key}`) : null}
             {info && !fleet[key] ? row('  no crew usage in this window', 'subtle', W, `quota-idle-${key}`) : null}
             {shares.map((s, i) => row(`  ${s.text}`, s.tone, W, `quota-${key}-${i}`))}
           </Box>
@@ -593,7 +670,7 @@ const activityMeta = (view: ViewState, width: number, at: number): string => {
  * left and the current minute on the right, `60m ago` and `now` under it. Only real per-minute buckets
  * are drawn: no readable log, no live crew or no event in the window each say so in words instead.
  */
-const drawActivity = ({ ui, c, W, row }: Kit, view: ViewState, layout: Layout, at: number) => {
+const drawActivity = ({ ui, c, style, W, row }: Kit, view: ViewState, layout: Layout, at: number) => {
   const { Box, Text } = ui
   const crew = view.report?.crew ?? []
   const minutes = chartMinutes(W)
@@ -628,7 +705,7 @@ const drawActivity = ({ ui, c, W, row }: Kit, view: ViewState, layout: Layout, a
         </Box>
       ))}
       {span >= cells(start) + 5
-        ? <Box key="chart-axis" width={span}><Text color={c('subtle')} wrap="truncate">{start}</Text><Box flexGrow={1} /><Text color={c('subtle')} wrap="truncate">now</Text></Box>
+        ? <Box key="chart-axis" width={span}><Text {...style.meta} wrap="truncate">{start}</Text><Box flexGrow={1} /><Text {...style.meta} wrap="truncate">now</Text></Box>
         : row('now ┘', 'subtle', W, 'chart-axis')}
       {unknown > 0 ? row(`excludes ${unknown} crewmate${unknown === 1 ? '' : 's'} whose logs are not readable`, 'subtle', W, 'activity-unknown') : null}
     </Box>
@@ -637,12 +714,17 @@ const drawActivity = ({ ui, c, W, row }: Kit, view: ViewState, layout: Layout, a
 
 type Zone = (key: string, title: string, meta: string, children: RenderChildren) => Node
 
+/** Cells a log row keeps for its command before the token columns give way. */
+const MIN_COMMAND_CELLS = 16
+
 /**
- * The newest events, one short row each: time, the tag as a badge, the crewmate (when more than one is
- * live), the command or path in bold and the rest dim. Each row is a Button: Enter on it shows the
- * full text under it, the home folder written as `~`; `l` lists more rows.
+ * The newest events, one short row each: time, the tag as a badge, the call's input and output tokens
+ * in two right-aligned columns under an `in`/`out` header (`—` where nothing measured them), the
+ * crewmate (when more than one is live), the command or path in bold and the rest dim. A pane too
+ * narrow to keep the command readable drops the token columns and says so. Each row is a Button:
+ * Enter on it shows the full text under it, the home folder written as `~`; `l` lists more rows.
  */
-const drawLogs = ({ ui, c, W, row, wrapped }: Kit, view: ViewState, layout: Layout, zone: Zone, act: Actions, home: string) => {
+const drawLogs = ({ ui, c, style, W, row, wrapped }: Kit, view: ViewState, layout: Layout, zone: Zone, act: Actions, home: string) => {
   const { Box, Text, Button } = ui
   const { report } = view
   const crew = report?.crew ?? []
@@ -658,14 +740,26 @@ const drawLogs = ({ ui, c, W, row, wrapped }: Kit, view: ViewState, layout: Layo
   const meta = limit === 0 ? `${label} · ${events}` : `${label} · ${shown.length} of ${events}`
   const many = crew.length > 1
   const whoWidth = Math.max(8, Math.min(20, Math.floor(W / 6)))
+  // Time and tag take 10 cells each; the two token columns a cell between them and two after.
+  const lead = 10 + TAG_CELLS + 4
+  const columns = 2 * TOKEN_COLUMN_CELLS + 3
+  const withTokens = W - lead - (many ? whoWidth + 2 : 0) - columns >= MIN_COMMAND_CELLS
+  const right = (text: string) => ' '.repeat(Math.max(0, TOKEN_COLUMN_CELLS - cells(text))) + text
   const entry = (e: LogEntry) => {
     const p = logPreview(e, home)
     const isError = e.level === 'error'
     const badge = ` ${p.tag} `
+    const t = logTokens(e)
     const parts = fitSegments([
       { text: `${clockText(e.at)}  `, tone: 'subtle' },
       { text: badge, tone: p.tone, inverse: true },
       { text: ' '.repeat(Math.max(0, TAG_CELLS + 2 - cells(badge)) + 2), tone: 'subtle' },
+      ...(withTokens ? [
+        { text: right(t.input), tone: t.input === NONE ? 'subtle' : 'text' },
+        { text: ' ', tone: 'subtle' },
+        { text: right(t.output), tone: t.output === NONE ? 'subtle' : 'text' },
+        { text: '  ', tone: 'subtle' },
+      ] : []),
       ...(many ? [{ text: `${pad(e.who, whoWidth)}  `, tone: e.color }] : []),
       { text: p.head, tone: isError ? 'error' : 'text', bold: true },
       ...(p.rest ? [{ text: ` ${p.rest}`, tone: isError ? 'error' : 'subtle' }] : []),
@@ -688,6 +782,11 @@ const drawLogs = ({ ui, c, W, row, wrapped }: Kit, view: ViewState, layout: Layo
     <Box key="logs-body" flexDirection="column" width={W}>
       {empty ? row(empty, 'subtle') : null}
       {!empty && limit === 0 ? row(`${kept.length} events · newest ${clockText(kept[0]?.at ?? 0)} · l to expand`, 'subtle') : null}
+      {shown.length > 0
+        ? withTokens
+          ? <Box key="logs-columns" width={W}><Text {...style.meta} wrap="truncate">{`${' '.repeat(lead)}${right('in')} ${right('out')}  tokens`}</Text></Box>
+          : <Box key="logs-columns" width={W}>{row('in/out tokens hidden: the pane is too narrow', 'subtle')}</Box>
+        : null}
       {shown.map(entry)}
     </Box>
   ))

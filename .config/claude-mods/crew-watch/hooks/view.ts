@@ -3,9 +3,10 @@
  * No engine calls or UI elements. A field the collector does not give is shown as `—` or a stated
  * absence, never as a made-up number.
  */
-import type { CrewEvent, CrewMember, CrewReport, CrewTotals, LogFilter, PollState, QuotaReading } from '../types'
-import { SOURCES, ago, cacheHit, cells, clip, gauge, measuredText, previewText, roundTokens, tokens, totalTokens } from './format'
-import { crewState, harnessColor, isActive, memberKey } from './dashboard'
+import type { CrewEvent, CrewMember, CrewReport, CrewTotals, FiveHourReading, LogFilter, PollState, QuotaReading } from '../types'
+import { SOURCES, ago, cacheHit, cells, charCells, clip, gauge, measuredText, previewText, roundTokens, tokens, totalTokens } from './format'
+import { crewState, isActive, memberKey } from './dashboard'
+import { AGENT_BORDERS } from './theme'
 
 export { isActive } from './dashboard'
 
@@ -164,7 +165,7 @@ export type TokenPart = { label: string; glyph: string; tone: string; value: num
 /** The four parts Tokens adds up, in the bar's order: cache read, cache write, output, uncached input. */
 export const tokenParts = (u: Pick<CrewTotals, 'input' | 'output' | 'cacheRead' | 'cacheWrite'>): TokenPart[] => [
   { label: 'read', glyph: '█', tone: 'permission', value: u.cacheRead },
-  { label: 'write', glyph: '▓', tone: 'suggestion', value: u.cacheWrite },
+  { label: 'write', glyph: '▓', tone: 'success', value: u.cacheWrite },
   { label: 'out', glyph: '▒', tone: 'merged', value: u.output },
   { label: 'uncached in', glyph: '░', tone: 'text', value: u.input },
 ]
@@ -172,11 +173,14 @@ export const tokenParts = (u: Pick<CrewTotals, 'input' | 'output' | 'cacheRead' 
 /**
  * The parts as one bar of `width` cells, each part's cells in proportion (largest remainders round up);
  * a part above zero keeps at least one cell while there is room for each. Empty when nothing was used.
+ * With `gap`, that many blank cells part each two neighbours, unless the width leaves no room for them.
  */
-export const tokenBar = (parts: readonly TokenPart[], width: number): Segment[] => {
-  const size = Math.max(0, Math.floor(width))
+export const tokenBar = (parts: readonly TokenPart[], width: number, gap = 0): Segment[] => {
   const shown = parts.filter(p => p.value > 0)
   const total = shown.reduce((n, p) => n + p.value, 0)
+  const gaps = Math.max(0, shown.length - 1) * gap
+  const parted = gap > 0 && Math.floor(width) - gaps >= shown.length
+  const size = Math.max(0, Math.floor(width) - (parted ? gaps : 0))
   if (total <= 0 || size === 0) return []
   const least = size >= shown.length ? 1 : 0
   const spare = size - least * shown.length
@@ -186,6 +190,7 @@ export const tokenBar = (parts: readonly TokenPart[], width: number): Segment[] 
   return shown
     .map((p, i) => ({ text: p.glyph.repeat(least + Math.floor(exact[i] ?? 0) + (bumped.has(i) ? 1 : 0)), tone: p.tone }))
     .filter(s => s.text !== '')
+    .flatMap((s, i): Segment[] => i > 0 && parted ? [{ text: ' '.repeat(gap), tone: 'subtle' }, s] : [s])
 }
 
 const exact = (n: number): string => n.toLocaleString('en-US')
@@ -290,10 +295,10 @@ export const statusMessage = (m: Pick<CrewMember, 'lastAt' | 'status' | 'lastToo
  */
 export const cardBorder = (m: Pick<CrewMember, 'lastAt' | 'status'>, now: number): { color: string; dim: boolean } => {
   const label = statusOf(m, now).label
-  if (label === 'WORKING' || label === 'ACTIVE') return { color: 'merged', dim: false }
-  if (label === 'QUIET') return { color: 'merged', dim: true }
-  if (label === 'BLOCKED') return { color: 'error', dim: false }
-  return { color: 'border', dim: true }
+  if (label === 'WORKING' || label === 'ACTIVE') return AGENT_BORDERS.running
+  if (label === 'QUIET') return AGENT_BORDERS.quiet
+  if (label === 'BLOCKED') return AGENT_BORDERS.blocked
+  return AGENT_BORDERS.inactive
 }
 
 /** The quota keys a crewmate's usage was charged to, each named by provider and account. */
@@ -318,7 +323,7 @@ export const untilText = (ms: number): string => {
 /** A vendor reading older than this is stale, whatever the last report said (as the collector's own rule). */
 export const STALE_READING_MS = 30 * 60_000
 
-const isStaleReading = (r: Pick<QuotaReading, 'stale' | 'observedAt'>, now: number): boolean =>
+const isStaleReading = (r: Pick<FiveHourReading, 'stale' | 'observedAt'>, now: number): boolean =>
   r.stale || r.observedAt === null || now - r.observedAt > STALE_READING_MS
 
 /**
@@ -327,14 +332,31 @@ const isStaleReading = (r: Pick<QuotaReading, 'stale' | 'observedAt'>, now: numb
  */
 export type QuotaLine = { percent: number | null; figure: string; reset: string; note: string; tone: string }
 
+const resetText = (resetsAt: number | null, now: number): string => resetsAt !== null && resetsAt > now ? `resets ${untilText(resetsAt - now)}` : ''
+
+const noneLine = (reset: string, note: string): QuotaLine => ({ percent: null, figure: NONE, reset, note, tone: 'subtle' })
+
+const measuredLine = (w: FiveHourReading & { percent: number }, now: number): QuotaLine => {
+  const stale = isStaleReading(w, now)
+  return { percent: w.percent, figure: measuredText(w.percent), reset: resetText(w.resetsAt, now), note: stale ? '◷ stale' : '', tone: stale ? 'warning' : 'text' }
+}
+
 export const quotaLine = (r: QuotaReading, now: number): QuotaLine => {
-  const reset = r.resetsAt !== null && r.resetsAt > now ? `resets ${untilText(r.resetsAt - now)}` : ''
-  const none = (note: string): QuotaLine => ({ percent: null, figure: NONE, reset, note, tone: 'subtle' })
-  if (!r.indexed) return none('indexing local logs…')
-  if (!r.accountKnown) return none('account unknown')
-  if (r.percent === null) return none(r.reset ? 'window reset' : 'no reading')
-  const stale = isStaleReading(r, now)
-  return { percent: r.percent, figure: measuredText(r.percent), reset, note: stale ? '◷ stale' : '', tone: stale ? 'warning' : 'text' }
+  const reset = resetText(r.resetsAt, now)
+  if (!r.indexed) return noneLine(reset, 'indexing local logs…')
+  if (!r.accountKnown) return noneLine(reset, 'account unknown')
+  if (r.percent === null) return noneLine(reset, r.reset ? 'window reset' : 'no reading')
+  return measuredLine({ ...r, percent: r.percent }, now)
+}
+
+/** The 5h row of an account: the vendor's 5-hour percent as reported, never estimated, or `—` and why. */
+export const fiveHourLine = (r: QuotaReading, now: number): QuotaLine => {
+  const w = r.fiveHour
+  const reset = resetText(w?.resetsAt ?? null, now)
+  if (!r.accountKnown) return noneLine(reset, 'account unknown')
+  if (!w) return noneLine(reset, 'no 5h reading')
+  if (w.percent === null) return noneLine(reset, w.reset ? 'window reset' : 'no 5h reading')
+  return measuredLine({ ...w, percent: w.percent }, now)
 }
 
 /** Where an account's figure comes from and how old it is, for the Quota notes (`i`). */
@@ -346,6 +368,18 @@ export const quotaSource = (r: QuotaReading, now: number): { text: string; tone:
   const when = r.observedAt === null ? 'stale, age unknown' : `${stale ? 'stale' : 'measured'} ${ago(Math.max(0, now - r.observedAt))} ago`
   const source = r.source ? ` · source ${SOURCES[r.source] ?? r.source}` : ''
   return { text: `week ${measuredText(r.percent)} ${when}${source}`, tone: stale ? 'warning' : 'subtle' }
+}
+
+/** Where an account's 5h figure comes from and how old it is, for the Quota notes (`i`). */
+export const fiveHourSource = (r: QuotaReading, now: number): { text: string; tone: string } => {
+  const w = r.fiveHour
+  if (!r.accountKnown) return { text: `5h % ${NONE}: no account could be tied to this usage`, tone: 'warning' }
+  if (!w) return { text: `5h % ${NONE}: no source has a 5-hour window for this account`, tone: 'subtle' }
+  if (w.percent === null) return { text: `5h % ${NONE}: ${w.reset ? 'the window reset since the last reading' : 'no reading yet'}`, tone: 'warning' }
+  const stale = isStaleReading(w, now)
+  const when = w.observedAt === null ? 'stale, age unknown' : `${stale ? 'stale' : 'measured'} ${ago(Math.max(0, now - w.observedAt))} ago`
+  const source = w.source ? ` · source ${SOURCES[w.source] ?? w.source}` : ''
+  return { text: `5h ${measuredText(w.percent)} ${when}${source}`, tone: stale ? 'warning' : 'subtle' }
 }
 
 /**
@@ -401,7 +435,7 @@ export type LogEntry = {
   text: string
   /** The collector cut the text (it ends its snippets with `…`): the rest is not kept anywhere. */
   sourceTruncated: boolean
-}
+} & Pick<CrewEvent, 'inTokens' | 'outTokens' | 'estimated'>
 
 /** A status line's state word is the firstmate protocol's, so blocked, failed and needs-decision are errors. */
 const levelOf = (event: CrewEvent): LogEntry['level'] =>
@@ -416,11 +450,14 @@ export const logEntries = (crew: readonly Pick<CrewMember, 'home' | 'id' | 'harn
     at: event.at,
     who: m.id,
     key: memberKey(m),
-    color: harnessColor(m.harness),
+    color: 'subtle',
     kind: event.kind,
     level: levelOf(event),
     text: event.text,
     sourceTruncated: event.text.endsWith('…'),
+    inTokens: event.inTokens,
+    outTokens: event.outTokens,
+    estimated: event.estimated,
   }))).sort((a, b) => b.at - a.at || b.seq - a.seq || a.key.localeCompare(b.key))
 
 export const FILTER_LABELS: Record<LogFilter, string> = { all: 'All', tools: 'Tools', status: 'Status', errors: 'Errors', agent: 'Agent' }
@@ -458,6 +495,66 @@ export const fitSegments = (segments: readonly Segment[], width: number): Segmen
     return { out: [...acc.out, { ...s, text: clip(s.text, acc.room) }], room: 0 }
   }, { out: [], room: Math.max(0, width) }).out
 
+/**
+ * Segments wrapped into rows of at most `width` cells: breaks fall between words, a word longer than a
+ * row is split across rows, a newline always breaks, and the spaces at a break are dropped. Each piece
+ * keeps its segment's tone, so a row never relies on the terminal to wrap it.
+ */
+export const wrapSegments = (segments: readonly Segment[], width: number): Segment[][] => {
+  const room = Math.max(1, Math.floor(width))
+  const rows: Segment[][] = [[]]
+  let used = 0
+  const put = (s: Segment, text: string) => {
+    const row = rows[rows.length - 1] as Segment[]
+    const last = row[row.length - 1]
+    if (last && last.tone === s.tone && last.bold === s.bold && last.inverse === s.inverse) row[row.length - 1] = { ...last, text: last.text + text }
+    else row.push({ ...s, text })
+    used += cells(text)
+  }
+  const breakRow = () => {
+    const row = rows[rows.length - 1] as Segment[]
+    const last = row[row.length - 1]
+    if (last) row[row.length - 1] = { ...last, text: last.text.trimEnd() }
+    rows.push([])
+    used = 0
+  }
+  for (const s of segments) {
+    for (const [i, part] of s.text.split('\n').entries()) {
+      if (i > 0) breakRow()
+      for (const token of part.replace(/[\r\t]+/g, ' ').match(/ +|[^ ]+/g) ?? []) {
+        if (token.startsWith(' ')) {
+          if (used > 0 && used + cells(token) < room) put(s, token)
+          else if (used > 0) breakRow()
+          continue
+        }
+        if (used > 0 && used + cells(token) > room) breakRow()
+        let rest = Array.from(token)
+        while (rest.length > 0) {
+          const take: string[] = []
+          let size = 0
+          for (const char of rest) {
+            if (used + size + charCells(char) > room) break
+            take.push(char)
+            size += charCells(char)
+          }
+          // A wide character on an empty row narrower than it takes the row alone rather than never fit.
+          if (take.length === 0 && used === 0) take.push(rest[0] as string)
+          if (take.length === 0) {
+            breakRow()
+            continue
+          }
+          put(s, take.join(''))
+          rest = rest.slice(take.length)
+          if (rest.length > 0) breakRow()
+        }
+      }
+    }
+  }
+  const out = rows.map(row => row.filter(s => s.text !== ''))
+  // Trailing spaces that reached the edge broke onto a row of nothing.
+  return out.length > 1 && out[out.length - 1]?.length === 0 ? out.slice(0, -1) : out
+}
+
 /** Cells the tag column takes: the longest tag (`SEARCH`, `NBEDIT`) fits. */
 export const TAG_CELLS = 6
 
@@ -493,6 +590,18 @@ export const logPreview = (entry: Pick<LogEntry, 'kind' | 'level' | 'text'>, hom
   const [head = '', ...rest] = previewText(call ? call[2] ?? '' : text, home).trim().split(' ')
   return { tag, tone, head, rest: rest.join(' ') }
 }
+
+/** Cells each of a log row's token columns takes, right-aligned: `~1.93M` fits. */
+export const TOKEN_COLUMN_CELLS = 6
+
+/**
+ * A log row's token columns, as the details' recent calls count them: the input its result added
+ * (`~` when estimated from its size) and its share of the request's output; `—` where nothing measured it.
+ */
+export const logTokens = (e: Pick<LogEntry, 'inTokens' | 'outTokens' | 'estimated'>): { input: string; output: string } => ({
+  input: e.inTokens === undefined ? NONE : `${e.estimated ? '~' : ''}${tokens(e.inTokens)}`,
+  output: e.outTokens === undefined ? NONE : tokens(e.outTokens),
+})
 
 /** A short, stable address for a log row's Button, from its entry id. */
 export const logKey = (entry: Pick<LogEntry, 'id'>): string => {

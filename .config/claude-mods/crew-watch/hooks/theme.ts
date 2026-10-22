@@ -14,7 +14,7 @@
  */
 
 /** The semantic roles the dashboard paints with; the first nine are engine theme keys. */
-export const ROLES = ['text', 'subtle', 'success', 'warning', 'error', 'merged', 'permission', 'suggestion', 'claude', 'border'] as const
+export const ROLES = ['text', 'subtle', 'success', 'warning', 'error', 'merged', 'permission', 'suggestion', 'claude', 'codex', 'border'] as const
 export type Role = (typeof ROLES)[number]
 
 export type Palette = {
@@ -30,43 +30,43 @@ export const DEFAULT_THEME = 'default'
 export const PALETTES = {
   'tokyo-night': {
     mode: 'dark', background: '#1a1b26',
-    colors: { text: '#c0caf5', subtle: '#8089b3', success: '#9ece6a', warning: '#e0af68', error: '#f7768e', merged: '#bb9af7', permission: '#7aa2f7', suggestion: '#7dcfff', claude: '#ff9e64', border: '#565f89' },
+    colors: { text: '#c0caf5', subtle: '#8089b3', success: '#9ece6a', warning: '#e0af68', error: '#f7768e', merged: '#bb9af7', permission: '#7aa2f7', suggestion: '#7dcfff', codex: '#7aa2f7', claude: '#ff9e64', border: '#565f89' },
   },
   'catppuccin-mocha': {
     mode: 'dark', background: '#1e1e2e',
-    colors: { text: '#cdd6f4', subtle: '#9399b2', success: '#a6e3a1', warning: '#f9e2af', error: '#f38ba8', merged: '#cba6f7', permission: '#89b4fa', suggestion: '#89dceb', claude: '#fab387', border: '#6c7086' },
+    colors: { text: '#cdd6f4', subtle: '#9399b2', success: '#a6e3a1', warning: '#f9e2af', error: '#f38ba8', merged: '#cba6f7', permission: '#89b4fa', suggestion: '#89dceb', codex: '#89b4fa', claude: '#fab387', border: '#6c7086' },
   },
   'catppuccin-latte': {
     mode: 'light', background: '#eff1f5',
-    colors: { text: '#4c4f69', subtle: '#666a80', success: '#2f7a1f', warning: '#a15c07', error: '#d20f39', merged: '#8839ef', permission: '#1e66f5', suggestion: '#127a80', claude: '#c44a00', border: '#8c8fa1' },
+    colors: { text: '#4c4f69', subtle: '#666a80', success: '#2f7a1f', warning: '#a15c07', error: '#d20f39', merged: '#8839ef', permission: '#1e66f5', suggestion: '#127a80', codex: '#1e66f5', claude: '#c44a00', border: '#8c8fa1' },
   },
   'gruvbox-dark': {
     mode: 'dark', background: '#282828',
-    colors: { text: '#ebdbb2', subtle: '#a89984', success: '#b8bb26', warning: '#fabd2f', error: '#fb4934', merged: '#d3869b', permission: '#83a598', suggestion: '#8ec07c', claude: '#fe8019', border: '#7c6f64' },
+    colors: { text: '#ebdbb2', subtle: '#a89984', success: '#b8bb26', warning: '#fabd2f', error: '#fb4934', merged: '#d3869b', permission: '#83a598', suggestion: '#8ec07c', codex: '#83a598', claude: '#fe8019', border: '#7c6f64' },
   },
   'gruvbox-light': {
     mode: 'light', background: '#fbf1c7',
-    colors: { text: '#3c3836', subtle: '#665c54', success: '#79740e', warning: '#b57614', error: '#9d0006', merged: '#8f3f71', permission: '#076678', suggestion: '#427b58', claude: '#af3a03', border: '#928374' },
+    colors: { text: '#3c3836', subtle: '#665c54', success: '#79740e', warning: '#b57614', error: '#9d0006', merged: '#8f3f71', permission: '#076678', suggestion: '#427b58', codex: '#076678', claude: '#af3a03', border: '#928374' },
   },
   nord: {
     mode: 'dark', background: '#2e3440',
-    colors: { text: '#d8dee9', subtle: '#9aa5bd', success: '#a3be8c', warning: '#ebcb8b', error: '#d57780', merged: '#b48ead', permission: '#81a1c1', suggestion: '#88c0d0', claude: '#d08770', border: '#5c677d' },
+    colors: { text: '#d8dee9', subtle: '#9aa5bd', success: '#a3be8c', warning: '#ebcb8b', error: '#d57780', merged: '#b48ead', permission: '#81a1c1', suggestion: '#88c0d0', codex: '#81a1c1', claude: '#d08770', border: '#5c677d' },
   },
   dracula: {
     mode: 'dark', background: '#282a36',
-    colors: { text: '#f8f8f2', subtle: '#9aa5d6', success: '#50fa7b', warning: '#f1fa8c', error: '#ff5555', merged: '#bd93f9', permission: '#ff79c6', suggestion: '#8be9fd', claude: '#ffb86c', border: '#6272a4' },
+    colors: { text: '#f8f8f2', subtle: '#9aa5d6', success: '#50fa7b', warning: '#f1fa8c', error: '#ff5555', merged: '#bd93f9', permission: '#ff79c6', suggestion: '#8be9fd', codex: '#82aaff', claude: '#ffb86c', border: '#6272a4' },
   },
   'solarized-dark': {
     mode: 'dark', background: '#002b36',
-    colors: { text: '#93a1a1', subtle: '#839496', success: '#859900', warning: '#b58900', error: '#e8504d', merged: '#8087d6', permission: '#268bd2', suggestion: '#2aa198', claude: '#e05a1e', border: '#586e75' },
+    colors: { text: '#93a1a1', subtle: '#839496', success: '#859900', warning: '#b58900', error: '#e8504d', merged: '#8087d6', permission: '#268bd2', suggestion: '#2aa198', codex: '#268bd2', claude: '#e05a1e', border: '#586e75' },
   },
   'solarized-light': {
     mode: 'light', background: '#fdf6e3',
-    colors: { text: '#465d65', subtle: '#586e76', success: '#657a00', warning: '#8f6c00', error: '#c9211e', merged: '#5a60b3', permission: '#1f78b8', suggestion: '#1e7d76', claude: '#b5400f', border: '#93a1a1' },
+    colors: { text: '#465d65', subtle: '#586e76', success: '#657a00', warning: '#8f6c00', error: '#c9211e', merged: '#5a60b3', permission: '#1f78b8', suggestion: '#1e7d76', codex: '#1f78b8', claude: '#b5400f', border: '#93a1a1' },
   },
   'one-dark': {
     mode: 'dark', background: '#282c34',
-    colors: { text: '#abb2bf', subtle: '#8d94a3', success: '#98c379', warning: '#e5c07b', error: '#e06c75', merged: '#c678dd', permission: '#61afef', suggestion: '#56b6c2', claude: '#d19a66', border: '#5c6370' },
+    colors: { text: '#abb2bf', subtle: '#8d94a3', success: '#98c379', warning: '#e5c07b', error: '#e06c75', merged: '#c678dd', permission: '#61afef', suggestion: '#56b6c2', codex: '#61afef', claude: '#d19a66', border: '#5c6370' },
   },
 } satisfies Record<string, Palette>
 
@@ -114,9 +114,25 @@ export const toAnsi256 = (hex: string): number => {
  */
 export type Paint = (role: string | undefined) => string | undefined
 
+/** Pane chrome uses the same roles in every palette, including the engine's theme. */
+export const paneStyles = (paint: Paint) => ({
+  frame: { borderStyle: 'round' as const, borderColor: paint('border'), borderDimColor: false },
+  title: { color: paint('text'), weight: 'bold' as const },
+  meta: { color: paint('subtle'), weight: 'regular' as const },
+  rule: { color: paint('border'), weight: 'regular' as const },
+})
+
+/** The sole exception to neutral frames: both an agent's card and its open details. */
+export const AGENT_BORDERS = {
+  running: { color: 'merged', dim: false },
+  quiet: { color: 'merged', dim: true },
+  blocked: { color: 'error', dim: false },
+  inactive: { color: 'border', dim: true },
+} as const
+
 export const themePainter = (name: string, support: ColorSupport): Paint => {
   // The engine has no border key: the default theme keeps the log box's old colour.
-  if (!isThemeName(name) || name === DEFAULT_THEME) return role => (role === 'border' ? 'subtle' : role)
+  if (!isThemeName(name) || name === DEFAULT_THEME) return role => (role === 'border' ? 'subtle' : role === 'codex' ? 'permission' : role)
   const { colors } = PALETTES[name]
   return role => {
     if (support.isNoColor) return undefined

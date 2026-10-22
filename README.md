@@ -192,22 +192,47 @@ fixed order and a key footer. Each zone sits in its own rounded box, its title
 in small capitals on the first row and a short meta against the right edge, with
 a blank row between boxes, so the blocks are told apart at a glance.
 
+All themes use `paneStyles()` in `hooks/theme.ts` for the same visual rules:
+rounded frames in `border` for every zone, stat tile and help box; bold `text`
+for titles (including card names and detail headings); regular `subtle` for
+metadata; and regular `border` for heading rules, the footer separator and bar
+tracks. Each palette defines those roles; `default` resolves them through the
+engine's theme. Agent cards and their expanded details share one status border
+rule: running uses `merged`, quiet uses dim `merged`, blocked uses `error`, and
+done or inactive uses dim `border`. Provider accents belong only to the provider
+word and its quota bar: Claude uses `claude` (amber), Codex uses `codex` (the
+palette's blue). Model names, effort, event authors and detail headings do not
+inherit provider colours. No layout or background colour changes with these
+rules.
+
 1. **Overview**: four tiles, each a small box with a big figure over its label:
    `LIVE` crewmates, `RUNNING` (working or active), `DONE`, and `CACHE READ`,
    the fleet's cache share. Under them the fleet's tokens, requests and tool
    calls. Details mode adds a bar of what Tokens is made of (cache read, cache
-   write, output, uncached input), its legend and both sums written out.
+   write, output, uncached input) across the box's full width, each part in its
+   own colour with a one-cell gap between parts and at least one cell for any
+   part above zero; its legend lists each part with its swatch, three cells
+   apart, wrapping as whole items; and both sums written out.
 2. **Agents**: one card per crewmate: the status glyph, its name in bold and
    the status word and age on the right; harness, model, effort and task;
    `Context usage` with `used / window · percent` on the right and a bar of it
    on its own line; its own requests, tools and tokens (`in` is all input,
    uncached plus cache read and write); and its latest status line. Everything
-   else about it opens with its number, below the cards.
-3. **Quota & Limits**: one block per provider and account: the name, and on the
-   right the vendor's weekly percent, `◷ stale` once the reading is over 30
-   minutes old and the time to its reset (`39% · resets 5d 2h`), with a bar of
-   the percent in the provider's colour under it. An account with no percent
-   draws no bar. `i` adds each account's notes.
+   else about it opens with its number, below the cards: a box whose sections
+   (status, model, context and tokens, tools, recent calls, last action, source
+   and limits, workspace) each open with a ruled heading after a blank row.
+   Every line in it is wrapped by the mod to the box's inner width, long words
+   split, so no text runs past the border.
+3. **Quota & Limits**: one block per provider and account: the name, then a
+   `5h` row and a `week` row. Each row has a bar of the vendor's percent in the
+   provider's colour, and in a column shared by every row the percent,
+   `◷ stale` once the reading is over 30 minutes old and the time to its reset
+   (`53% · resets 1h 12m`). A window with no percent shows `—` and why
+   (`no 5h reading`, `window reset`) and draws no bar; too narrow for a bar beside
+   the figure, the bar takes the next row. The 5-hour percent is the vendor's
+   own reading (the pane session's rate limits, ai-acct's stored `five_hour`
+   window, a Codex rollout's 300-minute window), shown as reported and never
+   estimated or recorded in the reading history. `i` adds each account's notes.
 4. **Activity**: the whole crew's logged events per minute as a bar chart of
    block characters (`▁▂▃▄▅▆▇█`, two rows tall), one cell per minute over up to
    the last hour (fewer minutes when the zone is narrower than 60 cells; a bar
@@ -216,7 +241,12 @@ a blank row between boxes, so the blocks are told apart at a glance.
    minute is a dim `▁`.
 5. **Recent Events**: the newest three to five events, newest first, one short
    row each, the tag drawn as a badge, with a filter; `Enter` on a row shows its
-   full text.
+   full text. After the tag come two right-aligned columns under an `in` / `out`
+   header: the input the call's result added (`~` when estimated from its size)
+   and its share of the request's output, as the details' recent calls count
+   them, `—` for a status line or a call nobody measured. When those columns
+   would leave the command under 16 cells they are dropped, and the header row
+   says so.
 
 The context figure and its bar need the model's window: a Codex rollout
 supplies it, else Codex's own catalog (`~/.codex/models_cache.json`), and for
