@@ -35,6 +35,10 @@ export const crewState = (m: Pick<CrewMember, 'lastAt' | 'status'>, now: number)
   return status === 'working' && idle.label === 'active' ? { ...idle, label: 'working' } : idle
 }
 
+/** Counted as active: the working and active states, never quiet, stale, blocked or done. */
+export const isActive = (m: Pick<CrewMember, 'lastAt' | 'status'>, now: number): boolean =>
+  ['working', 'active'].includes(crewState(m, now).label)
+
 /** The axis gutter is the same geometry as each mark, name and explicit gap. */
 export const laneGeometry = (width: number) => {
   const markWidth = 2

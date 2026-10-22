@@ -160,6 +160,18 @@ export type CrewReport = {
   errors: string[]
 }
 
+/** How much each zone shows: `compact` scans, `details` adds the level-C figures. */
+export type ViewMode = 'compact' | 'details'
+
+/** Which log entries the Recent Logs zone lists; `agent` is the crewmate whose details are open. */
+export type LogFilter = 'all' | 'tools' | 'status' | 'errors' | 'agent'
+
+/**
+ * The end of the last read: whether it failed (the report then is the last good one) and when it
+ * settled. Each read writes a new `at`, so the pane redraws and its freshness moves on.
+ */
+export type PollState = { at: number; failed: boolean }
+
 declare module 'claude-code' {
   interface PluginState {
     'crew-watch': {

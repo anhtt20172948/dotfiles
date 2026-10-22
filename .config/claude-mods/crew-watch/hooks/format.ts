@@ -1,5 +1,5 @@
 import type { CrewEvent, CrewMember, CrewTotals, MemberQuota, QuotaFigure, QuotaReading, ToolTokens } from '../types'
-import { crewState } from './dashboard'
+import { isActive } from './dashboard'
 
 /** 1234 -> 1.2k, 1234567 -> 1.23M. */
 export const tokens = (n: number): string => {
@@ -37,7 +37,7 @@ export const dispatchText = (m: CrewMember): string => {
 /** The one-line summary the status line carries. */
 export const statusLine = (crew: readonly CrewMember[], totals: CrewTotals, now: number): string | undefined => {
   if (crew.length === 0) return undefined
-  const active = crew.filter(m => ['working', 'active'].includes(crewState(m, now).label)).length
+  const active = crew.filter(m => isActive(m, now)).length
   const all = totals.input + totals.output + totals.cacheRead + totals.cacheWrite
   return `crew ${crew.length} (${active} active) · ${tokens(all)} tok · ${totals.toolCalls} tools · /crew`
 }
@@ -65,9 +65,48 @@ export const effortText = (effort: string): string => {
   return pct === undefined ? `effort ${effort || 'default'}` : `effort ${gauge(pct, 4)} ${effort}`
 }
 
+/** Code points a terminal draws two cells wide: CJK, Hangul, fullwidth forms and pictographs. */
+const WIDE: readonly (readonly [number, number])[] = [
+  [0x1100, 0x115f], [0x2e80, 0x303e], [0x3041, 0x33ff], [0x3400, 0x4dbf], [0x4e00, 0x9fff], [0xa000, 0xa4cf],
+  [0xac00, 0xd7a3], [0xf900, 0xfaff], [0xfe30, 0xfe4f], [0xff00, 0xff60], [0xffe0, 0xffe6], [0x1f300, 0x1f64f],
+  [0x1f680, 0x1f6ff], [0x1f900, 0x1faff], [0x20000, 0x3fffd],
+]
+
+/** Code points drawn in no cell of their own: combining marks, zero-width spaces and joiners, variation selectors. */
+const ZERO: readonly (readonly [number, number])[] = [[0x0300, 0x036f], [0x200b, 0x200f], [0xfe00, 0xfe0f]]
+
+const within = (code: number, ranges: readonly (readonly [number, number])[]) => ranges.some(([lo, hi]) => code >= lo && code <= hi)
+
+/** Terminal cells one character takes. */
+export const charCells = (char: string): number => {
+  const code = char.codePointAt(0) ?? 0
+  return within(code, ZERO) ? 0 : within(code, WIDE) ? 2 : 1
+}
+
+/** Terminal cells a one-line text takes. */
+export const cells = (text: string): number => Array.from(text).reduce((n, char) => n + charCells(char), 0)
+
+/** One line cut to `width` terminal cells, an ellipsis where it was cut; a wide character never straddles the edge. */
 export const clip = (text: string, width: number): string => {
-  const cells = Array.from(text.replace(/[\r\n\t]+/g, ' ').trim())
-  return cells.length <= width ? cells.join('') : cells.slice(0, Math.max(0, width - 1)).join('') + (width > 0 ? '…' : '')
+  // Leading spaces are kept: they indent a nested crewmate or a sub-row.
+  const chars = Array.from(text.replace(/[\r\n\t]+/g, ' ').trimEnd())
+  if (cells(chars.join('')) <= width) return chars.join('')
+  if (width <= 0) return ''
+  const kept: string[] = []
+  let used = 0
+  for (const char of chars) {
+    const size = charCells(char)
+    if (used + size > width - 1) break
+    kept.push(char)
+    used += size
+  }
+  return kept.join('') + '…'
+}
+
+/** A text clipped and padded with spaces to exactly `width` cells. */
+export const pad = (text: string, width: number): string => {
+  const cut = clip(text, width)
+  return cut + ' '.repeat(Math.max(0, width - cells(cut)))
 }
 
 export const clockText = (at: number, timeZone?: string): string => at > 0
