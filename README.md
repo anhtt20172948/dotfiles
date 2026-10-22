@@ -237,7 +237,7 @@ the plan, the weekly percent marked `current` or `stale` (more than 30 minutes
 old, or of unknown age), where and how long ago it was read, the session's
 share of the week and the tool calls' direct share (`tools direct`), each on
 its own row; the fleet box shows the total. A reading whose window has reset is
-ignored; with no current percent the card shows the raw share of local usage
+ignored; with no weekly reading the card shows the raw share of local usage
 and says the weekly percent is unknown. Usage from other machines or the web
 is not seen locally, so with a current reading the share is an upper bound for
 local work; a stale reading can understate it. Each refresh stops indexing ten
