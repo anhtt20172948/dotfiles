@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 
 import type { On } from 'claude-code'
@@ -143,18 +143,36 @@ const PANE = {
 const sized = (columns: number, rows: number, over: Record<string, unknown> = {}) =>
   ({ ...PANE, surface: 'terminal' as const, props: { ...PANE.props, bodyColumns: columns, scroll: { offset: 0, bodyRows: rows }, ...over } })
 
-type World = { report: CrewReport; fail: string; now: number; env: Record<string, string>; argv: readonly string[] }
+/** `isShown` is the pane as the engine keeps it, `isReduced` the person's Reduce motion setting: what the border timer asks about. */
+type World = { report: CrewReport; fail: string; now: number; env: Record<string, string>; argv: readonly string[]; isShown: boolean; isReduced: boolean }
 
-/** Answers every engine call the mod makes from a mutable world the test steers. */
-const stub = (on: On, world: Partial<World> = {}): World => {
-  const w: World = { report: REPORT, fail: '', now: NOW + 4_000, env: {}, argv: [], ...world }
+/**
+ * Answers every engine call the mod makes from a mutable world the test steers. With `clock: false` the
+ * test answers the clock itself (`mock.clock`), so timers wait until it moves the time.
+ */
+const stub = (on: On, world: Partial<World> = {}, { clock = true } = {}): World => {
+  const w: World = { report: REPORT, fail: '', now: NOW + 4_000, env: {}, argv: [], isShown: false, isReduced: false, ...world }
   on('command.register', () => ({ value: { command: 'crew' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.root', () => ({ value: '/fm' }))
   on('session.id', () => ({ value: 'pane-session' }))
-  on('clock.every', () => ({ value: undefined }))
-  on('clock.now', () => ({ value: w.now }))
+  if (clock) {
+    // A period answered at once would run the timer in a busy loop for the whole test: the tests read
+    // the crew with /crew refresh instead, so every timer is refused and ends.
+    on('clock.every', () => ({ deny: 'timers do not run in this test' }))
+    on('clock.now', () => ({ value: w.now }))
+  }
   on('ui.status', () => ({ value: undefined }))
+  on('ui.panes', () => ({ value: w.isShown ? [{ id: 'crew-watch', title: 'Crew', isShown: true, isFocused: false, isPlaced: true }] : [] }))
+  on('ui.open', () => {
+    w.isShown = true
+    return { value: { isPlaced: true } }
+  })
+  on('ui.close', () => {
+    w.isShown = false
+    return { value: undefined }
+  })
+  on('settings.read', () => ({ value: w.isReduced ? { prefersReducedMotion: true } : {} }))
   on('env.get', (_, e) => ({ value: w.env[e.name] }))
   on('process.run', (_, e) => {
     w.argv = e.argv
@@ -272,7 +290,8 @@ test('the pane draws a header, the five zones in their own boxes in order, and a
   expect(shown).toContain('1: crew-watch-transparent')
   expect(await textAt(ui, 'title-/fm:crew-watch-transparent')).toBe('● crew-watch-transparentACTIVE · 24s')
   expect(await textAt(ui, 'title-/fm:workflow-cryptography-advisory')).toBe('● workflow-cryptography-advisoryWORKING · 8s')
-  expect(await textAt(ui, 'task-/fm:workflow-cryptography-advisory')).toBe('codex gpt-6.1-sol/medium · ship / workflow')
+  expect(await textAt(ui, 'task-/fm:workflow-cryptography-advisory')).toBe('◆ codex gpt-6.1-sol/medium · ship / workflow')
+  expect(await textAt(ui, 'task-/fm:crew-watch-transparent')).toBe('✻ claude sonnet/high · ship / dotfiles')
   expect(await rowsAt(ui, 'context-/fm:crew-watch-transparent')).toEqual(['Context usage', '109k / 1M · 11%'])
   expect(await rowsAt(ui, 'context-/fm:workflow-cryptography-advisory')).toEqual(['Context usage', '44k / 828k · 5%'])
   // Side by side the two cards span the zone's 116 cells, the left one taking the odd cell.
@@ -288,7 +307,7 @@ test('the pane draws a header, the five zones in their own boxes in order, and a
   // its bar, percent and reset; the figures share one column, and a window with no percent draws no bar.
   const accounts = shown.slice(shown.indexOf('QUOTA & LIMITS'), shown.indexOf('ACTIVITY'))
   expect(await rowsAt(ui, 'quota-title')).toEqual(['QUOTA & LIMITS', '5h + week · per account'])
-  for (const [key, name] of [[KEY, 'claude andang'], [OTHER, 'claude thanhnv'], [CODEX, 'codex Plus']]) expect(await textAt(ui, `quota-line-${key}`)).toBe(name)
+  for (const [key, name] of [[KEY, '✻ claude andang'], [OTHER, '✻ claude thanhnv'], [CODEX, '◆ codex Plus']]) expect(await textAt(ui, `quota-line-${key}`)).toBe(name)
   const bar = (percent: number) => { const part = barParts(percent, 76); return part.fill + part.track }
   expect(await windowAt(ui, '5h', KEY)).toBe(`  5h   ${bar(53)}  53% · resets 1h 12m`)
   expect(await windowAt(ui, 'week', KEY)).toBe(`  week ${bar(32)}  32% · resets 23h 59m`)
@@ -299,8 +318,8 @@ test('the pane draws a header, the five zones in their own boxes in order, and a
   expect(await textAt(ui, `quota-bar-${KEY}`)).toBe(bar(32))
   expect(await textAt(ui, `quota-bar-5h-${KEY}`)).toBe(bar(53))
   for (const key of [`quota-bar-${OTHER}`, `quota-bar-5h-${OTHER}`]) expect(await ui.find({ key })).toBeUndefined()
-  // The provider's accent is on its bars alone; labels are meta, names plain text.
-  expect(((await ui.find({ key: `quota-line-${CODEX}` }) as Drawn).children?.[0] as Drawn).props?.color).toBe('text')
+  // The provider takes its harness's icon and colour, as do its bars; labels are meta, the account plain text.
+  expect(((await ui.find({ key: `quota-line-${CODEX}` }) as Drawn).children ?? []).map(t => [textOf(t), (t as Drawn).props?.color])).toEqual([['◆ codex', 'permission'], [' Plus', 'text']])
   expect(((await ui.find({ key: `quota-bar-5h-${CODEX}` }) as Drawn).children?.[0] as Drawn).props?.color).toBe('permission')
   expect(((await ui.find({ key: `quota-bar-5h-${KEY}` }) as Drawn).children?.[0] as Drawn).props?.color).toBe('claude')
   expect(accounts.some(line => /source|est|uncalibrated|tools direct|measured|neither exact/.test(line))).toBe(false)
@@ -313,7 +332,7 @@ test('the pane draws a header, the five zones in their own boxes in order, and a
   // Events: newest first, the tag as a badge, the command; the source's own cut is not hidden; no home folder.
   const logs = shown.slice(shown.indexOf('RECENT EVENTS'))
   expect(await rowsAt(ui, 'logs-title')).toEqual(['RECENT EVENTS', 'All · 4 of 4 events'])
-  expect(logs.findIndex(line => /  EXEC  +— +— +workflow-cryptogra… +uv lock --upgrade-package cryptogr…$/.test(line)) < logs.findIndex(line => /  READ  +— +— +crew-watch-transpa… +hooks\/zones\.tsx$/.test(line))).toBe(true)
+  expect(logs.findIndex(line => /  EXEC  +workflow-cryptogra… +— +— +uv lock --upgrade-package cryptogr…$/.test(line)) < logs.findIndex(line => /  READ  +crew-watch-transpa… +— +— +hooks\/zones\.tsx$/.test(line))).toBe(true)
   expect(logs.some(line => /W=\.; O=…\/report\.json; python3 -I scripts\/crew_usage\.py .*…$/.test(line))).toBe(true)
   const badges = (await ui.findAll({ type: 'Text' })).map(t => t as Drawn).filter(t => t.props?.inverse === true).map(textOf)
   expect(badges).toEqual([' EXEC ', ' EXEC ', ' READ ', ' BASH '])
@@ -563,7 +582,7 @@ test('missing data reads as missing: no crew, unreadable harness, unknown model,
   for (const id of ['pi-task', 'fresh', 'mystery']) expect(await ui.find({ key: `context-bar-/fm:${id}` })).toBeUndefined()
   expect(shown).toContain('requests — · tools — · pi logs not readable')
   expect(shown).toContain('excludes 1 crewmate: pi logs not readable')
-  expect(await textAt(ui, 'quota-line-claude|unknown|seven_day')).toBe('claude unknown')
+  expect(await textAt(ui, 'quota-line-claude|unknown|seven_day')).toBe('✻ claude unknown')
   expect(await windowAt(ui, 'week', 'claude|unknown|seven_day')).toMatch(/^  week +— · account unknown · resets 23h 59m$/)
   expect(await windowAt(ui, '5h', 'claude|unknown|seven_day')).toMatch(/^  5h +— · account unknown$/)
   expect(shown).toContain('excludes 1 crewmate whose logs are not readable')
@@ -572,10 +591,10 @@ test('missing data reads as missing: no crew, unreadable harness, unknown model,
   expect(await ui.find({ text: 'usage is not readable for the pi harness' })).toBeDefined()
   expect(await ui.find({ text: '— no tool call yet' })).toBeDefined()
   expect(await ui.find({ text: 'tools —: pi logs not readable' })).toBeDefined()
-  expect(await ui.find({ text: /harness pi · transcripts not readable/ })).toBeDefined()
+  expect(await ui.find({ text: /harness ▪ pi · transcripts not readable/ })).toBeDefined()
   expect(await ui.find({ text: '— no quota figure: acct — · logs not readable' })).toBeDefined()
   await ui.press({ key: 'card-/fm:mystery' })
-  expect(await ui.find({ text: 'claude account unknown' })).toBeDefined()
+  expect(await textAt(ui, 'd-quota-0')).toBe('✻ claude account unknown')
   // Details mode adds no zeros for it either.
   await ui.press({ key: 'card-/fm:mystery' })
   await ui.press({ key: 'card-/fm:pi-task' })
@@ -632,15 +651,15 @@ test('inline above the prompt the summary keeps zone order within eight rows, ac
   expect((tree.children ?? []).filter(Boolean).length).toBe(8)
   expect(shown[0]).toMatch(/^CREW · 9 live · \d active · 0 done · ● LIVE updated 4s ago$/)
   expect(shown[1]).toBe('Tok 2.10M · Req 27 · Tools 30 · Cache 92%')
-  expect(shown[2]).toMatch(/^● crew-0 · ACTIVE 34s · claude sonnet\/medium$/)
+  expect(shown[2]).toMatch(/^● crew-0 · ACTIVE 34s · ✻ claude sonnet\/medium$/)
   expect(shown).toContain('+6 more · dock /crew for details')
-  expect(shown.slice(-2)).toEqual(['claude week: andang 32% · thanhnv —', 'codex week: 60305a97 29%'])
+  expect(shown.slice(-2)).toEqual(['✻ claude week: andang 32% · thanhnv —', '◆ codex week: 60305a97 29%'])
   await mini.unmount()
   // Shown five rows (a 24-row terminal), the providers share one quota row and a crewmate gives way.
   const tight = await $.ui.mount(sized(80, 5, { placement: 'inline' }))
   const few = lines(await tight.drawn())
   expect(few.length).toBe(5)
-  expect(few.slice(2)).toEqual(['● crew-0 · ACTIVE 34s · claude sonnet/medium', '+8 more · dock /crew for details', 'claude week: andang 32% · thanhnv — · codex week: 60305a97 29%'])
+  expect(few.slice(2)).toEqual(['● crew-0 · ACTIVE 34s · ✻ claude sonnet/medium', '+8 more · dock /crew for details', '✻ claude week: andang 32% · thanhnv — · ◆ codex week: 60305a97 29%'])
   await tight.unmount()
   // Never more rows than shown: with four and an error to say, the crew line gives way, not the error.
   world.fail = 'read unavailable'
@@ -759,7 +778,8 @@ test('token and quota text states what is unknown instead of inventing numbers',
   const old = reading({ plan: 'Max 20x · Team', percent: 10, source: 'history', observedAt: NOW - 4 * 86_400_000, stale: true, forecast: null, sinceCost: 5_000 })
   const settled = { session: figure({ percent: 3.1, settled: 3.1, open: null, since: 120_000, basis: 'settled' }), tools: figure({ percent: 0.04, settled: 0.04, open: null, basis: 'settled' }) }
   expect(quotaRows({ [KEY]: settled }, { [KEY]: old }, NOW)).toEqual([
-    { text: 'claude andang · Max 20x · Team', tone: 'subtle' },
+    // The head row names its provider, so the details draw it with its harness's icon and colour.
+    { text: 'claude andang · Max 20x · Team', tone: 'subtle', provider: 'claude' },
     { text: 'week 10% stale 4d ago', tone: 'warning' },
     { text: 'source reading history', tone: 'subtle' },
     { text: 'session ~3% as of reading', tone: 'text' },
@@ -926,7 +946,7 @@ test('details and previews write the home folder as ~ and never show the user na
   const ui = await $.ui.mount(sized(120, 40, { isFocused: true }))
   await ui.press({ key: `card-${home}/.local/share/firstmate:fix-login` })
   expect(await ui.find({ text: 'Fix ~/repo/login.ts' })).toBeDefined()
-  expect(await rowsAt(ui, 'd-where')).toEqual(['branch fm/fix-login', 'worktree ~/wt/login', 'home ~/.local/share/firstmate', 'harness claude · 1 transcript'])
+  expect(await rowsAt(ui, 'd-where')).toEqual(['branch fm/fix-login', 'worktree ~/wt/login', 'home ~/.local/share/firstmate', 'harness ✻ claude · 1 transcript'])
   expect(lines(await ui.drawn()).some(line => line.includes('anhtran'))).toBe(false)
   await ui.unmount()
 })
@@ -1029,13 +1049,14 @@ for (const theme of THEME_NAMES) {
         for (const key of ['panel-/fm:fix-login', 'details-/fm:fix-login']) {
           expect((await ui.find({ key }) as Drawn).props).toMatchObject({ borderStyle: 'round', borderColor: paint(color), borderDimColor: dim })
         }
+        const icon = harness === 'claude' ? '✻' : '◆'
         const task = await ui.find({ key: 'task-/fm:fix-login' }) as Drawn
         const provider = task.children?.[0] as Drawn
-        expect([textOf(provider), provider.props?.color]).toEqual([harness, paint(harness)])
+        expect([textOf(provider), provider.props?.color]).toEqual([`${icon} ${harness} sonnet/medium`, paint(harness)])
         expect((task.children?.[1] as Drawn).props?.color).toBe(paint('subtle'))
         const details = await ui.find({ key: 'details-/fm:fix-login' }) as Drawn
         const dispatch = ((await ui.find({ key: 'd-dispatch' }) as Drawn).children?.[0] as Drawn).children as Drawn[]
-        expect(dispatch.map(p => [textOf(p), p.props?.color])).toEqual([['dispatched ', paint('text')], [harness, paint(harness)], [expect.any(String), paint('text')]])
+        expect(dispatch.map(p => [textOf(p), p.props?.color])).toEqual([['dispatched ', paint('text')], [`${icon} ${harness} sonnet/medium`, paint(harness)], [expect.any(String), paint('text')]])
         const texts = (node: unknown): Drawn[] => {
           const d = node as Drawn
           return d?.type === 'Text' ? [d] : (d?.children ?? []).flatMap(texts)
@@ -1063,13 +1084,14 @@ test('the token bar spans the Overview with each part apart, and the legend item
     // Parts and one-cell gaps alternate; every part has its own colour and the gaps none.
     expect(kids.map(k => textOf(k).trim() === '')).toEqual([false, true, false, true, false, true, false])
     const parts = kids.filter(k => textOf(k).trim() !== '')
-    expect(parts.map(k => textOf(k)[0])).toEqual(['█', '▓', '▒', '░'])
+    // Every part is drawn with the thin ━ of the pane's other bars, so the bar never runs into the rows above and below it.
+    expect(parts.map(k => [...new Set(textOf(k))].join(''))).toEqual(['━', '━', '━', '━'])
     expect(new Set(parts.map(k => k.props?.color)).size).toBe(4)
     expect(kids.filter(k => textOf(k).trim() === '').map(k => [textOf(k), k.props?.color])).toEqual([[' ', undefined], [' ', undefined], [' ', undefined]])
     const legend = await ui.find({ key: 'token-legend' }) as Drawn
     expect(legend.props).toMatchObject({ flexWrap: 'wrap', columnGap: 3, width: inner })
     const items = (legend.children ?? []).filter(Boolean) as Drawn[]
-    expect(items.map(textOf)).toEqual(['█ read 1.93M', '▓ write 85k', '▒ out 9.1k', '░ uncached in 75k'])
+    expect(items.map(textOf)).toEqual(['━━ read 1.93M', '━━ write 85k', '━━ out 9.1k', '━━ uncached in 75k'])
     items.forEach((item, i) => expect((item.children?.[0] as Drawn).props?.color).toBe(parts[i]?.props?.color))
     expect([columns, overflows(await ui.drawn())]).toEqual([columns, []])
     await ui.unmount()
@@ -1114,7 +1136,7 @@ test('the open details keep every line inside their box at 60, 80 and 120 column
   }
 })
 
-test('Recent Events lines up in and out token columns under a header, a dash where unmeasured, and drops them when narrow', { timeoutMs: 20_000 }, async ($, on) => {
+test('Recent Events reads time, tag, crewmate, in and out under a header, then the command last; a dash where unmeasured, the columns dropped when narrow', { timeoutMs: 20_000 }, async ($, on) => {
   const crew = [
     member({ id: 'scout', events: [
       { at: NOW - 3_000, kind: 'tool', text: 'Bash: npm test', tool: 'Bash', outTokens: 1_000, inTokens: 974, estimated: true },
@@ -1134,14 +1156,189 @@ test('Recent Events lines up in and out token columns under a header, a dash whe
       expect(header).toBe('in/out tokens hidden: the pane is too narrow')
       expect(rows.some(r => /974|1\.0k|—/.test(r))).toBe(false)
     } else {
-      expect(header).toBe(`${' '.repeat(20)}    in    out  tokens`)
+      // Time and tag take 20 cells, then the crewmate in its column and two cells, then the token columns.
+      const who = Math.max(8, Math.min(20, Math.floor((columns - 4) / 6)))
+      const lead = 20 + who + 2
+      expect(header).toBe(`${' '.repeat(lead)}    in    out  tokens`)
+      expect(rows.map(r => r.slice(20, lead).trimEnd())).toEqual(['scout', 'scout', 'scout', 'quiet'])
       // Both columns are right-aligned at fixed cells, so every row's figures end where the header's labels do.
-      expect(rows.map(r => [r.slice(20, 26), r.slice(27, 33)])).toEqual([
+      expect(rows.map(r => [r.slice(lead, lead + 6), r.slice(lead + 7, lead + 13)])).toEqual([
         ['     —', '     —'], ['  1.93M', '   62k'].map(t => t.slice(-6)), ['  ~974', '  1.0k'], ['     —', '     —'],
       ])
-      expect(rows.every(r => r.slice(26, 27) === ' ' && r.slice(33, 35) === '  ')).toBe(true)
+      expect(rows.every(r => r.slice(lead + 6, lead + 7) === ' ' && r.slice(lead + 13, lead + 15) === '  ')).toBe(true)
+      // The command comes last and takes the rest of the row.
+      expect(rows.map(r => r.slice(lead + 15))).toEqual(['working: tests', 'hooks/zones.tsx', 'npm test', 'a.ts'])
     }
     expect([columns, overflows(await ui.drawn())]).toEqual([columns, []])
     await ui.unmount()
   }
 })
+
+
+const toggle = ($: Engine) => $.command.run({ command: 'crew', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } })
+
+/** Where a box's run sits now: the top and bottom runs' first cell (after the corner) and their text; undefined with none. */
+const runAt = async (ui: Mounted, key: string) => {
+  const wrapper = await ui.find({ key: `runner-${key}` }) as Drawn | undefined
+  if (!wrapper) return undefined
+  const edge = async (name: string) => {
+    const box = await ui.find({ key: name }) as Drawn
+    return { left: Number(box.props?.left), text: textOf(box), color: ((box.children?.[0] as Drawn).props?.color) }
+  }
+  return { top: await edge(`runner-top-${key}`), bottom: await edge(`runner-bottom-${key}`), box: (wrapper.children?.[0] as Drawn).props }
+}
+
+const DONE_SCOUT = member({ id: 'crew-demo-scout', model: 'haiku', effort: 'low', kind: 'scout', status: 'done [at=1]: Scout report written', lastAt: NOW - 360_000 })
+
+test('a running card carries a heavy run around its border that moves once a second while the pane is in front, and stops with the pane', { timeoutMs: 30_000 }, async ($, on) => {
+  const pane = stub(on, { report: { ...REFERENCE, crew: [REFERENCE.crew[0] as CrewMember, DONE_SCOUT] } }, { clock: false })
+  const clock = mock.clock(on, { now: NOW + 4_000 })
+  await start($)
+  const ui = await $.ui.mount(sized(120, 40))
+  const running = '/fm:crew-watch-transparent'
+  // Before the pane is opened nothing moves, however long the clock runs.
+  expect(await runAt(ui, running)).toBeUndefined()
+  await clock.advance(3_000)
+  expect(await runAt(ui, running)).toBeUndefined()
+  // Opened, the run starts at the left of the top edge and the right of the bottom one, in the running colour.
+  expect((await toggle($)).text).toBe('Crew pane opened.')
+  expect(pane.isShown).toBe(true)
+  const first = await runAt(ui, running)
+  expect(first).toEqual({
+    top: { left: 1, text: '━'.repeat(8), color: 'merged' },
+    bottom: { left: 49, text: '━'.repeat(8), color: 'merged' },
+    box: expect.objectContaining({ borderColor: 'merged', borderDimColor: false, borderStyle: 'round', width: 58 }),
+  })
+  // Each second it moves half its length: right along the top, left along the bottom.
+  const tops: number[] = []
+  const bottoms: number[] = []
+  for (let i = 0; i < 4; i++) {
+    await clock.advance(1_000)
+    const at = await runAt(ui, running)
+    tops.push(at?.top.left ?? -1)
+    bottoms.push(at?.bottom.left ?? -1)
+  }
+  expect(tops).toEqual([5, 9, 13, 17])
+  expect(bottoms).toEqual([45, 41, 37, 33])
+  // Half a second moves nothing: the rate is calm, one step a second.
+  await clock.advance(500)
+  expect((await runAt(ui, running))?.top.left).toBe(17)
+  // A done card keeps a still, dim border.
+  expect(await runAt(ui, '/fm:crew-demo-scout')).toBeUndefined()
+  expect((await ui.find({ key: 'panel-/fm:crew-demo-scout' }) as Drawn).props).toMatchObject({ borderColor: 'subtle', borderDimColor: true })
+  // The running crewmate's open details carry the same run; the box keeps its own border.
+  await ui.press({ key: `card-${running}` })
+  const details = await runAt(ui, `details-${running}`)
+  expect(details?.top.text).toBe('━'.repeat(8))
+  expect(details?.box).toMatchObject({ borderColor: 'merged', borderDimColor: false, width: 116 })
+  await ui.press({ key: `card-${running}` })
+  expect(overflows(await ui.drawn())).toEqual([])
+  // Closed, the timer stops: no run is drawn, and moving the clock brings none back.
+  expect((await toggle($)).text).toBe('Crew pane closed.')
+  expect(pane.isShown).toBe(false)
+  expect(await runAt(ui, running)).toBeUndefined()
+  await clock.advance(5_000)
+  expect(await runAt(ui, running)).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the border timer stops once nothing runs and starts again with a running crewmate', { timeoutMs: 30_000 }, async ($, on) => {
+  const world = stub(on, { report: { ...REFERENCE, crew: [REFERENCE.crew[0] as CrewMember, DONE_SCOUT] } }, { clock: false })
+  const clock = mock.clock(on, { now: NOW + 4_000 })
+  await start($)
+  await toggle($)
+  const ui = await $.ui.mount(sized(120, 40))
+  const running = '/fm:crew-watch-transparent'
+  await clock.advance(1_000)
+  expect((await runAt(ui, running))?.top.left).toBe(5)
+  // The crewmate finishes: the next read stops the timer and every border stands still.
+  world.report = { ...REFERENCE, crew: [{ ...(REFERENCE.crew[0] as CrewMember), status: 'done [at=1]: shipped' }, DONE_SCOUT] }
+  await refresh($)
+  expect(await runAt(ui, running)).toBeUndefined()
+  expect((await ui.find({ key: `panel-${running}` }) as Drawn).props).toMatchObject({ borderColor: 'subtle', borderDimColor: true })
+  await clock.advance(3_000)
+  expect(await runAt(ui, running)).toBeUndefined()
+  // Work starts again: the run starts over from the corner.
+  world.report = { ...REFERENCE, crew: [REFERENCE.crew[0] as CrewMember, DONE_SCOUT] }
+  await refresh($)
+  expect((await runAt(ui, running))?.top.left).toBe(1)
+  await clock.advance(1_000)
+  expect((await runAt(ui, running))?.top.left).toBe(5)
+  await ui.unmount()
+})
+
+test('Reduce motion keeps every border still: the timer never starts', { timeoutMs: 20_000 }, async ($, on) => {
+  stub(on, { report: REFERENCE, isReduced: true }, { clock: false })
+  const clock = mock.clock(on, { now: NOW + 4_000 })
+  await start($)
+  await toggle($)
+  const ui = await $.ui.mount(sized(120, 40))
+  for (const id of ['crew-watch-transparent', 'workflow-cryptography-advisory']) {
+    expect(await runAt(ui, `/fm:${id}`)).toBeUndefined()
+    // The running colour stays: only the motion is left out.
+    expect((await ui.find({ key: `panel-/fm:${id}` }) as Drawn).props).toMatchObject({ borderColor: 'merged', borderDimColor: false })
+  }
+  await clock.advance(5_000)
+  expect(await runAt(ui, '/fm:crew-watch-transparent')).toBeUndefined()
+  await ui.unmount()
+})
+
+for (const theme of THEME_NAMES) {
+  test(`${theme} draws every harness, provider and model name in its harness's colour after its icon`, { options: { theme }, timeoutMs: 30_000 }, async ($, on) => {
+    const pi = member({ id: 'pi-task', harness: 'pi', model: 'default', effort: 'default', quota: {}, models: { 'pi-large': 2 } })
+    stub(on, { report: { ...REFERENCE, crew: [...REFERENCE.crew, pi] }, env: { COLORTERM: 'truecolor' } })
+    await start($)
+    const paint = themePainter(theme, { isNoColor: false, isTruecolor: true })
+    const segments = (node: unknown): Drawn[] => ((node as Drawn | undefined)?.children ?? []).filter(Boolean) as Drawn[]
+    const named = (node: Drawn | undefined) => [textOf(node), node?.props?.color]
+    const family = { claude: paint('claude'), codex: paint('codex'), other: paint('text') }
+    const ui = await $.ui.mount(sized(120, 90, { isFocused: true }))
+    await ui.press({ key: 'key-mode' })
+    // Cards: icon, harness, model and effort in the harness's colour; the task after it stays subtle.
+    for (const [id, text, color] of [
+      ['crew-watch-transparent', '✻ claude sonnet/high', family.claude],
+      ['workflow-cryptography-advisory', '◆ codex gpt-6.1-sol/medium', family.codex],
+      ['pi-task', '▪ pi', family.other],
+    ] as const) {
+      const [name, rest] = segments(await ui.find({ key: `task-/fm:${id}` }))
+      expect([id, ...named(name)]).toEqual([id, text, color])
+      expect(rest?.props?.color).toBe(paint('subtle'))
+    }
+    // Quota & Limits: the provider's icon and name, and its bars, in its colour; the account plain text.
+    for (const [key, text, color] of [[KEY, '✻ claude', family.claude], [OTHER, '✻ claude', family.claude], [CODEX, '◆ codex', family.codex]] as const) {
+      const [provider, account] = segments(await ui.find({ key: `quota-line-${key}` }))
+      expect([key, ...named(provider), account?.props?.color]).toEqual([key, text, color, paint('text')])
+    }
+    for (const key of [`quota-bar-${KEY}`, `quota-bar-5h-${KEY}`]) expect(segments(await ui.find({ key }))[0]?.props?.color).toBe(family.claude)
+    for (const key of [`quota-bar-${CODEX}`, `quota-bar-5h-${CODEX}`]) expect(segments(await ui.find({ key }))[0]?.props?.color).toBe(family.codex)
+    // Overview (details mode): each model after its family's icon, in its colour.
+    expect(named(segments(await ui.find({ key: 'model-claude-sonnet-5-5' }))[0])).toEqual(['✻ claude-sonnet-5-5', family.claude])
+    expect(named(segments(await ui.find({ key: 'model-gpt-6.1-sol' }))[0])).toEqual(['◆ gpt-6.1-sol', family.codex])
+    expect(named(segments(await ui.find({ key: 'model-pi-large' }))[0])).toEqual(['▪ pi-large', family.other])
+    // Open details: the dispatch, each model row, the account head and the workspace's harness.
+    for (const [id, text, model, color] of [
+      ['crew-watch-transparent', '✻ claude sonnet/high', 'claude-sonnet-5-5', family.claude],
+      ['workflow-cryptography-advisory', '◆ codex gpt-6.1-sol/medium', 'gpt-6.1-sol', family.codex],
+    ] as const) {
+      await ui.press({ key: `card-/fm:${id}` })
+      const row = async (key: string) => segments(segments(await ui.find({ key }))[0])
+      expect(named((await row('d-dispatch'))[1])).toEqual([text, color])
+      expect(named((await row(`d-model-${model}`))[0])).toEqual([model, color])
+      expect(named((await row('d-quota-0'))[0])).toEqual([text.split(' ').slice(0, 2).join(' '), color])
+      const where = segments(await ui.find({ key: 'd-where' })).flatMap(segments).find(t => /^[✻◆▪] /.test(textOf(t)))
+      expect(named(where)).toEqual([text.split(' ').slice(0, 2).join(' '), color])
+      await ui.press({ key: `card-/fm:${id}` })
+    }
+    await ui.unmount()
+    // The inline summary: each crewmate's harness and model, and each provider's quota row.
+    const mini = await $.ui.mount(sized(100, 24, { placement: 'inline' }))
+    // Each row is one Text of coloured parts: found by what it says.
+    const texts = (await mini.findAll({ type: 'Text' })).map(t => t as Drawn)
+    const rowOf = (pattern: RegExp) => texts.find(t => pattern.test(textOf(t)) && segments(t).length > 1)
+    const crew = ['crew-watch-transparent', 'workflow-cryptography-advisory', 'pi-task'].map(id => rowOf(new RegExp(`^● ${id} · `)))
+    expect(crew.map(r => named(segments(r)[1]))).toEqual([['✻ claude sonnet/high', family.claude], ['◆ codex gpt-6.1-sol/medium', family.codex], ['▪ pi', family.other]])
+    expect(named(segments(rowOf(/^✻ claude week: /))[0])).toEqual(['✻ claude', family.claude])
+    expect(named(segments(rowOf(/^◆ codex week: /))[0])).toEqual(['◆ codex', family.codex])
+    await mini.unmount()
+  })
+}

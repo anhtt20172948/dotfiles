@@ -4,9 +4,9 @@
  * absence, never as a made-up number.
  */
 import type { CrewEvent, CrewMember, CrewReport, CrewTotals, FiveHourReading, LogFilter, PollState, QuotaReading } from '../types'
-import { SOURCES, ago, cacheHit, cells, charCells, clip, gauge, measuredText, previewText, roundTokens, tokens, totalTokens } from './format'
+import { SOURCES, ago, cacheHit, cells, charCells, clip, dispatchText, gauge, measuredText, previewText, roundTokens, tokens, totalTokens } from './format'
 import { crewState, isActive, memberKey } from './dashboard'
-import { AGENT_BORDERS } from './theme'
+import { AGENT_BORDERS, harnessStyle } from './theme'
 
 export { isActive } from './dashboard'
 
@@ -159,15 +159,24 @@ export const cacheShare = (u: Pick<CrewTotals, 'input' | 'cacheRead' | 'cacheWri
 /** What each fleet KPI counts, said once (Details and help). */
 export const KPI_DEFINITIONS = 'Tokens = uncached input + cache read + cache write + output, summed over the live crew since each task started; thinking is part of output, so it is not added again. Cache = cache read / (uncached input + cache read + cache write): the share of all input tokens served from the prompt cache, not a hit rate. The CACHE READ tile shows it.'
 
-/** One part of the Tokens total, with its own glyph so the bar and legend read without colour. */
+/** One part of the Tokens total: its label, the glyph its cells are drawn with and its own colour. */
 export type TokenPart = { label: string; glyph: string; tone: string; value: number }
+
+/**
+ * The glyph of the token bar and its legend swatches: the thin `━` every other bar in the pane uses, so
+ * the bar sits mid-row and never runs into the Tokens line above it or the legend below it.
+ */
+export const TOKEN_GLYPH = '━'
+
+/** A legend item's swatch: two cells of the bar's glyph in the part's colour. */
+export const TOKEN_SWATCH = TOKEN_GLYPH.repeat(2)
 
 /** The four parts Tokens adds up, in the bar's order: cache read, cache write, output, uncached input. */
 export const tokenParts = (u: Pick<CrewTotals, 'input' | 'output' | 'cacheRead' | 'cacheWrite'>): TokenPart[] => [
-  { label: 'read', glyph: '█', tone: 'permission', value: u.cacheRead },
-  { label: 'write', glyph: '▓', tone: 'success', value: u.cacheWrite },
-  { label: 'out', glyph: '▒', tone: 'merged', value: u.output },
-  { label: 'uncached in', glyph: '░', tone: 'text', value: u.input },
+  { label: 'read', glyph: TOKEN_GLYPH, tone: 'permission', value: u.cacheRead },
+  { label: 'write', glyph: TOKEN_GLYPH, tone: 'success', value: u.cacheWrite },
+  { label: 'out', glyph: TOKEN_GLYPH, tone: 'merged', value: u.output },
+  { label: 'uncached in', glyph: TOKEN_GLYPH, tone: 'text', value: u.input },
 ]
 
 /**
@@ -301,6 +310,39 @@ export const cardBorder = (m: Pick<CrewMember, 'lastAt' | 'status'>, now: number
   return AGENT_BORDERS.inactive
 }
 
+/** The glyph of a running border's highlight: the heavy line, so it reads without colour too. */
+export const RUNNER_GLYPH = '━'
+
+/** Where a running border's highlight sits at one frame: its first cell after the corner and its run of glyphs. */
+export type RunnerPart = { left: number; text: string }
+
+/**
+ * The highlight a running card's border carries at `frame`, for a box `width` cells wide: a run of heavy
+ * `━` that moves half its length each frame, left to right along the top edge and right to left along
+ * the bottom one, so the border reads as turning. A run reaching the corner is cut there and the next
+ * frame starts over from the far side. Offsets count from the first cell after the left corner. Null
+ * when the box is too narrow for one.
+ */
+export const runnerParts = (width: number, frame: number): { top: RunnerPart; bottom: RunnerPart } | null => {
+  const span = Math.floor(width) - 2
+  if (span < 3 || !Number.isFinite(frame)) return null
+  const size = Math.max(3, Math.min(8, Math.round(span / 6)))
+  const step = Math.ceil(size / 2)
+  const stops = Math.ceil(span / step)
+  const at = ((Math.floor(frame) % stops) + stops) % stops * step
+  const run = RUNNER_GLYPH.repeat(Math.min(size, span - at))
+  return { top: { left: at, text: run }, bottom: { left: span - at - run.length, text: run } }
+}
+
+/** A harness, provider or model name after its family's icon and in its family's colour; `family` names it when `name` does not. */
+export const harnessName = (name: string, family = name): Segment => {
+  const style = harnessStyle(family)
+  return { text: `${style.icon} ${name}`, tone: style.role }
+}
+
+/** What a crewmate was dispatched as, `✻ claude opus/high`, all in its harness's colour. */
+export const dispatchName = (m: Pick<CrewMember, 'harness' | 'model' | 'effort'>): Segment => harnessName(dispatchText(m), m.harness)
+
 /** The quota keys a crewmate's usage was charged to, each named by provider and account. */
 export const accountsOf = (m: Pick<CrewMember, 'quota'> & Partial<Pick<CrewMember, 'readable'>>, readings: Record<string, QuotaReading>): string => {
   if (m.readable === false) return `acct ${NONE} · logs not readable`
@@ -410,15 +452,20 @@ export const quotaEntries = (report: Pick<CrewReport, 'quota' | 'crew'>): [strin
     .sort(([, a], [, b]) => rank(a.provider) - rank(b.provider) || Number(!a.accountKnown) - Number(!b.accountKnown) || a.account.localeCompare(b.account))
 }
 
-/** The inline summary: one row per provider of each account's weekly percent, never summed or mixed. */
-export const quotaBrief = (report: Pick<CrewReport, 'quota' | 'crew'>, now: number): string[] => {
+/** The inline summary's quota rows, one per provider: the provider, then each account's weekly percent, never summed or mixed. */
+export const quotaBriefParts = (report: Pick<CrewReport, 'quota' | 'crew'>, now: number): { provider: string; text: string }[] => {
   const byProvider = new Map<string, string[]>()
   for (const [, r] of quotaEntries(report)) {
     const name = r.accountKnown ? r.account.replace(/^codex-/, '') : 'unknown'
     const figure = r.percent === null || !r.accountKnown ? NONE : `${measuredText(r.percent)}${isStaleReading(r, now) ? ' stale' : ''}`
     byProvider.set(r.provider, [...(byProvider.get(r.provider) ?? []), `${name} ${figure}`])
   }
-  const rows = [...byProvider].map(([provider, parts]) => `${provider} week: ${parts.join(' · ')}`)
+  return [...byProvider].map(([provider, parts]) => ({ provider, text: ` week: ${parts.join(' · ')}` }))
+}
+
+/** The inline summary as plain text: one row per provider of each account's weekly percent. */
+export const quotaBrief = (report: Pick<CrewReport, 'quota' | 'crew'>, now: number): string[] => {
+  const rows = quotaBriefParts(report, now).map(row => `${row.provider}${row.text}`)
   return rows.length > 0 ? rows : ['quota: no readings yet']
 }
 

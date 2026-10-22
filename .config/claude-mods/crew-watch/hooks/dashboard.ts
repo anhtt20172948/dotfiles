@@ -5,9 +5,6 @@ export const memberKey = (m: Pick<CrewMember, 'home' | 'id'>): string => `${m.ho
 
 export const toggleExpanded = (current: string | null, key: string): string | null => current === key ? null : key
 
-export const harnessColor = (harness: string): string =>
-  harness.startsWith('claude') ? 'claude' : harness === 'codex' ? 'codex' : harness === 'pi' ? 'merged' : 'permission'
-
 export const activityState = (lastAt: number, now: number): { mark: string; label: string; color: string } => {
   const age = lastAt > 0 ? Math.max(0, now - lastAt) : Infinity
   return age < 120000 ? { mark: '●', label: 'active', color: 'success' }

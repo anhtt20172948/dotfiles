@@ -204,6 +204,8 @@ declare module 'claude-code' {
       quotaInfo: boolean
       /** The log entry whose full text is shown, by its id; null for none. */
       openLog: string | null
+      /** The running border's frame while its timer runs; null while it is stopped (no pane, nothing running, reduced motion). */
+      pulse: number | null
     }
   }
 }
