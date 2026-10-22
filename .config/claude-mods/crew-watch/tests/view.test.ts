@@ -1,10 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { CrewEvent, CrewReport, QuotaReading } from '../types'
-import { cacheHit, cells, clip, pad, roundTokens, shortPaths, tildeHome, totalTokens } from '../hooks/format'
+import { cacheHit, cells, clip, pad, roundTokens, shortPaths, tildeHome, tokens, totalTokens } from '../hooks/format'
 import {
-  KPI_DEFINITIONS, NONE, STALE_READING_MS, accountsOf, barParts, cardBorder, cardStats, contextExact, contextFigure, contextLine, crewCounts, effectiveFilter,
-  filterLabel, filterLogs, fitSegments, headingParts, isActive, kpiText, layoutFor, logEntries, logKey, logPreview, nextFilter, overviewTiles, quotaBrief,
+  KPI_DEFINITIONS, NONE, RUNNER_GLYPH, STALE_READING_MS, TOKEN_SWATCH, accountsOf, barParts, cardBorder, cardStats, contextExact, contextFigure, contextLine,
+  crewCounts, dispatchName, effectiveFilter, filterLabel, filterLogs, fitSegments, harnessName, headingParts, isActive, kpiText, layoutFor, logEntries, logKey,
+  logPreview, nextFilter, overviewTiles, quotaBrief, quotaBriefParts, runnerParts,
   fiveHourLine, fiveHourSource, quotaEntries, quotaLine, quotaNames, quotaSource, sectionParts, sourceState, statusMessage, statusOf, tilesPerRow, tokenBar, tokenFormulas, tokenParts, toolTag,
   logTokens, totalsText, untilText, wrapSegments,
 } from '../hooks/view'
@@ -228,6 +229,9 @@ test('every account stays its own quota entry: two Claude accounts and one Codex
   expect(quotaEntries(report).map(([key]) => key)).toEqual(['claude|andang|seven_day', 'claude|thanhnv|seven_day', 'claude|unknown|seven_day', 'codex|codex-60305a97|codex:10080m'])
   expect(quotaBrief(report, NOW)).toEqual([`claude week: andang 35% · thanhnv ${NONE} · unknown ${NONE}`, 'codex week: 60305a97 30%'])
   expect(quotaBrief({ crew: [], quota: { fleet: {}, readings: {} } }, NOW)).toEqual(['quota: no readings yet'])
+  // The provider comes apart from its accounts, so the summary can draw it with its harness's icon and colour.
+  expect(quotaBriefParts(report, NOW)).toEqual([{ provider: 'claude', text: ` week: andang 35% · thanhnv ${NONE} · unknown ${NONE}` }, { provider: 'codex', text: ' week: 60305a97 30%' }])
+  expect(quotaBriefParts({ crew: [], quota: { fleet: {}, readings: {} } }, NOW)).toEqual([])
   // A reading that has aged past half an hour since the report is stale here too.
   expect(quotaBrief(report, NOW + STALE_READING_MS)).toEqual([`claude week: andang 35% stale · thanhnv ${NONE} · unknown ${NONE}`, 'codex week: 60305a97 30% stale'])
 })
@@ -314,17 +318,19 @@ test('Cache is cache read over all input and Tokens adds the four parts once, th
 test('the token bar fills its width in proportion and keeps a cell for every part used', () => {
   const bar = tokenBar(tokenParts(SCOUT), 60)
   expect(bar.map(s => s.text.length)).toEqual([53, 5, 1, 1])
-  expect(bar.map(s => s.text[0])).toEqual(['█', '▓', '▒', '░'])
+  // Every part is the thin ━ of the pane's other bars; the parts differ by colour and are told apart by the gaps.
+  expect(bar.map(s => [...new Set(s.text)].join(''))).toEqual(['━', '━', '━', '━'])
   expect(bar.reduce((n, s) => n + s.text.length, 0)).toBe(60)
   // An unused part draws nothing; nothing used draws no bar; too narrow for every part, shares alone.
-  expect(tokenBar(tokenParts({ input: 0, output: 10, cacheRead: 30, cacheWrite: 0 }), 8).map(s => s.text)).toEqual(['██████', '▒▒'])
+  expect(tokenBar(tokenParts({ input: 0, output: 10, cacheRead: 30, cacheWrite: 0 }), 8).map(s => s.text)).toEqual(['━━━━━━', '━━'])
   expect(tokenBar(tokenParts({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }), 20)).toEqual([])
   expect(tokenBar(tokenParts(SCOUT), 2).reduce((n, s) => n + s.text.length, 0)).toBe(2)
   // A gap parts each two neighbours and the bar still spans its width; too narrow for gaps, none.
   const parted = tokenBar(tokenParts(SCOUT), 60, 1)
-  expect(parted.map(s => s.text)).toEqual(['█'.repeat(50), ' ', '▓'.repeat(4), ' ', '▒▒', ' ', '░'])
+  expect(parted.map(s => s.text)).toEqual(['━'.repeat(50), ' ', '━'.repeat(4), ' ', '━━', ' ', '━'])
+  expect(parted.map(s => s.tone)).toEqual(['permission', 'subtle', 'success', 'subtle', 'merged', 'subtle', 'text'])
   expect(parted.reduce((n, s) => n + s.text.length, 0)).toBe(60)
-  expect(tokenBar(tokenParts(SCOUT), 5, 1).map(s => s.text).join('')).toBe('██▓▒░')
+  expect(tokenBar(tokenParts(SCOUT), 5, 1).map(s => s.text).join('')).toBe('━━━━━')
   // Every part has its own colour, so neighbours never read as one.
   expect(new Set(tokenParts(SCOUT).map(p => p.tone)).size).toBe(4)
 })
@@ -430,4 +436,52 @@ test('a log row counts the tokens a call took like its recent-call line, and a d
     { at: 1, kind: 'status', text: 'working' }, { at: 2, kind: 'tool', text: 'Bash: ls', outTokens: 9, inTokens: 30, estimated: true },
   ] }])
   expect([tool && logTokens(tool), status && logTokens(status)]).toEqual([{ input: '~30', output: '9' }, { input: NONE, output: NONE }])
+})
+
+test('a running border\'s run moves half its length each frame, right along the top and left along the bottom, never past a corner', () => {
+  // A 53-cell card has 51 cells between its corners: a run of 8 moving 4 cells a frame, 13 stops a lap.
+  const frames = Array.from({ length: 15 }, (_, i) => runnerParts(53, i))
+  expect(frames.slice(0, 3).map(f => f?.top)).toEqual([{ left: 0, text: '━'.repeat(8) }, { left: 4, text: '━'.repeat(8) }, { left: 8, text: '━'.repeat(8) }])
+  expect(frames.slice(0, 3).map(f => f?.bottom)).toEqual([{ left: 43, text: '━'.repeat(8) }, { left: 39, text: '━'.repeat(8) }, { left: 35, text: '━'.repeat(8) }])
+  // The last stop is cut at the corner, and the lap starts over.
+  expect(frames[12]?.top).toEqual({ left: 48, text: '━━━' })
+  expect(frames[12]?.bottom).toEqual({ left: 0, text: '━━━' })
+  expect(frames[13]).toEqual(frames[0])
+  // Two frames in a row never draw the same place, so the border visibly turns.
+  for (let i = 1; i < frames.length; i++) expect(frames[i]?.top.left === frames[i - 1]?.top.left).toBe(false)
+  // Nothing ever reaches a corner, at any width or frame.
+  for (const width of [5, 12, 40, 53, 57, 120]) {
+    for (let frame = 0; frame < 40; frame++) {
+      const part = runnerParts(width, frame)
+      for (const edge of [part?.top, part?.bottom]) {
+        expect(edge !== undefined && edge.left >= 0 && edge.left + cells(edge.text) <= width - 2 && edge.text.length >= 1).toBe(true)
+        expect([...new Set(edge?.text ?? '')]).toEqual([RUNNER_GLYPH])
+      }
+    }
+  }
+  // A box too narrow for a run, or a frame that is not a number, draws none.
+  expect(runnerParts(4, 0)).toBeNull()
+  expect(runnerParts(53, Number.NaN)).toBeNull()
+  expect(runnerParts(53, -1)).toEqual(runnerParts(53, 12))
+})
+
+test('every harness, provider and model name takes its family\'s icon and colour', () => {
+  expect(['claude', 'claude-code', 'claude-opus-5-5', 'opus', 'Sonnet', 'haiku', 'fable'].map(name => harnessName(name).tone)).toEqual(Array(7).fill('claude'))
+  expect(['codex', 'gpt-6.1-sol', 'o3', 'o4-mini', 'openai'].map(name => harnessName(name).tone)).toEqual(Array(5).fill('codex'))
+  expect(['pi', 'gemini', 'opencode', ''].map(name => harnessName(name).tone)).toEqual(Array(4).fill('text'))
+  expect([harnessName('claude'), harnessName('codex'), harnessName('pi')].map(s => s.text)).toEqual(['✻ claude', '◆ codex', '▪ pi'])
+  // A model is drawn in its harness's family when the harness is named.
+  expect(harnessName('mystery-model', 'codex')).toEqual({ text: '◆ mystery-model', tone: 'codex' })
+  // The icons are one cell each, so they never shift a column.
+  for (const icon of ['✻', '◆', '▪']) expect(cells(icon)).toBe(1)
+  expect(dispatchName({ harness: 'claude', model: 'opus', effort: 'high' })).toEqual({ text: '✻ claude opus/high', tone: 'claude' })
+  expect(dispatchName({ harness: 'codex', model: 'default', effort: 'default' })).toEqual({ text: '◆ codex', tone: 'codex' })
+  expect(dispatchName({ harness: 'pi', model: 'gpt-6.1-sol', effort: '' })).toEqual({ text: '▪ pi gpt-6.1-sol', tone: 'text' })
+  expect([TOKEN_SWATCH, cells(TOKEN_SWATCH)]).toEqual(['━━', 2])
+})
+
+test('a token count keeps its unit at a rounding edge: 9,999 reads 10k, never 10.0k, and 999,600 reads 1.00M, never 1000k', () => {
+  expect([999, 1_234, 9_949, 9_950, 9_999, 10_000, 12_345, 999_499, 999_600, 1_234_567, 9_994_999, 9_996_000, 12_345_678].map(tokens))
+    .toEqual(['999', '1.2k', '9.9k', '10k', '10k', '10k', '12k', '999k', '1.00M', '1.23M', '9.99M', '10.0M', '12.3M'])
+  expect([9_999, 999_600].map(roundTokens)).toEqual(['10k', '1M'])
 })

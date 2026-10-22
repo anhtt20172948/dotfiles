@@ -199,20 +199,39 @@ metadata; and regular `border` for heading rules, the footer separator and bar
 tracks. Each palette defines those roles; `default` resolves them through the
 engine's theme. Agent cards and their expanded details share one status border
 rule: running uses `merged`, quiet uses dim `merged`, blocked uses `error`, and
-done or inactive uses dim `border`. Provider accents belong only to the provider
-word and its quota bar: Claude uses `claude` (amber), Codex uses `codex` (the
-palette's blue). Model names, effort, event authors and detail headings do not
-inherit provider colours. No layout or background colour changes with these
-rules.
+done or inactive uses dim `border`. While a card runs (working or active), a
+heavy `━` run moves around its border, and its open details': half its length
+each second, left to right along the top edge and right to left along the
+bottom one, in the running colour. Every other border stands still. The run
+needs a timer, which runs only while the pane is open and in front, some
+crewmate runs and Claude Code's Reduce motion setting (`/config`, or
+`"prefersReducedMotion": true` in settings) is off. Each refresh (every 5 s by
+default, failed reads included) checks those again, and closing the pane stops
+the timer at once; a stopped timer leaves the borders their colours without
+the run.
+
+One rule colours every harness, provider and model name, through
+`harnessStyle()` in `hooks/theme.ts`: a card's harness, model and effort, the
+open details' dispatch line, model rows, account heads and workspace harness,
+each Quota account's provider and its bars, the Overview's model list (details
+mode) and the inline summary. Claude names use `claude` (amber) after `✻`,
+Codex names use `codex` (the palette's blue) after `◆`, and any other harness
+uses neutral `text` after `▪`. The icons are plain characters one cell wide in
+common terminal fonts, so no Nerd Font is needed, and an icon is always
+followed by its name, so a terminal without colour still reads the family.
+Event authors and detail headings do not take a harness colour. No layout or
+background colour changes with these rules.
 
 1. **Overview**: four tiles, each a small box with a big figure over its label:
    `LIVE` crewmates, `RUNNING` (working or active), `DONE`, and `CACHE READ`,
    the fleet's cache share. Under them the fleet's tokens, requests and tool
    calls. Details mode adds a bar of what Tokens is made of (cache read, cache
-   write, output, uncached input) across the box's full width, each part in its
-   own colour with a one-cell gap between parts and at least one cell for any
-   part above zero; its legend lists each part with its swatch, three cells
-   apart, wrapping as whole items; and both sums written out.
+   write, output, uncached input) across the box's full width, drawn with the
+   thin `━` of the pane's other bars so it never runs into the rows above and
+   below it, each part in its own colour with a one-cell gap between parts and
+   at least one cell for any part above zero; its legend lists each part with a
+   `━━` swatch in that colour, three cells apart, wrapping as whole items; and
+   both sums written out.
 2. **Agents**: one card per crewmate: the status glyph, its name in bold and
    the status word and age on the right; harness, model, effort and task;
    `Context usage` with `used / window · percent` on the right and a bar of it
@@ -240,13 +259,14 @@ rules.
    names (`LAST 60 MIN · peak 29/min`); `60m ago` and `now` under it. A quiet
    minute is a dim `▁`.
 5. **Recent Events**: the newest three to five events, newest first, one short
-   row each, the tag drawn as a badge, with a filter; `Enter` on a row shows its
-   full text. After the tag come two right-aligned columns under an `in` / `out`
-   header: the input the call's result added (`~` when estimated from its size)
-   and its share of the request's output, as the details' recent calls count
-   them, `—` for a status line or a call nobody measured. When those columns
-   would leave the command under 16 cells they are dropped, and the header row
-   says so.
+   row each, with a filter; `Enter` on a row shows its full text. A row reads
+   time, the tag drawn as a badge, the crewmate (when more than one is live),
+   then two right-aligned columns under an `in` / `out` header: the input the
+   call's result added (`~` when estimated from its size) and its share of the
+   request's output, as the details' recent calls count them, `—` for a status
+   line or a call nobody measured. The command comes last and takes the rest of
+   the row. When the token columns would leave the command under 16 cells they
+   are dropped, and the header row says so.
 
 The context figure and its bar need the model's window: a Codex rollout
 supplies it, else Codex's own catalog (`~/.codex/models_cache.json`), and for
@@ -298,8 +318,8 @@ What it shows, and what it does not:
   working and active count as active. Each card ends with the crewmate's latest
   status line (else its last tool call); in the row layout it is the third row,
   left out only under 24 rows (a blocked one's stays). A running (working or
-  active) card has a purple border, a quiet one a dim purple border and a
-  blocked one a red border; a done card has a dim neutral border and a green
+  active) card has a purple border with a heavy run moving around it, a quiet
+  one a dim purple border and a blocked one a red border; a done card has a dim neutral border and a green
   `✓ DONE`, so it sits back from the running ones.
 - **Overview.** `Tokens` is uncached input + cache read + cache write + output,
   summed over the live crew since each task started. Thinking (reasoning) is
@@ -308,7 +328,7 @@ What it shows, and what it does not:
   twice. `Cache` is cache read / (uncached input + cache read + cache write),
   the share of all input served from the prompt cache, never called a hit rate.
   The `CACHE READ` tile shows this share; it is not labelled a hit rate. The
-  details-mode legend names each part (`░ uncached in 24`), because a small
+  details-mode legend names each part (`━━ uncached in 24`), because a small
   count beside `828k` reads like `24k`: a crewmate with 24 uncached, 827,917 cache-read and
   57,268 cache-write tokens has a cache share of 827,917 / 885,209 = 93.5%,
   shown as 94%. Details mode writes both sums out with every term, says how
@@ -328,8 +348,8 @@ What it shows, and what it does not:
 - **Events.** A row is the time, a tag drawn as a badge (the tool's name such
   as `BASH` or `EDIT`, `STAT` for a status line, `× ERR` for an error; a file
   edit purple, another call cyan, a status line green, an error red), the
-  crewmate when more than one is live, the command or path in bold and the rest
-  dim: `12:45:51   BASH     wc -l <…/report.md`. A preview writes the home folder as
+  crewmate when more than one is live, the token columns, then the command or
+  path in bold and the rest dim: `12:45:51   BASH         ~0    373  wc -l <…/report.md`. A preview writes the home folder as
   `~` (and its dashed form in Claude's transcript folders) and cuts every path
   of three or more parts to its last part, so the user name never shows in a
   screenshot; URLs and short paths such as `/dev/null` stay whole. The full

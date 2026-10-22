@@ -1,11 +1,17 @@
 import type { CrewEvent, CrewMember, CrewTotals, MemberQuota, QuotaFigure, QuotaReading, ToolTokens } from '../types'
 import { isActive } from './dashboard'
 
-/** 1234 -> 1.2k, 1234567 -> 1.23M. */
+/**
+ * 1234 -> 1.2k, 1234567 -> 1.23M. The decimals follow the rounded figure, so a count at a rounding
+ * edge keeps its unit: 9,999 reads 10k (not 10.0k) and 999,600 reads 1.00M (not 1000k).
+ */
 export const tokens = (n: number): string => {
   if (n < 1000) return String(n)
-  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`
-  return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 2 : 1)}M`
+  const k = n / 1000
+  if (k < 9.95) return `${k.toFixed(1)}k`
+  if (k < 999.5) return `${Math.round(k)}k`
+  const m = n / 1_000_000
+  return `${m.toFixed(m < 9.995 ? 2 : 1)}M`
 }
 
 /** As `tokens`, without trailing zero decimals: a 1,000,000-token window reads 1M, not 1.00M. */
@@ -28,7 +34,7 @@ export const ago = (ms: number): string => {
   return `${Math.floor(s / 86_400)}d`
 }
 
-export const dispatchText = (m: CrewMember): string => {
+export const dispatchText = (m: Pick<CrewMember, 'harness' | 'model' | 'effort'>): string => {
   const pinned = [m.model, m.effort].filter(v => v && v !== 'default').join('/')
   return pinned ? `${m.harness} ${pinned}` : m.harness
 }
@@ -212,11 +218,12 @@ export const quotaRows = (
   readings: Record<string, QuotaReading>,
   now: number,
   fleet = false,
-): { text: string; tone: string }[] =>
+): { text: string; tone: string; provider?: string }[] =>
   Object.entries(quota).flatMap(([key, q]) => {
     const r = readings[key]
     if (!r) return []
-    const head = { text: accountText(r), tone: 'subtle' }
+    // The head row names its provider, so a drawing can give it its harness's icon and colour.
+    const head = { text: accountText(r), tone: 'subtle', provider: r.provider }
     const shares = [figureRow('session', q.session), figureRow('tools direct', q.tools)]
     if (!r.indexed) return [head, { text: 'indexing local logs…', tone: 'subtle' }]
     if (r.percent === null) {

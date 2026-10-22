@@ -130,6 +130,30 @@ export const AGENT_BORDERS = {
   inactive: { color: 'border', dim: true },
 } as const
 
+/** A harness family as the pane draws its names: the colour role and the icon before the name. */
+export type HarnessStyle = { family: 'claude' | 'codex' | 'other'; role: Role; icon: string }
+
+/**
+ * One rule for every harness, provider or model name: Claude names in `claude` (amber), Codex names in
+ * `codex` (the palette's blue), any other harness in neutral `text`, each after its family's icon. The
+ * icons are plain characters one cell wide in common terminal fonts, so no Nerd Font is needed, and an
+ * icon never stands without its name, so a terminal without colour still reads the family.
+ */
+export const HARNESS_STYLES = {
+  claude: { family: 'claude', role: 'claude', icon: '✻' },
+  codex: { family: 'codex', role: 'codex', icon: '◆' },
+  other: { family: 'other', role: 'text', icon: '▪' },
+} as const satisfies Record<HarnessStyle['family'], HarnessStyle>
+
+/** Harness, provider and model names of each family: `claude`, `claude-opus-5-5`, `opus`; `codex`, `gpt-6.1-sol`, `o3`. */
+const CLAUDE_NAMES = /^(claude|anthropic|opus|sonnet|haiku|fable)\b/
+const CODEX_NAMES = /^(codex|openai|gpt|o\d)\b/
+
+export const harnessStyle = (name: string): HarnessStyle => {
+  const key = name.trim().toLowerCase()
+  return CLAUDE_NAMES.test(key) ? HARNESS_STYLES.claude : CODEX_NAMES.test(key) ? HARNESS_STYLES.codex : HARNESS_STYLES.other
+}
+
 export const themePainter = (name: string, support: ColorSupport): Paint => {
   // The engine has no border key: the default theme keeps the log box's old colour.
   if (!isThemeName(name) || name === DEFAULT_THEME) return role => (role === 'border' ? 'subtle' : role === 'codex' ? 'permission' : role)

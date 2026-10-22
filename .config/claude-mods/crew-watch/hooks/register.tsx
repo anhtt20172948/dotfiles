@@ -1,12 +1,12 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { CrewMember, CrewReport } from '../types'
 import { accountFromLimits } from './account'
 import { statusLine } from './format'
 import { DEFAULT_THEME, isNoColorSet, isThemeName, isTruecolorTerm, themePainter } from './theme'
 import type { Paint } from './theme'
-import { memberKey, toggleExpanded } from './dashboard'
+import { isActive, memberKey, toggleExpanded } from './dashboard'
 import { nextFilter } from './view'
 import type { LogEntry } from './view'
 import { drawPane } from './zones'
@@ -17,6 +17,8 @@ const PANE = 'crew-watch'
 const TITLE = 'Crew'
 const POLL_TIMEOUT_MS = 20_000
 const ACCOUNT_CACHE_MS = 60_000
+/** How often a running card's border highlight moves: once a second, calm enough never to read as flicker. */
+const PULSE_MS = 1000
 
 const reportAtom = atom({ plugin: 'crew-watch', key: 'report' } as const, null)
 const errorAtom = atom({ plugin: 'crew-watch', key: 'error' } as const, '')
@@ -28,6 +30,7 @@ const logFilterAtom = atom({ plugin: 'crew-watch', key: 'logFilter' } as const, 
 const helpAtom = atom({ plugin: 'crew-watch', key: 'help' } as const, false)
 const quotaInfoAtom = atom({ plugin: 'crew-watch', key: 'quotaInfo' } as const, false)
 const openLogAtom = atom({ plugin: 'crew-watch', key: 'openLog' } as const, null)
+const pulseAtom = atom({ plugin: 'crew-watch', key: 'pulse' } as const, null)
 
 const HELP = [
   '/crew           open or close the Crew pane',
@@ -42,6 +45,9 @@ let accountCache: { at: number; fingerprint: string; name: string } | null = nul
 let themeName: string = DEFAULT_THEME
 let home = ''
 let paint: Paint = themePainter(DEFAULT_THEME, { isNoColor: false, isTruecolor: true })
+let pulseTimer: Timer | null = null
+/** Counts the timer's stops, so a start that began before a stop (the pane closing meanwhile) does not go through. */
+let pulseStops = 0
 
 /** Builds the painter from the Theme option and what the terminal says (NO_COLOR, COLORTERM). */
 async function loadPaint($: Dollar): Promise<void> {
@@ -54,6 +60,62 @@ async function loadPaint($: Dollar): Promise<void> {
 /** The home folder, so full paths the pane shows read `~` rather than the person's user name. */
 async function loadHome($: Dollar): Promise<void> {
   home = (await $.env.get('HOME')) ?? ''
+}
+
+/** Whether the person asked Claude Code for less motion: the `prefersReducedMotion` setting (`/config`, Reduce motion). */
+async function isMotionReduced($: Dollar): Promise<boolean> {
+  try {
+    return (await $.settings.read({ key: 'prefersReducedMotion' })) === true
+  } catch {
+    return false
+  }
+}
+
+/** Whether the Crew pane is drawn and in front: a pane waiting undrawn or behind another tab shows no motion. */
+async function isPaneShown($: Dollar): Promise<boolean> {
+  try {
+    return (await $.ui.panes()).some(pane => pane.id === PANE && pane.isPlaced && pane.isShown)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Runs the running border's timer only while it shows something: the pane is in front, a crewmate is
+ * working or active, and motion is not reduced. Each tick moves every running card's highlight one
+ * step; otherwise the timer is stopped and the frame cleared, so every border stands still.
+ */
+async function syncPulse($: Dollar): Promise<void> {
+  const stops = pulseStops
+  const report = await read($, reportAtom)
+  const now = await $.clock.now()
+  const isRunning = report?.crew.some(m => isActive(m, now)) ?? false
+  const shouldRun = isRunning && await isPaneShown($) && !(await isMotionReduced($))
+  if (!shouldRun) return stopPulse($)
+  // Set before any await, so a poll and an open that both get here start one timer, not two.
+  if (pulseTimer !== null || stops !== pulseStops) return
+  // A tick or this first frame landing after a stop finds the frame cleared and leaves it so.
+  const timer = $.clock.every(PULSE_MS, () => {
+    void update($, pulseAtom, value => value === null ? null : value + 1)
+  })
+  pulseTimer = timer
+  await update($, pulseAtom, value => pulseTimer === timer ? value ?? 0 : value)
+}
+
+/** syncPulse for a caller with other work: a failure is logged to the debug log and never fails a read or an open. */
+async function checkPulse($: Dollar): Promise<void> {
+  try {
+    await syncPulse($)
+  } catch (err) {
+    $.ui.log(`crew-watch: border timer: ${err instanceof Error ? err.message : String(err)}`, { to: 'debug' })
+  }
+}
+
+async function stopPulse($: Dollar): Promise<void> {
+  pulseStops += 1
+  pulseTimer?.cancel()
+  pulseTimer = null
+  await update($, pulseAtom, () => null)
 }
 
 /** Reads the crew once; a call made while a read runs waits for that read. */
@@ -147,6 +209,8 @@ async function readCrew($: Dollar): Promise<void> {
 async function settle($: Dollar, failed: boolean): Promise<void> {
   const at = await $.clock.now()
   await update($, pollAtom, () => ({ at, failed }))
+  // Every read, failed or not, decides again whether the border timer runs.
+  await checkPulse($)
 }
 
 export const register: Register = (on, options) => {
@@ -190,9 +254,17 @@ export const register: Register = (on, options) => {
     }
     void poll($)
     await $.ui.open({ id: PANE, title: TITLE })
+    await checkPulse($)
 
     return { text: 'Crew pane opened.' }
   })
+
+  // However the pane closes (`/crew`, its close mark, ctrl+x x), the border timer stops with it.
+  // A failure here never keeps the pane open: the close goes on.
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    await stopPulse($)
+    return next(e)
+  }).catch(($, e, next) => next(e))
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const view = {
@@ -206,6 +278,7 @@ export const register: Register = (on, options) => {
       help: await read($, helpAtom),
       quotaInfo: await read($, quotaInfoAtom),
       openLog: await read($, openLogAtom),
+      pulse: await read($, pulseAtom),
     }
     const frame = {
       width: e.props.bodyColumns,
