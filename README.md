@@ -186,35 +186,48 @@ lays in `.claude-plugin/types` the first time it loads the mod.
 
 ### crew-watch
 
-`.config/claude-mods/crew-watch` draws the Crew Monitor: a header with the
-crew's live, active and done counts and how fresh the data is, then five zones in a
-fixed order.
+`.config/claude-mods/crew-watch` draws the Crew Monitor: a header
+(`▣ CREW / monitor`, then how fresh the data is and the time), five zones in a
+fixed order and a key footer. Each zone sits in its own rounded box, its title
+in small capitals on the first row and a short meta against the right edge, with
+a blank row between boxes, so the blocks are told apart at a glance.
 
-1. **Overview**: the fleet's tokens, requests, tool calls and cache share, and
-   a bar of what Tokens is made of (cache read, cache write, output, uncached
-   input) with a legend. The fleet's numbers live here alone.
-2. **Agents**: one compact card per crewmate with its status, name, harness,
-   model and effort, task, context gauge and its latest status line. Its own
-   tokens, requests, tools, cache and account open with its number, below the
-   cards.
-3. **Quota & Limits**: one row per provider and account: name, a gauge of the
-   vendor's weekly percent, the percent, the time to its reset (`↻ 5d 4h`) and
-   `◷ stale` once the reading is over 30 minutes old. `i` adds each account's
-   notes.
-4. **Activity**: a 60-minute lane per crewmate, one cell per minute.
-5. **Recent Logs**: the newest three to five events, newest first, one short
-   row each, with a filter; `Enter` on a row shows its full text.
+1. **Overview**: four tiles, each a small box with a big figure over its label:
+   `LIVE` crewmates, `RUNNING` (working or active), `DONE`, and `CACHE READ`,
+   the fleet's cache share. Under them the fleet's tokens, requests and tool
+   calls. Details mode adds a bar of what Tokens is made of (cache read, cache
+   write, output, uncached input), its legend and both sums written out.
+2. **Agents**: one card per crewmate: the status glyph, its name in bold and
+   the status word and age on the right; harness, model, effort and task;
+   `Context usage` with `used / window · percent` on the right and a bar of it
+   on its own line; its own requests, tools and tokens (`in` is all input,
+   uncached plus cache read and write); and its latest status line. Everything
+   else about it opens with its number, below the cards.
+3. **Quota & Limits**: one block per provider and account: the name, and on the
+   right the vendor's weekly percent, `◷ stale` once the reading is over 30
+   minutes old and the time to its reset (`39% · resets 5d 2h`), with a bar of
+   the percent in the provider's colour under it. An account with no percent
+   draws no bar. `i` adds each account's notes.
+4. **Activity**: the whole crew's logged events per minute as a bar chart of
+   block characters (`▁▂▃▄▅▆▇█`, two rows tall), one cell per minute over up to
+   the last hour (fewer minutes when the zone is narrower than 60 cells; a bar
+   and a gap each from 119), scaled to the busiest minute, which the zone's meta
+   names (`LAST 60 MIN · peak 29/min`); `60m ago` and `now` under it. A quiet
+   minute is a dim `▁`.
+5. **Recent Events**: the newest three to five events, newest first, one short
+   row each, the tag drawn as a badge, with a filter; `Enter` on a row shows its
+   full text.
 
-The context gauge needs the model's window: a Codex rollout supplies it, else
-Codex's own catalog (`~/.codex/models_cache.json`), and for Claude models a
-small table in `crew_usage.py` (`CLAUDE_WINDOWS`), because Claude transcripts
-never record it and no local catalog lists Claude models. A model none of them
+The context figure and its bar need the model's window: a Codex rollout
+supplies it, else Codex's own catalog (`~/.codex/models_cache.json`), and for
+Claude models a small table in `crew_usage.py` (`CLAUDE_WINDOWS`), because
+Claude transcripts never record it and no local catalog lists Claude models. A model none of them
 knows shows `window n/a for <model>`, and a crewmate with no request yet shows
 `no request yet`.
 
 `/crew` opens or closes the pane; `/crew refresh` reads the logs immediately.
 The keys work while the pane has the keyboard (`ctrl+x tab`, or a click); the
-key row under the header names them and says so while the pane is unfocused.
+key footer names them and says so while the pane is unfocused.
 
 | Key | Action |
 | --- | --- |
@@ -243,7 +256,7 @@ compact and details.
 
 What it shows, and what it does not:
 
-- **Freshness.** `● LIVE · updated 4s ago` while reads succeed; `◷ STALE` once
+- **Freshness.** `● LIVE · updated 4s ago · 13:48` while reads succeed; `◷ STALE` once
   two refresh intervals and one read's 20 s timeout pass without a new report
   (30 s at the default 5 s interval); `× SOURCE ERROR` with the reason and the
   age of the last good data when a read fails. A report's own warnings show as
@@ -257,15 +270,16 @@ What it shows, and what it does not:
   left out only under 24 rows (a blocked one's stays). A running (working or
   active) card has a purple border, a quiet one a dim purple border and a
   blocked one a red border; a done card has a dim neutral border and a green
-  `✓`, so it sits back from the running ones.
+  `✓ DONE`, so it sits back from the running ones.
 - **Overview.** `Tokens` is uncached input + cache read + cache write + output,
   summed over the live crew since each task started. Thinking (reasoning) is
   part of output, as both vendors bill it, so it is never added a second time;
   Codex's cached input is split out of its input first, so nothing is counted
   twice. `Cache` is cache read / (uncached input + cache read + cache write),
   the share of all input served from the prompt cache, never called a hit rate.
-  The legend names each part (`░ uncached in 24`), because a small count beside
-  `828k` reads like `24k`: a crewmate with 24 uncached, 827,917 cache-read and
+  The `CACHE READ` tile shows this share; it is not labelled a hit rate. The
+  details-mode legend names each part (`░ uncached in 24`), because a small
+  count beside `828k` reads like `24k`: a crewmate with 24 uncached, 827,917 cache-read and
   57,268 cache-write tokens has a cache share of 827,917 / 885,209 = 93.5%,
   shown as 94%. Details mode writes both sums out with every term, says how
   much of output was thinking where the log reports it, and lists requests per
@@ -280,11 +294,12 @@ What it shows, and what it does not:
   account its usage went to.
 - **Missing data** shows as `—` or a sentence saying why, never as a zero: a
   harness whose logs cannot be read, an unknown model window, an account with no
-  reading, no crewmates, no activity in the last hour.
-- **Logs.** A row is the time, a tag (the tool's name such as `BASH` or `EDIT`,
-  `STAT` for a status line, `× ERR` for an error), the crewmate when more than
-  one is live, the command or path in bold and the rest dim:
-  `12:45:51  BASH    wc -l <…/report.md`. A preview writes the home folder as
+  reading, no crewmates, no activity in the chart's window.
+- **Events.** A row is the time, a tag drawn as a badge (the tool's name such
+  as `BASH` or `EDIT`, `STAT` for a status line, `× ERR` for an error; a file
+  edit purple, another call cyan, a status line green, an error red), the
+  crewmate when more than one is live, the command or path in bold and the rest
+  dim: `12:45:51   BASH     wc -l <…/report.md`. A preview writes the home folder as
   `~` (and its dashed form in Claude's transcript folders) and cuts every path
   of three or more parts to its last part, so the user name never shows in a
   screenshot; URLs and short paths such as `/dev/null` stay whole. The full
@@ -295,8 +310,10 @@ What it shows, and what it does not:
   status line whose state is blocked, failed or needs-decision; no severity is
   guessed from free text.
 
-The layout follows the pane's own size, not the terminal's. From 110 columns
-the cards sit two to a row; below that they stack; below 70 columns, past four
+The layout follows the pane's own size, not the terminal's. From 40 columns
+each zone has its box; a narrower pane keeps only a heading rule per zone. The
+four tiles sit in one row while each keeps 11 cells, else two to a row, else
+one. From 110 columns the cards sit two to a row; below that they stack; below 70 columns, past four
 crewmates (three in one column) or under 24 rows each crewmate is a two-line
 row. Under 24 rows Activity and the log preview fold to one line each; from 36
 rows the log shows five entries. A docked pane is about 90 columns wide until
@@ -333,7 +350,8 @@ transparent or terminal-default colour: `Color` is a theme key or a raw colour,
 `Pane` has no background prop, and values such as `transparent` or `default` are
 ignored. A mod can only cover that fill with an explicit colour, never remove
 it, so a transparent terminal does not show through the docked pane. crew-watch
-therefore sets no `backgroundColor` anywhere, the palette backgrounds in
+therefore sets no `backgroundColor` anywhere (an event's badge is inverse video:
+its tag colour swaps with the fill behind it, so no colour of its own is set), the palette backgrounds in
 `hooks/theme.ts` exist only to check text contrast, and a test keeps it so; it
 adds no background option, since an explicit colour would only paint a patchwork
 over the engine's fill.

@@ -8,7 +8,9 @@
  * layout, width, truncation or text.
  *
  * Gauges (▰▱) are glyphs inside a line of text, so a gauge takes its line's
- * role colour; there is no separate gauge colour to define.
+ * role colour. A bar (━ filled, ─ the rest) and the activity chart draw their
+ * filled part in a role colour and the rest in `border`; there is no separate
+ * bar colour to define.
  */
 
 /** The semantic roles the dashboard paints with; the first nine are engine theme keys. */

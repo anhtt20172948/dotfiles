@@ -8,6 +8,9 @@ export const tokens = (n: number): string => {
   return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 2 : 1)}M`
 }
 
+/** As `tokens`, without trailing zero decimals: a 1,000,000-token window reads 1M, not 1.00M. */
+export const roundTokens = (n: number): string => tokens(n).replace(/\.0+(?=[kM]$)/, '')
+
 /**
  * Share of all input tokens served from the prompt cache: cache read / (uncached input + cache read +
  * cache write). `input` is the uncached part only (the collector splits Codex's cached input out).

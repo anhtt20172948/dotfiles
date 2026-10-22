@@ -29,24 +29,38 @@ export const crewState = (m: Pick<CrewMember, 'lastAt' | 'status'>, now: number)
 export const isActive = (m: Pick<CrewMember, 'lastAt' | 'status'>, now: number): boolean =>
   ['working', 'active'].includes(crewState(m, now).label)
 
-/** The axis gutter is the same geometry as each mark, name and explicit gap. */
-export const laneGeometry = (width: number) => {
-  const markWidth = 2
-  const nameWidth = 16
-  const gap = 1
-  const offset = markWidth + nameWidth + gap
-  const cells = Math.max(4, Math.min(60, width - offset - 10))
-  const start = `-${cells - 1}m`
-  const axis = start.padEnd(Math.max(start.length, cells - 3), ' ').slice(0, cells - 3) + 'now'
-  return { markWidth, nameWidth, gap, offset, cells, axis }
+/** Bar heights in eighths of a cell, from none to full. */
+const BLOCKS = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'] as const
+
+/**
+ * The crew's logged events per minute over the last `minutes` minutes, oldest first and ending in the
+ * current minute: every crewmate's buckets added together. Buckets outside the window are left out.
+ */
+export const activityCounts = (activity: readonly (readonly ActivityBucket[])[], now: number, minutes: number): number[] => {
+  const size = Math.max(1, Math.min(60, Math.floor(minutes)))
+  const first = Math.floor(now / 60000) - size + 1
+  return activity.flat().reduce((counts, b) => {
+    const at = b.minute - first
+    return at >= 0 && at < size && b.count > 0 ? counts.map((n, i) => i === at ? n + b.count : n) : counts
+  }, Array.from({ length: size }, () => 0))
 }
 
-/** Every lane ends in the same current minute; at most 60 cells, one per minute. */
-export const activityLane = (activity: readonly ActivityBucket[], now: number, width: number): string => {
-  const cells = Math.max(1, Math.min(60, Math.floor(width)))
-  const end = Math.floor(now / 60000)
-  const counts = new Map(activity.map(b => [b.minute, b.count]))
-  return Array.from({ length: cells }, (_, i) => (counts.get(end - cells + i + 1) ?? 0) > 0 ? '▰' : '·').join('')
+/** One column of the chart: a glyph per row, top first, and whether its minute had activity. */
+export type ChartColumn = { glyphs: string[]; busy: boolean }
+
+/**
+ * A bar chart `rows` cells tall, one column per minute, each bar scaled to the busiest minute. A
+ * minute with activity is at least two eighths tall, so it never reads as the one-eighth baseline
+ * (`▁`) a quiet minute draws.
+ */
+export const activityChart = (counts: readonly number[], rows: number): ChartColumn[] => {
+  const height = Math.max(1, Math.floor(rows))
+  const peak = Math.max(0, ...counts)
+  return counts.map(count => {
+    const eighths = count > 0 && peak > 0 ? Math.max(2, Math.round(count * height * 8 / peak)) : 1
+    const glyphs = Array.from({ length: height }, (_, r) => BLOCKS[Math.max(0, Math.min(8, eighths - (height - 1 - r) * 8))] ?? ' ')
+    return { glyphs, busy: count > 0 }
+  })
 }
 
 type ModelSource = { models: Readonly<Record<string, number>> }
