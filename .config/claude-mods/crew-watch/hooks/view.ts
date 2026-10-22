@@ -4,7 +4,7 @@
  * absence, never as a made-up number.
  */
 import type { CrewEvent, CrewMember, CrewReport, CrewTotals, LogFilter, PollState, QuotaReading } from '../types'
-import { SOURCES, ago, cacheHit, cells, clip, gauge, measuredText, previewText, tokens, totalTokens } from './format'
+import { SOURCES, ago, cacheHit, cells, clip, gauge, measuredText, previewText, roundTokens, tokens, totalTokens } from './format'
 import { crewState, harnessColor, isActive, memberKey } from './dashboard'
 
 export { isActive } from './dashboard'
@@ -16,6 +16,8 @@ export const NONE = '—'
 export const TWO_COLUMNS_FROM = 110
 /** Below this the agents are listed as rows and labels shorten. */
 export const CONDENSED_BELOW = 70
+/** From this width each zone sits in its own box; below it a zone is a heading rule and its rows. */
+export const FRAMED_FROM = 40
 
 /** A crewmate's status as the pane writes it: a glyph and an upper-case word, so no colour is needed to read it. */
 export const statusOf = (m: Pick<CrewMember, 'lastAt' | 'status'>, now: number): { mark: string; label: string; color: string } => {
@@ -47,6 +49,10 @@ export const sourceState = (report: Pick<CrewReport, 'generatedAt'> | null, poll
 export type Layout = {
   mode: 'mini' | 'cards' | 'rows'
   columns: 1 | 2
+  /** Each zone sits in its own box, with a blank row between boxes unless the pane is short. */
+  framed: boolean
+  /** Cells inside a zone: the pane's width less the box's border and padding when framed. */
+  inner: number
   cardWidth: number
   condensed: boolean
   /** Rows of logs in the preview; 0 collapses the zone to one line. */
@@ -57,10 +63,14 @@ export type Layout = {
   short: boolean
 }
 
+/** Cells a zone's rows get: inside a box, its two border cells and one cell of padding each side are gone. */
+export const zoneInner = (width: number, framed: boolean): number => Math.max(1, framed ? width - 4 : width)
+
 /**
  * The responsive layout. Widths are the pane body's columns, heights its rows: two card columns from
  * 110 columns, one below, agent rows below 70 or past four (two columns) or three (one) crewmates;
  * under 24 rows Activity and the log preview fold to one line each, from 36 rows the log shows five.
+ * From 40 columns each zone has its own box; a narrower pane keeps only heading rules.
  */
 export const layoutFor = (width: number, rows: number, count: number, placement: string): Layout => {
   const columns = width >= TWO_COLUMNS_FROM ? 2 : 1
@@ -68,10 +78,14 @@ export const layoutFor = (width: number, rows: number, count: number, placement:
   const short = rows < 24
   const maxCards = columns === 2 ? 4 : 3
   const mode = placement === 'inline' ? 'mini' : condensed || short || count > maxCards ? 'rows' : 'cards'
+  const framed = width >= FRAMED_FROM
+  const inner = zoneInner(width, framed)
   return {
     mode,
     columns: mode === 'cards' && count > 1 ? columns : 1,
-    cardWidth: mode === 'cards' && count > 1 && columns === 2 ? Math.floor((width - 1) / 2) : width,
+    framed,
+    inner,
+    cardWidth: mode === 'cards' && count > 1 && columns === 2 ? Math.floor((inner - 1) / 2) : inner,
     condensed,
     logRows: short ? 0 : rows >= 36 ? 5 : 3,
     activityCollapsed: short,
@@ -88,6 +102,42 @@ export const headingParts = (title: string, hint: string, width: number): { lead
   const left = rest - cells(tail)
   return { lead, title: name, hint: tail, rule: left > 1 ? ' ' + '─'.repeat(left - 1) : '' }
 }
+
+/** A zone's title and its meta, each cut to fit one row of `width` with two cells between them; the title is cut last. */
+export const sectionParts = (title: string, meta: string, width: number): { title: string; meta: string } => {
+  const name = clip(title, Math.max(1, width))
+  const room = width - cells(name) - 2
+  return { title: name, meta: meta && room >= 4 ? clip(meta, room) : '' }
+}
+
+/** The fleet's usage under the Overview tiles: what Tokens, Requests and Tool calls count; `—` before any report. */
+export const totalsText = (totals: CrewTotals | null): string =>
+  totals
+    ? `Tokens ${tokens(totalTokens(totals))} · Requests ${totals.requests} · Tool calls ${totals.toolCalls}`
+    : `Tokens ${NONE} · Requests ${NONE} · Tool calls ${NONE}`
+
+/** One Overview tile: a big figure over a small upper-case label. */
+export type Tile = { key: string; label: string; short: string; value: string; tone: string }
+
+const count2 = (n: number): string => String(n).padStart(2, '0')
+
+/**
+ * The Overview tiles: live crewmates, those running (working or active), those done, and the cache-read
+ * share of all input. `—` before the first report, and for the cache share while no input is readable.
+ * The share is labelled CACHE READ, not a hit rate (see KPI_DEFINITIONS).
+ */
+export const overviewTiles = (crew: readonly Pick<CrewMember, 'lastAt' | 'status'>[] | null, totals: CrewTotals | null, now: number): Tile[] => {
+  const count = crew ? crewCounts(crew, now) : null
+  return [
+    { key: 'live', label: 'LIVE', short: 'LIVE', value: count ? count2(count.live) : NONE, tone: 'text' },
+    { key: 'running', label: 'RUNNING', short: 'RUN', value: count ? count2(count.active) : NONE, tone: 'text' },
+    { key: 'done', label: 'DONE', short: 'DONE', value: count ? count2(count.done) : NONE, tone: count && count.done > 0 ? 'success' : 'text' },
+    { key: 'cache', label: 'CACHE READ', short: 'CACHE', value: totals ? cacheShare(totals) : NONE, tone: 'permission' },
+  ]
+}
+
+/** Tiles in a row: four while each keeps 11 cells (a seven-letter label, its border and padding), else two, else one. */
+export const tilesPerRow = (width: number): 1 | 2 | 4 => width >= 4 * 11 + 3 ? 4 : width >= 2 * 11 + 1 ? 2 : 1
 
 /** The fleet KPIs, labelled for what they count; `—` before the first report. */
 export const kpiText = (totals: CrewTotals | null, condensed: boolean): string => {
@@ -106,7 +156,7 @@ export const cacheShare = (u: Pick<CrewTotals, 'input' | 'cacheRead' | 'cacheWri
 }
 
 /** What each fleet KPI counts, said once (Details and help). */
-export const KPI_DEFINITIONS = 'Tokens = uncached input + cache read + cache write + output, summed over the live crew since each task started; thinking is part of output, so it is not added again. Cache = cache read / (uncached input + cache read + cache write): the share of all input tokens served from the prompt cache, not a hit rate.'
+export const KPI_DEFINITIONS = 'Tokens = uncached input + cache read + cache write + output, summed over the live crew since each task started; thinking is part of output, so it is not added again. Cache = cache read / (uncached input + cache read + cache write): the share of all input tokens served from the prompt cache, not a hit rate. The CACHE READ tile shows it.'
 
 /** One part of the Tokens total, with its own glyph so the bar and legend read without colour. */
 export type TokenPart = { label: string; glyph: string; tone: string; value: number }
@@ -171,6 +221,42 @@ export const contextLine = (m: Pick<CrewMember, 'context' | 'contextWindow' | 'c
   const pct = Math.round(m.context * 100 / m.contextWindow)
   const over = m.context > m.contextWindow ? ' · over window' : ''
   return `${label} ${gauge(pct, bar)} ${pct}% · ${tokens(m.context)}/${tokens(m.contextWindow)}${over}`
+}
+
+/**
+ * A card's context figure, `used / window · percent`, and the percent its bar is drawn from; null when
+ * the window is not known, so no bar is drawn. Over 100% is shown, not clamped.
+ */
+export const contextFigure = (m: Pick<CrewMember, 'context' | 'contextWindow' | 'contextModel'> & Partial<Pick<CrewMember, 'readable'>>): { text: string; percent: number | null } => {
+  if (m.readable === false) return { text: `${NONE} · logs not readable`, percent: null }
+  if (!m.contextWindow || m.contextWindow <= 0) {
+    if (m.context === 0 && !m.contextModel) return { text: `${NONE} · no request yet`, percent: null }
+    return { text: `${tokens(m.context)} · ${m.contextModel ? `window n/a for ${m.contextModel.replace(/^claude-/, '')}` : 'window not recorded'}`, percent: null }
+  }
+  const pct = Math.round(m.context * 100 / m.contextWindow)
+  const over = m.context > m.contextWindow ? ' · over window' : ''
+  return { text: `${roundTokens(m.context)} / ${roundTokens(m.contextWindow)} · ${pct}%${over}`, percent: pct }
+}
+
+/**
+ * A bar `width` cells wide: the filled part (`━`) and the rest (`─`). A percent that reads above zero at
+ * one decimal keeps one cell, so a bar never shows a cell its `0%` does not; a non-finite one fills none.
+ */
+export const barParts = (percent: number, width: number): { fill: string; track: string } => {
+  const size = Math.max(0, Math.floor(width))
+  const shown = Number.isFinite(percent) ? Number(percent.toFixed(1)) : 0
+  const filled = Math.max(shown > 0 && size > 0 ? 1 : 0, Math.min(size, Math.round(shown * size / 100)))
+  return { fill: '━'.repeat(filled), track: '─'.repeat(size - filled) }
+}
+
+/**
+ * A card's own usage line: requests, tool calls, and its input and output tokens. `in` is all input
+ * (uncached + cache read + cache write), so it is never a small uncached count beside a large total.
+ */
+export const cardStats = (m: Pick<CrewMember, 'readable' | 'harness' | 'requests' | 'toolCalls' | 'input' | 'cacheRead' | 'cacheWrite' | 'output'>): string => {
+  if (!m.readable) return `requests ${NONE} · tools ${NONE} · ${m.harness} logs not readable`
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+  return `${plural(m.requests, 'request')} · ${plural(m.toolCalls, 'tool')} · in ${tokens(m.input + m.cacheRead + m.cacheWrite)} / out ${tokens(m.output)}`
 }
 
 /** Exact context, for the details panel. */
@@ -242,7 +328,7 @@ const isStaleReading = (r: Pick<QuotaReading, 'stale' | 'observedAt'>, now: numb
 export type QuotaLine = { percent: number | null; figure: string; reset: string; note: string; tone: string }
 
 export const quotaLine = (r: QuotaReading, now: number): QuotaLine => {
-  const reset = r.resetsAt !== null && r.resetsAt > now ? `↻ ${untilText(r.resetsAt - now)}` : ''
+  const reset = r.resetsAt !== null && r.resetsAt > now ? `resets ${untilText(r.resetsAt - now)}` : ''
   const none = (note: string): QuotaLine => ({ percent: null, figure: NONE, reset, note, tone: 'subtle' })
   if (!r.indexed) return none('indexing local logs…')
   if (!r.accountKnown) return none('account unknown')
@@ -361,8 +447,8 @@ export const filterLogs = (entries: readonly LogEntry[], filter: LogFilter, agen
 export const filterLabel = (filter: LogFilter, agentId: string | undefined): string =>
   filter === 'agent' ? `Agent: ${agentId ?? NONE}` : FILTER_LABELS[filter]
 
-/** A run of text in one tone, one piece of a line drawn as several Texts. */
-export type Segment = { text: string; tone: string; bold?: boolean }
+/** A run of text in one tone, one piece of a line drawn as several Texts; `inverse` draws it as a badge. */
+export type Segment = { text: string; tone: string; bold?: boolean; inverse?: boolean }
 
 /** Segments laid on one line of `width` cells: the one that reaches the edge is clipped with `…`, any after it dropped. */
 export const fitSegments = (segments: readonly Segment[], width: number): Segment[] =>
@@ -374,6 +460,9 @@ export const fitSegments = (segments: readonly Segment[], width: number): Segmen
 
 /** Cells the tag column takes: the longest tag (`SEARCH`, `NBEDIT`) fits. */
 export const TAG_CELLS = 6
+
+/** Tags of calls that change files: their badge takes its own colour, apart from reads and commands. */
+const EDIT_TAGS = new Set(['EDIT', 'WRITE', 'NBEDIT', 'PATCH'])
 
 const TOOL_TAGS: Record<string, string> = {
   todowrite: 'TODO', webfetch: 'FETCH', websearch: 'SEARCH', multiedit: 'EDIT', notebookedit: 'NBEDIT',
@@ -390,16 +479,17 @@ export const toolTag = (name: string): string => {
 
 /**
  * A log row's preview: a tag (the tool's name, STAT for a status line, `× ERR` for an error, so an
- * error reads without red), the command or path as the head and the rest of it. Absolute paths are
- * cut to their last part and the home folder written `~`, so the person's user name never shows in a
- * preview or a screenshot.
+ * error reads without red) and its colour (a file edit purple, another call cyan, a status line
+ * green), the command or path as the head and the rest of it. Absolute paths are cut to their last
+ * part and the home folder written `~`, so the person's user name never shows in a preview or a
+ * screenshot.
  */
 export const logPreview = (entry: Pick<LogEntry, 'kind' | 'level' | 'text'>, home = ''): { tag: string; tone: string; head: string; rest: string } => {
   const text = entry.text.replace(STAMP, '')
   // A call is `Name: detail`, or the bare name when the call had no argument to show.
   const call = entry.kind === 'tool' ? /^([\w.-]{1,64})(?::\s+([\s\S]*))?$/.exec(text) : null
   const tag = entry.level === 'error' ? '× ERR' : entry.kind === 'status' ? 'STAT' : call?.[1] ? toolTag(call[1]) : 'TOOL'
-  const tone = entry.level === 'error' ? 'error' : entry.kind === 'status' ? 'success' : 'suggestion'
+  const tone = entry.level === 'error' ? 'error' : entry.kind === 'status' ? 'success' : EDIT_TAGS.has(tag) ? 'merged' : 'suggestion'
   const [head = '', ...rest] = previewText(call ? call[2] ?? '' : text, home).trim().split(' ')
   return { tag, tone, head, rest: rest.join(' ') }
 }

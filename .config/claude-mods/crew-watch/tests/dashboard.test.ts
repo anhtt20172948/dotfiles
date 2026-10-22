@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { clockText, clip, effortText, gauge, statusLine } from '../hooks/format'
-import { activityLane, crewState, fleetModels, laneGeometry, toggleExpanded } from '../hooks/dashboard'
+import { activityChart, activityCounts, crewState, fleetModels, toggleExpanded } from '../hooks/dashboard'
 import { contextLine } from '../hooks/view'
 
 test('gauges clamp and context never invents a model window', () => {
@@ -16,10 +16,25 @@ test('gauges clamp and context never invents a model window', () => {
   expect(clip('●   nested', 40)).toBe('●   nested')
 })
 
-test('lanes share the same minute axis and omit old or future activity', () => {
-  const now = 90 * 60000
-  expect(activityLane([{ minute: 89, count: 2 }, { minute: 90, count: 1 }], now, 4)).toBe('··▰▰')
-  expect(activityLane([{ minute: 80, count: 1 }, { minute: 91, count: 1 }], now, 4)).toBe('····')
+test('activity adds every crewmate per minute, ends in the current minute and leaves out old or future buckets', () => {
+  const now = 90 * 60000 + 30_000
+  const a = [{ minute: 89, count: 2 }, { minute: 90, count: 1 }, { minute: 80, count: 9 }]
+  const b = [{ minute: 90, count: 3 }, { minute: 91, count: 5 }, { minute: 88, count: 0 }]
+  expect(activityCounts([a, b], now, 4)).toEqual([0, 0, 2, 4])
+  expect(activityCounts([], now, 3)).toEqual([0, 0, 0])
+  // An hour at most, one minute at least.
+  expect(activityCounts([a], now, 90).length).toBe(60)
+  expect(activityCounts([a], now, 0)).toEqual([1])
+  expect(a[0]?.count).toBe(2)
+})
+
+test('the chart scales bars to the busiest minute and keeps a busy minute above the quiet baseline', () => {
+  const chart = activityChart([0, 1, 4, 8], 2)
+  // Top row first: 8 fills both rows, 4 the bottom one, 1 of 8 still two eighths, 0 the ▁ baseline.
+  expect(chart.map(col => col.glyphs.join(''))).toEqual([' ▁', ' ▂', ' █', '██'])
+  expect(chart.map(col => col.busy)).toEqual([false, true, true, true])
+  expect(activityChart([0, 3, 6], 1).map(col => col.glyphs.join(''))).toEqual(['▁', '▄', '█'])
+  expect(activityChart([0, 0], 2).map(col => col.glyphs.join(''))).toEqual([' ▁', ' ▁'])
 })
 
 test('fleet reducers merge models and toggle one open crewmate', () => {
@@ -39,17 +54,6 @@ test('clocks use local wall time and can be checked in a fixed timezone', () => 
   expect(clockText(at, 'America/New_York')).toBe('13:23:04')
   const local = new Date(at)
   expect(clockText(at)).toBe([local.getHours(), local.getMinutes(), local.getSeconds()].map(n => String(n).padStart(2, '0')).join(':'))
-})
-
-test('axis and lane cells share an explicit gutter and a gap after the name', () => {
-  for (const width of [40, 80, 120]) {
-    const geometry = laneGeometry(width)
-    expect(geometry.offset).toBe(geometry.markWidth + geometry.nameWidth + geometry.gap)
-    expect(geometry.gap).toBe(1)
-    expect(geometry.axis.length).toBe(geometry.cells)
-    expect(geometry.axis.endsWith('now')).toBe(true)
-    expect(geometry.offset + geometry.cells <= width).toBe(true)
-  }
 })
 
 test('latest protocol state overrides fresh transcript activity', () => {

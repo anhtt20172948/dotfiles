@@ -1,11 +1,12 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { CrewEvent, CrewReport, QuotaReading } from '../types'
-import { cacheHit, cells, clip, pad, shortPaths, tildeHome, totalTokens } from '../hooks/format'
+import { cacheHit, cells, clip, pad, roundTokens, shortPaths, tildeHome, totalTokens } from '../hooks/format'
 import {
-  KPI_DEFINITIONS, NONE, STALE_READING_MS, accountsOf, cardBorder, contextExact, contextLine, crewCounts, effectiveFilter, filterLabel, filterLogs, fitSegments,
-  headingParts, isActive, kpiText, layoutFor, logEntries, logKey, logPreview, nextFilter, quotaBrief, quotaEntries, quotaLine, quotaNames, quotaSource, sourceState,
-  statusMessage, statusOf, tokenBar, tokenFormulas, tokenParts, toolTag, untilText,
+  KPI_DEFINITIONS, NONE, STALE_READING_MS, accountsOf, barParts, cardBorder, cardStats, contextExact, contextFigure, contextLine, crewCounts, effectiveFilter,
+  filterLabel, filterLogs, fitSegments, headingParts, isActive, kpiText, layoutFor, logEntries, logKey, logPreview, nextFilter, overviewTiles, quotaBrief,
+  quotaEntries, quotaLine, quotaNames, quotaSource, sectionParts, sourceState, statusMessage, statusOf, tilesPerRow, tokenBar, tokenFormulas, tokenParts, toolTag,
+  totalsText, untilText,
 } from '../hooks/view'
 
 const NOW = 1_800_000_000_000
@@ -46,11 +47,15 @@ test('the source state is loading, live, stale or error, and a failed read never
 })
 
 test('agents take two columns from 110 cells, stack below, list as rows below 70 or when many', () => {
-  expect(layoutFor(120, 40, 2, 'dock')).toMatchObject({ mode: 'cards', columns: 2, cardWidth: 59, logRows: 5 })
-  expect(layoutFor(110, 36, 2, 'dock')).toMatchObject({ mode: 'cards', columns: 2, cardWidth: 54 })
-  expect(layoutFor(109, 36, 2, 'dock')).toMatchObject({ mode: 'cards', columns: 1, cardWidth: 109 })
-  expect(layoutFor(80, 32, 2, 'dock')).toMatchObject({ mode: 'cards', columns: 1, cardWidth: 80, logRows: 3 })
-  expect(layoutFor(120, 40, 1, 'dock')).toMatchObject({ mode: 'cards', columns: 1, cardWidth: 120 })
+  // Cards sit inside the Agents box: its border and padding take four cells.
+  expect(layoutFor(120, 40, 2, 'dock')).toMatchObject({ mode: 'cards', columns: 2, framed: true, inner: 116, cardWidth: 57, logRows: 5 })
+  expect(layoutFor(110, 36, 2, 'dock')).toMatchObject({ mode: 'cards', columns: 2, cardWidth: 52 })
+  expect(layoutFor(109, 36, 2, 'dock')).toMatchObject({ mode: 'cards', columns: 1, cardWidth: 105 })
+  expect(layoutFor(80, 32, 2, 'dock')).toMatchObject({ mode: 'cards', columns: 1, cardWidth: 76, logRows: 3 })
+  expect(layoutFor(120, 40, 1, 'dock')).toMatchObject({ mode: 'cards', columns: 1, cardWidth: 116 })
+  // From 40 columns every zone has a box; narrower panes keep heading rules and the full width.
+  expect(layoutFor(40, 24, 2, 'dock')).toMatchObject({ framed: true, inner: 36 })
+  expect(layoutFor(39, 24, 2, 'dock')).toMatchObject({ framed: false, inner: 39 })
   expect(layoutFor(60, 24, 2, 'dock')).toMatchObject({ mode: 'rows', condensed: true })
   expect(layoutFor(120, 40, 5, 'dock').mode).toBe('rows')
   expect(layoutFor(80, 32, 4, 'dock').mode).toBe('rows')
@@ -74,6 +79,52 @@ test('headings never pass the width and keep the title before the hint', () => {
     expect(cells(part.lead + part.title + part.hint + part.rule) <= width).toBe(true)
   }
   expect(headingParts('OVERVIEW', 'fleet', 30)).toEqual({ lead: '── ', title: 'OVERVIEW', hint: ' · fleet', rule: ' ' + '─'.repeat(10) })
+  // A boxed zone's title row: the meta keeps two cells from the title and goes first when room runs out.
+  for (const width of [6, 20, 40, 116]) {
+    const part = sectionParts('QUOTA & LIMITS', 'weekly · per account', width)
+    expect(cells(part.title) + (part.meta ? 2 + cells(part.meta) : 0) <= width).toBe(true)
+  }
+  expect(sectionParts('AGENTS', '2 total · 1-2 details', 40)).toEqual({ title: 'AGENTS', meta: '2 total · 1-2 details' })
+  expect(sectionParts('AGENTS', '2 total · 1-2 details', 20)).toEqual({ title: 'AGENTS', meta: '2 total · 1…' })
+  expect(sectionParts('AGENTS', '2 total', 10).meta).toBe('')
+})
+
+test('the Overview tiles count the crew, show the cache share as CACHE READ, and a dash before any report', () => {
+  const totals = { requests: 27, input: 37_000, output: 9_100, cacheRead: 1_930_000, cacheWrite: 85_000, reasoning: 2_700, toolCalls: 30 }
+  const crew = [{ lastAt: NOW - 10_000, status: 'working [at=1]: x' }, { lastAt: NOW - 10_000, status: 'done [at=1]: y' }, { lastAt: NOW - 3_600_000, status: '' }]
+  expect(overviewTiles(crew, totals, NOW).map(t => [t.label, t.value, t.tone])).toEqual([
+    ['LIVE', '03', 'text'], ['RUNNING', '01', 'text'], ['DONE', '01', 'success'], ['CACHE READ', '94%', 'permission'],
+  ])
+  expect(overviewTiles(null, null, NOW).map(t => t.value)).toEqual([NONE, NONE, NONE, NONE])
+  expect(overviewTiles([], totals, NOW).map(t => t.value)).toEqual(['00', '00', '00', '94%'])
+  // Never called a hit rate.
+  expect(overviewTiles(crew, totals, NOW).some(t => /hit/i.test(t.label))).toBe(false)
+  expect([120, 47, 46, 23, 22].map(tilesPerRow)).toEqual([4, 4, 2, 2, 1])
+  expect(totalsText(totals)).toBe('Tokens 2.06M · Requests 27 · Tool calls 30')
+  expect(totalsText(null)).toBe(`Tokens ${NONE} · Requests ${NONE} · Tool calls ${NONE}`)
+})
+
+test('a card shows context as used / window · percent with a bar, and its own usage with all input as in', () => {
+  expect(contextFigure({ context: 81_000, contextWindow: 1_000_000, contextModel: 'claude-haiku-5-5' })).toEqual({ text: '81k / 1M · 8%', percent: 8 })
+  expect(contextFigure({ context: 44_000, contextWindow: 828_000, contextModel: 'gpt' })).toEqual({ text: '44k / 828k · 5%', percent: 5 })
+  expect(contextFigure({ context: 260_000, contextWindow: 200_000, contextModel: 'x' })).toEqual({ text: '260k / 200k · 130% · over window', percent: 130 })
+  expect(contextFigure({ context: 5_000, contextWindow: null, contextModel: 'claude-unreleased' })).toEqual({ text: '5.0k · window n/a for unreleased', percent: null })
+  expect(contextFigure({ context: 0, contextWindow: null, contextModel: '' })).toEqual({ text: `${NONE} · no request yet`, percent: null })
+  expect(contextFigure({ context: 0, contextWindow: null, contextModel: '', readable: false })).toEqual({ text: `${NONE} · logs not readable`, percent: null })
+  expect([1_000_000, 1_250_000, 200_000, 9_500, 24].map(roundTokens)).toEqual(['1M', '1.25M', '200k', '9.5k', '24'])
+  expect(barParts(8, 50)).toEqual({ fill: '━'.repeat(4), track: '─'.repeat(46) })
+  expect(barParts(0.4, 10)).toEqual({ fill: '━', track: '─'.repeat(9) })
+  expect(barParts(0, 10)).toEqual({ fill: '', track: '─'.repeat(10) })
+  // A reading that prints as 0% draws no cell, and nothing that is not a number fills any.
+  expect(barParts(0.04, 10)).toEqual({ fill: '', track: '─'.repeat(10) })
+  expect(barParts(Number.POSITIVE_INFINITY, 4)).toEqual({ fill: '', track: '─'.repeat(4) })
+  expect(barParts(Number.NaN, 4)).toEqual({ fill: '', track: '─'.repeat(4) })
+  expect(barParts(130, 10)).toEqual({ fill: '━'.repeat(10), track: '' })
+  expect(barParts(50, 0)).toEqual({ fill: '', track: '' })
+  const scout = { readable: true, harness: 'claude', requests: 12, toolCalls: 21, input: 24, cacheRead: 827_917, cacheWrite: 57_268, output: 9_066 }
+  expect(cardStats(scout)).toBe('12 requests · 21 tools · in 885k / out 9.1k')
+  expect(cardStats({ ...scout, requests: 1, toolCalls: 1 })).toBe('1 request · 1 tool · in 885k / out 9.1k')
+  expect(cardStats({ ...scout, readable: false, harness: 'pi' })).toBe(`requests ${NONE} · tools ${NONE} · pi logs not readable`)
 })
 
 test('the fleet KPIs say what they count and show a dash, not zero, before any report', () => {
@@ -120,10 +171,10 @@ test('a crewmate names the account its usage went to, or says it is unknown', ()
 })
 
 test('a default quota row is the measured percent, the time to reset and a stale mark, or a dash and why', () => {
-  expect(quotaLine(reading(), NOW)).toEqual({ percent: 35, figure: '35%', reset: '↻ 2d 4h', note: '', tone: 'text' })
-  expect(quotaLine(reading({ stale: true, observedAt: NOW - 3 * 3_600_000 }), NOW)).toEqual({ percent: 35, figure: '35%', reset: '↻ 2d 4h', note: '◷ stale', tone: 'warning' })
+  expect(quotaLine(reading(), NOW)).toEqual({ percent: 35, figure: '35%', reset: 'resets 2d 4h', note: '', tone: 'text' })
+  expect(quotaLine(reading({ stale: true, observedAt: NOW - 3 * 3_600_000 }), NOW)).toEqual({ percent: 35, figure: '35%', reset: 'resets 2d 4h', note: '◷ stale', tone: 'warning' })
   expect(quotaLine(reading({ stale: true, observedAt: null, resetsAt: null }), NOW)).toMatchObject({ reset: '', note: '◷ stale' })
-  expect(quotaLine(reading({ percent: null }), NOW)).toEqual({ percent: null, figure: NONE, reset: '↻ 2d 4h', note: 'no reading', tone: 'subtle' })
+  expect(quotaLine(reading({ percent: null }), NOW)).toEqual({ percent: null, figure: NONE, reset: 'resets 2d 4h', note: 'no reading', tone: 'subtle' })
   expect(quotaLine(reading({ percent: null, reset: true }), NOW).note).toBe('window reset')
   expect(quotaLine(reading({ account: 'unknown', accountKnown: false, percent: null }), NOW)).toMatchObject({ figure: NONE, note: 'account unknown' })
   expect(quotaLine(reading({ indexed: false }), NOW)).toMatchObject({ figure: NONE, note: 'indexing local logs…' })
@@ -268,7 +319,8 @@ test('each account has its own row name: Claude by account, Codex by plan unless
 test('a log preview is a tag, the command and a short path; the full text keeps it with home as ~', () => {
   const entry = (text: string, kind: CrewEvent['kind'] = 'tool', level: 'info' | 'error' = 'info') => ({ text, kind, level })
   expect(logPreview(entry('Bash: wc -l </home/anhtran/.local/share/firstmate/data/crew-demo-scout/report.md'))).toEqual({ tag: 'BASH', tone: 'suggestion', head: 'wc', rest: '-l <…/report.md' })
-  expect(logPreview(entry('Edit: /home/anhtran/repo/hooks/zones.tsx'))).toMatchObject({ tag: 'EDIT', head: '…/zones.tsx', rest: '' })
+  expect(logPreview(entry('Edit: /home/anhtran/repo/hooks/zones.tsx'))).toMatchObject({ tag: 'EDIT', tone: 'merged', head: '…/zones.tsx', rest: '' })
+  expect(['Write: a', 'apply_patch: b', 'Read: c'].map(text => logPreview(entry(text)).tone)).toEqual(['merged', 'merged', 'suggestion'])
   expect(logPreview(entry('Read: hooks/zones.tsx'))).toMatchObject({ tag: 'READ', head: 'hooks/zones.tsx' })
   expect(logPreview(entry('done [at=1792648595]: Scout report written', 'status'))).toEqual({ tag: 'STAT', tone: 'success', head: 'done:', rest: 'Scout report written' })
   expect(logPreview(entry('blocked [at=1]: needs a decision', 'status', 'error'))).toMatchObject({ tag: '× ERR', tone: 'error', head: 'blocked:' })
