@@ -54,6 +54,16 @@ async function claudeLimits($: Dollar): Promise<string> {
   }
 }
 
+/**
+ * How this session signs in, as `crew_usage.py --claude-login` takes it. The
+ * engine keeps CLAUDE_CODE_OAUTH_TOKEN (what `ai-acct` sets) out of the script's
+ * environment, so only presence is read here: the value is never kept or shown.
+ */
+async function claudeLogin($: Dollar): Promise<string> {
+  if (await $.env.get('CLAUDE_CODE_OAUTH_TOKEN')) return 'token'
+  return (await $.env.get('ANTHROPIC_API_KEY')) ? 'api-key' : ''
+}
+
 async function readCrew($: Dollar): Promise<void> {
   try {
     const homes = configuredHomes.length > 0 ? configuredHomes : [await $.session.root()]
@@ -65,6 +75,8 @@ async function readCrew($: Dollar): Promise<void> {
       await claudeLimits($),
       '--claude-session',
       await $.session.id(),
+      '--claude-login',
+      await claudeLogin($),
       ...homes.flatMap(home => ['--home', home]),
     ]
     const run = await $.process.run(argv, { timeoutMs: POLL_TIMEOUT_MS })

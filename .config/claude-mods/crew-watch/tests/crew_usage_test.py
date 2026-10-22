@@ -661,6 +661,26 @@ class TelemetryTest(unittest.TestCase):
         (home / ".claude" / ".credentials.json").write_text(json.dumps({"claudeAiOauth": {"subscriptionType": "max", "rateLimitTier": "default_claude_max_20x", "accessToken": "secret"}}))
         self.assertEqual(usage.claude_plan(), "Max 20x · Team")
 
+    def test_report_carries_the_login_the_pane_passes_and_a_window_for_known_models(self):
+        # The pane's child process cannot see CLAUDE_CODE_OAUTH_TOKEN, so the mod passes the login kind.
+        root = Path(self.tmp.name)
+        fm = root / "fm"
+        (fm / "state").mkdir(parents=True)
+        worktree = str(root / "slot")
+        (fm / "state" / "a.meta").write_text(f"harness=claude\nworktree={worktree}\nspawn_gen=s{int(usage.time.time()) - 60}.1.2\n")
+        self.claude_turn(Path(usage.claude_project_dir(worktree)) / "s.jsonl", "m1", "claude-sonnet-5-5", at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "", "ANTHROPIC_API_KEY": ""}), \
+                redirect_stdout(io.StringIO()) as output, \
+                patch.object(usage.sys, "argv", ["crew_usage.py", "--home", str(fm), "--claude-login", "token"]):
+            usage.main()
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["quota"]["providers"]["claude"]["login"], "token")
+        self.assertEqual(report["quota"]["providers"]["claude"]["plan"], "")
+        member = report["crew"][0]
+        self.assertEqual((member["contextWindow"], member["contextModel"], member["windowSource"]), (1_000_000, "claude-sonnet-5-5", "claude model table"))
+        with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "", "ANTHROPIC_API_KEY": ""}):
+            self.assertEqual(self.report(fm)["quota"]["providers"]["claude"]["login"], "")
+
     def test_token_login_has_no_plan_and_says_so(self):
         # ai-acct signs in with CLAUDE_CODE_OAUTH_TOKEN: no credentials file, no account record.
         with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fabricated", "ANTHROPIC_API_KEY": ""}):

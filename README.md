@@ -188,7 +188,12 @@ lays in `.claude-plugin/types` the first time it loads the mod.
 cards, theme colours, token/request/tool totals, per-model counts and cache-hit
 gauges. Each card shows activity and status, models and effort,
 input/output/thinking tokens, context usage, cache reads/writes and top tools.
-Context percentages appear only when the transcript supplies a window size.
+The context gauge needs the model's window: a Codex rollout supplies it, else
+Codex's own catalog (`~/.codex/models_cache.json`), and for Claude models a
+small table in `crew_usage.py` (`CLAUDE_WINDOWS`), because Claude transcripts
+never record it and no local catalog lists Claude models. A model none of them
+knows shows `window n/a for <model>`, and a crewmate with no request yet shows
+`no request yet`.
 
 `/crew` opens or closes the pane; `/crew refresh` reads the logs immediately.
 Keys `1`–`9` expand a crewmate's details, branch, model/tool counts and recent
@@ -232,7 +237,11 @@ rate limits of the pane session's last API response (`$.session.usage()`),
 dated by the newest response in that session's own transcript, Claude Code's
 cached usage in `~/.claude.json`, and the rate-limit events in Codex rollouts.
 The plan comes from Claude's local auth metadata (rate-limit tier or
-subscription type) and from the plan type in Codex rollouts. Each card shows
+subscription type) and from the plan type in Codex rollouts. A named account
+selected with `ai-acct` signs in with `CLAUDE_CODE_OAUTH_TOKEN`, which leaves
+no credentials file or account record, so there is no plan to read: the card
+says `claude token login` and `plan not exposed by token login` rather than
+guessing. Each card shows
 the plan, the weekly percent marked `current` or `stale` (more than 30 minutes
 old, or of unknown age), where and how long ago it was read, the session's
 share of the week and the tool calls' direct share (`tools direct`), each on
@@ -244,10 +253,36 @@ local work; a stale reading can understate it. Each refresh stops indexing ten
 seconds after it starts; the first indexes the last week of local logs over
 several refreshes and shows "indexing local logs" until it finishes.
 
-Its two options in `/config` are `homes` (Firstmate homes, comma-separated;
-empty defaults to the session's working directory) and `intervalSeconds`
-(refresh interval in seconds, default `5`). Parsed log offsets are cached in
-`~/.cache/crew-watch/cache.json` so refreshes read only appended content.
+Its three options in `/config` are `homes` (Firstmate homes, comma-separated;
+empty defaults to the session's working directory), `intervalSeconds`
+(refresh interval in seconds, default `5`) and `theme`. Parsed log offsets are
+cached in `~/.cache/crew-watch/cache.json` so refreshes read only appended
+content.
+
+The `theme` option picks the dashboard's colours. `default` uses Claude Code's
+own theme keys, so the pane follows your theme; every other value maps the
+dashboard's roles (text, subtle, success, warning, blocked, merged, the
+per-harness accents and borders) to one palette, defined once in
+`hooks/theme.ts`. A theme changes colours only, never text, layout or
+truncation. Palettes are truecolor; without `COLORTERM=truecolor` they use the
+nearest 256-colour index, and `NO_COLOR` turns colour off. Light palettes are
+for light terminals and dark palettes for dark ones: a light palette on a dark
+terminal is not legible by design. Each role keeps at least 4.5:1 contrast
+(text, subtle) or 3:1 (accents) on its palette's own background.
+
+| `theme` | Palette | Terminal |
+| --- | --- | --- |
+| `default` | Claude Code's theme keys | any |
+| `tokyo-night` | Tokyo Night | dark |
+| `catppuccin-mocha` | Catppuccin Mocha | dark |
+| `catppuccin-latte` | Catppuccin Latte | light |
+| `gruvbox-dark` | Gruvbox Dark | dark |
+| `gruvbox-light` | Gruvbox Light | light |
+| `nord` | Nord | dark |
+| `dracula` | Dracula | dark |
+| `solarized-dark` | Solarized Dark | dark |
+| `solarized-light` | Solarized Light | light |
+| `one-dark` | One Dark | dark |
 
 ### pixel-pet
 

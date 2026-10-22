@@ -957,6 +957,7 @@ def main():
     ap.add_argument("--home", action="append", default=[], help="Firstmate home to read (repeatable)")
     ap.add_argument("--claude-limits", default="[]", help="JSON rate-limit windows of the pane session's last API response")
     ap.add_argument("--claude-session", default="", help="the pane session's id, to date those rate limits")
+    ap.add_argument("--claude-login", default="", choices=["", "token", "api-key"], help="how the pane session signs in, when this process cannot see its environment")
     args = ap.parse_args()
     deadline = time.monotonic() + SCAN_BUDGET_SECONDS
     homes = args.home or [os.environ.get("FM_HOME") or os.getcwd()]
@@ -1024,7 +1025,7 @@ def main():
     limits_at = own_entry["agg"]["lastAt"] if own_entry else None
     codex_cands, codex_rollout_plan = codex_candidates(found["codex"])
     providers = {
-        "claude": provider_window(claude_candidates(limits, limits_at), claude_plan(), now, claude_login()),
+        "claude": provider_window(claude_candidates(limits, limits_at), claude_plan(), now, args.claude_login or claude_login()),
         "codex": provider_window(codex_cands, codex_rollout_plan.title(), now, "rollout"),
     }
     for name, info in providers.items():

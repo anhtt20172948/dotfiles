@@ -97,6 +97,7 @@ test('the pane shows each crewmate\'s models, tokens, cache and tools, on every 
   on('session.id', () => ({ value: 'pane-session' }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
+  on('env.get', (_, e) => ({ value: e.name === 'CLAUDE_CODE_OAUTH_TOKEN' ? 'fabricated-not-a-token' : undefined }))
   on('process.run', (_, e) => {
     argv = e.argv
     return { value: { exitCode: 0, stdout: JSON.stringify(REPORT), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
@@ -107,6 +108,8 @@ test('the pane shows each crewmate\'s models, tokens, cache and tools, on every 
   expect(ran.text).toBe('Crew refreshed: 2 live crewmate(s).')
   expect(argv.slice(-2)).toEqual(['--home', '/fm'])
   expect(argv[argv.indexOf('--claude-session') + 1]).toBe('pane-session')
+  // The script cannot see the token variable, so the mod says whether one signs this session in (presence only).
+  expect(argv[argv.indexOf('--claude-login') + 1]).toBe('token')
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
@@ -139,6 +142,7 @@ test('a failed read shows the reason in the pane', async ($, on) => {
   on('session.id', () => ({ value: 'pane-session' }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
+  on('env.get', () => ({ value: undefined }))
   on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: 'Traceback\nValueError: boom', isStdoutTruncated: false, isStderrTruncated: false } }))
 
   await $.session.start({ cwd: '/fm', surface: 'desktop', isInteractive: true })
@@ -150,7 +154,8 @@ test('a failed read shows the reason in the pane', async ($, on) => {
 })
 
 // drawn() validates the returned tree against the surface table and rejects a refusal.
-test('dashboard matrix draws every fleet size, width, placement and surface', async ($, on) => {
+// 96 mounts: past the default 5 s on a loaded machine, so it has its own bound.
+test('dashboard matrix draws every fleet size, width, placement and surface', { timeoutMs: 60_000 }, async ($, on) => {
   let current = REPORT
   on('command.register', () => ({ value: { command: 'crew' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -158,6 +163,7 @@ test('dashboard matrix draws every fleet size, width, placement and surface', as
   on('session.id', () => ({ value: 'pane-session' }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
+  on('env.get', () => ({ value: undefined }))
   on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(current), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   await $.session.start({ cwd: '/fm', surface: 'desktop', isInteractive: true })
   for (const size of [0, 1, 3, 8]) {
@@ -203,6 +209,7 @@ test('the ninth hotkey works and a failed refresh keeps the inline summary withi
   on('session.id', () => ({ value: 'pane-session' }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
+  on('env.get', () => ({ value: undefined }))
   on('process.run', () => ({ value: { exitCode: fail ? 1 : 0, stdout: JSON.stringify(report), stderr: fail ? 'read unavailable' : '', isStdoutTruncated: false, isStderrTruncated: false } }))
   const refresh = () => $.command.run({ command: 'crew', args: 'refresh', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 80 } })
   await $.session.start({ cwd: '/fm', surface: 'terminal', isInteractive: true })
@@ -228,6 +235,7 @@ test('the expanded crewmate shows tokens per recent call and per-tool totals', a
   on('session.id', () => ({ value: 'pane-session' }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
+  on('env.get', () => ({ value: undefined }))
   on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(REPORT), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   await $.session.start({ cwd: '/fm', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'crew', args: 'refresh', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } })
@@ -250,6 +258,7 @@ test('collapsed cards at 80 to 120 columns show the session and tools-direct sha
   // Card figures differ from the fleet box's, so a find can only match a card row, and only unclipped.
   const quota = { claude: { session: { share: 0.1, percent: 4.4 }, tools: { share: 0.02, percent: 0.9 } } }
   let report = REPORT
+  on('env.get', () => ({ value: undefined }))
   on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(report), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   await $.session.start({ cwd: '/fm', surface: 'terminal', isInteractive: true })
   for (const [columns, size] of [[80, 2], [111, 3], [120, 3]] as const) {
