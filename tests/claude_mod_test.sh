@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# The Claude Code mods in .config/claude-mods: install.sh links the folder into
-# $HOME, declares it as a directory marketplace in ~/.claude/settings.json and
-# enables every mod it lists, and (with claude installed) the marketplace and
+# The Claude Code mods in .config/claude-mods: install.sh leaves the folder in
+# the checkout, registers it through install-agent-statusline in ~/.claude/settings.json
+# and enables every mod it lists, and (with claude installed) the marketplace and
 # every mod validate and each mod passes its own tests.
 # ~/... in messages is only a label.
 # shellcheck disable=SC2088
@@ -35,18 +35,17 @@ folders=$(cd "$ROOT/$MODS" && for dir in */.claude-plugin/plugin.json; do echo "
 [[ $folders == "$(printf '%s\n' "${NAMES[@]}" | sort)" ]] || fail "mod folders '$folders' differ from the marketplace"
 
 "$ROOT/install.sh" >/dev/null
-for name in "${NAMES[@]}"; do
-	mod=$MODS/$name
-	[[ -f "$HOME/$mod/.claude-plugin/plugin.json" ]] || fail "~/$mod is not linked"
-	[[ "$(readlink -f "$HOME/$mod")" == "$ROOT/$mod" ]] || fail "~/$mod does not point into the repo"
-done
+# The mods are read in place from the checkout: a folder marketplace's plugins may not be
+# links that leave it, so ~/.config/claude-mods must not exist as a second, linked copy.
+[[ ! -e "$HOME/$MODS" && ! -L "$HOME/$MODS" ]] || fail "~/$MODS must not be linked"
+[[ -z "$(find "$ROOT/$MODS" -type l)" ]] || fail "$MODS holds symlinks, which the engine refuses when they leave it"
 [[ -d "$HOME/.claude" && ! -L "$HOME/.claude" ]] || fail "~/.claude must stay a real directory"
 [[ ! -e "$HOME/.claude/claude-mods" ]] || fail "the mods must not be linked under ~/.claude"
 
 settings=$HOME/.claude/settings.json
-jq -e --arg market "$MARKET" --arg path "$HOME/$MODS" \
+jq -e --arg market "$MARKET" --arg path "$ROOT/$MODS" \
 	'.extraKnownMarketplaces[$market].source == {source: "directory", path: $path}' "$settings" >/dev/null ||
-	fail "~/$MODS is not declared as the $MARKET marketplace"
+	fail "$ROOT/$MODS is not declared as the $MARKET marketplace"
 for name in "${NAMES[@]}"; do
 	jq -e --arg id "$name@$MARKET" '.enabledPlugins[$id] == true' "$settings" >/dev/null || fail "$name is not enabled"
 done
