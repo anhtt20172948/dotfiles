@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { CrewMember, CrewReport } from '../types'
-import { ago, cacheHit, cacheText, clip, clockText, contextText, dispatchText, effortText, gauge, modelsText, statusLine, tokens, totalTokens } from './format'
+import { QUOTA_NOTE, TOOLS_DIRECT_NOTE, ago, cacheHit, cacheText, callTokensText, clip, clockText, contextText, dispatchText, effortText, gauge, modelsText, quotaRows, statusLine, tokens, toolTokenNote, toolTokenText, toolTokenTotal, totalTokens } from './format'
 import { activityLane, crewState, dashboardLayout, fleetModels, harnessColor, laneGeometry, memberKey, recentLog, sortedTools, toggleExpanded } from './dashboard'
 
 type Dollar = EngineInterface
@@ -33,6 +33,15 @@ function poll($: Dollar): Promise<void> {
   return inFlight
 }
 
+/** The rate-limit windows of this session's last API response, as JSON; none is fine, the script has other sources. */
+async function claudeLimits($: Dollar): Promise<string> {
+  try {
+    return JSON.stringify((await $.session.usage()).rateLimits ?? [])
+  } catch {
+    return '[]'
+  }
+}
+
 async function readCrew($: Dollar): Promise<void> {
   try {
     const homes = configuredHomes.length > 0 ? configuredHomes : [await $.session.root()]
@@ -40,6 +49,10 @@ async function readCrew($: Dollar): Promise<void> {
       'python3',
       '-I',
       `${$.plugin.root}/scripts/crew_usage.py`,
+      '--claude-limits',
+      await claudeLimits($),
+      '--claude-session',
+      await $.session.id(),
       ...homes.flatMap(home => ['--home', home]),
     ]
     const run = await $.process.run(argv, { timeoutMs: POLL_TIMEOUT_MS })
@@ -105,6 +118,7 @@ export const register: Register = (on, options) => {
     const W = Math.max(1, e.props.bodyColumns)
     const crew = report?.crew ?? []
     const now = report?.generatedAt ?? 0
+    const providers = report?.quota.providers ?? {}
     const layout = dashboardLayout(W, e.props.placement, crew.length)
     const active = crew.filter(m => ['working', 'active'].includes(crewState(m, now).label)).length
     const row = (text: string, color = 'text', width = W) => <Text color={color} wrap="truncate">{clip(text, width)}</Text>
@@ -143,6 +157,8 @@ export const register: Register = (on, options) => {
       const line = (text: string, tone = 'text') => row(text, tone, inner)
       const top = detail ? sortedTools(m.tools) : m.topTools.map(t => [t.name, t.count] as const)
       const maximum = Math.max(1, ...top.map(([, n]) => n))
+      const spent = Object.values(m.toolTokens).reduce((n, tt) => n + toolTokenTotal(tt), 0)
+      const note = toolTokenNote(m)
       return (
         <Box key={`panel-${memberKey(m)}`} flexDirection="column" borderStyle="round" borderColor={color} width={width} paddingX={1}>
           {detail ? <Text weight="bold" wrap="wrap">{m.description}</Text> : control(m, i, inner)}
@@ -157,16 +173,20 @@ export const register: Register = (on, options) => {
           {line(`thinking ${tokens(m.reasoning)}`, 'subtle')}
           {line(`cache ${gauge(Number.parseFloat(cacheHit(m)), 8)} ${cacheHit(m)}`, 'permission')}
           {line(`read ${tokens(m.cacheRead)} · write ${tokens(m.cacheWrite)}`, 'subtle')}
-          {line(`tools ${m.toolCalls}`)}
-          {top.map(([name, count]) => line(`${clip(name, Math.max(6, inner - 15))} ${gauge(count * 100 / maximum, 5)} ${count}`, color))}
+          {line(`tools ${m.toolCalls} · ${tokens(spent)} tok`)}
+          {top.map(([name, count]) => line(`${clip(name, Math.max(4, inner - 22))} ${gauge(count * 100 / maximum, 5)} ${count} ${tokens(toolTokenTotal(m.toolTokens[name]))}`, color))}
+          {quotaRows(m.quota, providers, now).map(r => line(r.text, r.tone))}
           {!m.readable ? line(`usage is not readable for the ${m.harness} harness`, 'subtle') : m.sessions === 0 ? line('no transcript found for its worktree yet', 'subtle') : null}
           {m.lastTool ? line(`▸ ${m.lastTool}`, 'subtle') : null}
           {m.lastText ? line(`“${m.lastText}”`, 'subtle') : null}
           {m.status ? line(`status ${m.status}`, 'permission') : null}
           {detail ? <Text wrap="wrap">{`branch ${m.branch || 'unknown'}\nworktree ${m.worktree || 'unknown'}\nhome ${m.home}\nharness ${m.harness} · ${m.sessions} transcripts`}</Text> : null}
           {detail ? Object.entries(m.models).map(([model, count]) => <Text color={color} wrap="wrap">{`${model} ×${count}`}</Text>) : null}
-          {detail ? sortedTools(m.tools).map(([tool, count]) => <Text wrap="wrap">{`${tool} ×${count}`}</Text>) : null}
-          {detail ? m.recentTools.map(event => <Text color="subtle" wrap="wrap">{`${clockText(event.at)} ${event.text}`}</Text>) : null}
+          {detail ? sortedTools(m.tools).map(([tool, count]) => <Text wrap="wrap">{`${tool} ×${count} · ${toolTokenText(m.toolTokens[tool])}`}</Text>) : null}
+          {detail && note ? <Text color="subtle" wrap="wrap">{note}</Text> : null}
+          {detail && Object.keys(m.quota).length > 0 ? <Text color="subtle" wrap="wrap">{QUOTA_NOTE}</Text> : null}
+          {detail && Object.keys(m.quota).length > 0 ? <Text color="subtle" wrap="wrap">{TOOLS_DIRECT_NOTE}</Text> : null}
+          {detail ? m.recentTools.map(event => <Text color="subtle" wrap="wrap">{`${clockText(event.at)} ${event.tool ? `${callTokensText(event)} · ` : ''}${event.text}`}</Text>) : null}
           {detail && m.lastText ? <Text wrap="wrap">{m.lastText}</Text> : null}
           {detail && m.status ? <Text color="permission" wrap="wrap">{m.status}</Text> : null}
         </Box>
@@ -207,6 +227,9 @@ export const register: Register = (on, options) => {
           {report ? row(`in ${tokens(report.totals.input)} · out ${tokens(report.totals.output)} · thinking ${tokens(report.totals.reasoning)}`, 'subtle', inner) : null}
           {report ? row(`cache ${gauge(Number.parseFloat(cacheHit(report.totals)))} ${cacheHit(report.totals)}`, 'permission', inner) : null}
           {report ? row(`read ${tokens(report.totals.cacheRead)} · write ${tokens(report.totals.cacheWrite)}`, 'subtle', inner) : null}
+          {report ? quotaRows(report.quota.fleet, providers, now).map(r => row(r.text, r.tone, inner)) : null}
+          {report && Object.keys(report.quota.fleet).length > 0 ? <Text color="subtle" wrap="wrap">{QUOTA_NOTE}</Text> : null}
+          {report && Object.keys(report.quota.fleet).length > 0 ? <Text color="subtle" wrap="wrap">{TOOLS_DIRECT_NOTE}</Text> : null}
           {models.map(([model, count]) => row(`${model} ×${count}`, 'suggestion', inner))}
           {report && crew.length === 0 ? row('No crewmates are live.', 'subtle', inner) : null}
         </Box>

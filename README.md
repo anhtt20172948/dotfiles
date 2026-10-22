@@ -202,6 +202,48 @@ first started (worktree slots are reused; a relaunch keeps earlier usage),
 follows secondmate homes, and shows a summary in the status line. The layout takes inspiration from
 [claude-flightdeck](https://github.com/scasella/claude-flightdeck).
 
+Tokens per tool call. The API bills requests, not calls, so each call is
+charged with the output tokens of the request that emitted it (split evenly
+when one request emits several calls) plus the input its result added to the
+next request: the growth of the context window, `next context - this context -
+this output`, split between the request's calls by result size. When no next
+request exists yet, or the growth is unusable (a compaction shrank the
+context), the input is estimated from the result size at four characters per
+token and shown with `~`. The expanded crewmate lists `out N in M` per recent
+call and `total · avg` per tool; Codex rollouts work the same from their
+`token_count` events, and a log without usage fields says so instead of
+guessing. This is a call's direct cost: every later request re-reads its result
+from the prompt cache, and those re-reads count to the session, never to the
+call.
+
+Weekly quota share. Vendors do not publish weekly caps in tokens, so none is
+hard-coded. The estimate is `window % used x weighted tokens of the crewmate
+(or the direct cost of its tool calls) since the window started / weighted
+tokens of every local session of that provider since then`, scanning
+`~/.claude/projects` and `~/.codex/sessions`. A resumed or forked Claude
+session copies earlier messages into a new transcript, so each message id
+counts once, in the first transcript parsed that logged it. Tokens are
+weighted by relative price per type and model family (a cache read costs a
+tenth of an input token, a cache write a quarter more or, kept for an hour,
+twice as much, an output token several times more; the table is
+`PRICE_RATIO`/`FAMILY_PRICE` in `crew_usage.py`). The percent and reset time
+come from local sources only, the freshest reading still in force first: the
+rate limits of the pane session's last API response (`$.session.usage()`),
+dated by the newest response in that session's own transcript, Claude Code's
+cached usage in `~/.claude.json`, and the rate-limit events in Codex rollouts.
+The plan comes from Claude's local auth metadata (rate-limit tier or
+subscription type) and from the plan type in Codex rollouts. Each card shows
+the plan, the weekly percent marked `current` or `stale` (more than 30 minutes
+old, or of unknown age), where and how long ago it was read, the session's
+share of the week and the tool calls' direct share (`tools direct`), each on
+its own row; the fleet box shows the total. A reading whose window has reset is
+ignored; with no weekly reading the card shows the raw share of local usage
+and says the weekly percent is unknown. Usage from other machines or the web
+is not seen locally, so with a current reading the share is an upper bound for
+local work; a stale reading can understate it. Each refresh stops indexing ten
+seconds after it starts; the first indexes the last week of local logs over
+several refreshes and shows "indexing local logs" until it finishes.
+
 Its two options in `/config` are `homes` (Firstmate homes, comma-separated;
 empty defaults to the session's working directory) and `intervalSeconds`
 (refresh interval in seconds, default `5`). Parsed log offsets are cached in

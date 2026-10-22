@@ -1,4 +1,4 @@
-import type { CrewMember, CrewTotals } from '../types'
+import type { CrewEvent, CrewMember, CrewTotals, MemberQuota, QuotaProvider, QuotaShare, ToolTokens } from '../types'
 import { crewState } from './dashboard'
 
 /** 1234 -> 1.2k, 1234567 -> 1.23M. */
@@ -76,3 +76,56 @@ export const cacheText = (u: CrewTotals, width = 8): string => {
   const hit = cacheHit(u)
   return `cache ${gauge(Number.parseFloat(hit), width)} ${hit} · r ${tokens(u.cacheRead)} w ${tokens(u.cacheWrite)}`
 }
+
+const percentText = (n: number): string => n > 0 && n < 0.1 ? '<0.1%' : `${n < 10 ? n.toFixed(1) : Math.round(n)}%`
+
+/** Tokens charged to a tool call: its request's output share and the input its result added (~ estimated). */
+export const callTokensText = (e: Pick<CrewEvent, 'outTokens' | 'inTokens' | 'estimated'>): string =>
+  e.outTokens === undefined || e.inTokens === undefined
+    ? 'tok n/a'
+    : `out ${tokens(e.outTokens)} in ${e.estimated ? '~' : ''}${tokens(e.inTokens)}`
+
+export const toolTokenTotal = (tt: ToolTokens | undefined): number => (tt?.output ?? 0) + (tt?.input ?? 0)
+
+/** Per-tool total and the average per call; ~ when some of the input was estimated. */
+export const toolTokenText = (tt: ToolTokens | undefined): string =>
+  tt && tt.calls > 0 ? `${tokens(toolTokenTotal(tt))} tok · avg ${tt.estCalls > 0 ? '~' : ''}${tokens(Math.round(toolTokenTotal(tt) / tt.calls))}` : 'tok n/a'
+
+/** Says why a crewmate's per-call tokens are missing or approximate; empty when they are all measured. */
+export const toolTokenNote = (m: Pick<CrewMember, 'toolCalls' | 'toolTokens'>): string => {
+  const rows = Object.values(m.toolTokens)
+  const attributed = rows.reduce((n, tt) => n + tt.calls, 0)
+  if (m.toolCalls > 0 && attributed === 0) return 'per-call tokens unavailable: the transcript has no usage fields'
+  return rows.some(tt => tt.estCalls > 0) ? '~ estimated from result size: no later request measured it' : ''
+}
+
+const shareText = (s: QuotaShare): string =>
+  s.percent !== null ? `${percentText(s.percent)} of week` : s.share !== null ? `${percentText(s.share * 100)} of local` : '-'
+
+/** Where the weekly percent came from and how old it is; stale past half an hour or when its age is unknown. */
+export const readingText = (info: Pick<QuotaProvider, 'source' | 'readAt'>, now: number): string =>
+  `read ${info.readAt ? `${ago(now - info.readAt)} ago` : 'time unknown'} · ${info.source}`
+
+/**
+ * The plan and weekly-limit lines for one crewmate or the whole fleet. Each
+ * stays within 32 cells, a collapsed card's narrowest row, so no figure is cut.
+ */
+export const quotaRows = (quota: Record<string, MemberQuota>, providers: Record<string, QuotaProvider>, now: number): { text: string; tone: string }[] =>
+  Object.entries(quota).flatMap(([name, q]) => {
+    const info = providers[name]
+    const head = { text: `${name} ${info?.plan || 'plan unknown'}`, tone: 'subtle' }
+    if (!info) return [head]
+    if (!info.indexed) return [head, { text: 'indexing local logs…', tone: 'subtle' }]
+    const shares = [{ text: `session ${shareText(q.session)}`, tone: 'text' }, { text: `tools direct ${shareText(q.tools)}`, tone: 'text' }]
+    return info.percentUsed === null
+      ? [head, ...shares, { text: info.reset ? 'week % unknown: window reset' : 'week % unknown', tone: 'warning' }]
+      : [
+          head,
+          { text: `week ${percentText(info.percentUsed)} used · ${info.stale ? 'stale' : 'current'}`, tone: info.stale ? 'warning' : 'subtle' },
+          { text: readingText(info, now), tone: 'subtle' },
+          ...shares,
+        ]
+  })
+
+export const QUOTA_NOTE = 'local logs only: other machines and the web are not seen, so with a current reading shares are upper bounds; a stale one can understate them'
+export const TOOLS_DIRECT_NOTE = 'tools direct: call output and the first read of its result; later cache re-reads count to the session only'
