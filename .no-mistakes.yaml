@@ -9,7 +9,7 @@ commands:
   lint: "tests/run.sh lint"
   test: "tests/run.sh test"
 
-# Repo không có GitHub Actions: khai báo rõ để gate không chờ/đòi CI.
+# Repo có .github/workflows/ci.yml nhưng pipeline không chờ CI đó: khai báo rõ để gate không chờ/đòi CI.
 no_ci: true
 
 ignore_patterns:
