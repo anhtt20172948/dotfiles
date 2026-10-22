@@ -22,13 +22,6 @@ export const ago = (ms: number): string => {
   return `${Math.floor(s / 86_400)}d`
 }
 
-/** claude-opus-5-5 -> opus-5-5; models listed by requests served. */
-export const modelsText = (models: Record<string, number>): string =>
-  Object.entries(models)
-    .sort((a, b) => b[1] - a[1])
-    .map(([model, n]) => `${model.replace(/^claude-/, '')} ×${n}`)
-    .join(' · ')
-
 export const dispatchText = (m: CrewMember): string => {
   const pinned = [m.model, m.effort].filter(v => v && v !== 'default').join('/')
   return pinned ? `${m.harness} ${pinned}` : m.harness
@@ -47,16 +40,6 @@ export const gauge = (pct: number, width = 8): string => {
   const size = Math.max(0, Math.floor(width))
   const filled = Number.isFinite(pct) ? Math.max(0, Math.min(size, Math.round(pct * size / 100))) : 0
   return '▰'.repeat(filled) + '▱'.repeat(size - filled)
-}
-
-/** Says why a window is missing: no request yet, a model no catalog lists, or none recorded at all. */
-export const contextText = (m: Pick<CrewMember, 'context' | 'contextWindow'> & Partial<Pick<CrewMember, 'contextModel'>>): string => {
-  if (!m.contextWindow || m.contextWindow <= 0) {
-    if (m.context === 0 && !m.contextModel) return 'ctx - · no request yet'
-    return `ctx ${tokens(m.context)} · ${m.contextModel ? `window n/a for ${m.contextModel.replace(/^claude-/, '')}` : 'window not recorded'}`
-  }
-  const pct = Math.round(m.context * 100 / m.contextWindow)
-  return `ctx ${gauge(pct)} ${pct}% · ${tokens(m.context)}/${tokens(m.contextWindow)}`
 }
 
 export const effortText = (effort: string): string => {
@@ -114,11 +97,6 @@ export const clockText = (at: number, timeZone?: string): string => at > 0
   : '--:--:--'
 
 export const totalTokens = (u: CrewTotals): number => u.input + u.output + u.cacheRead + u.cacheWrite
-
-export const cacheText = (u: CrewTotals, width = 8): string => {
-  const hit = cacheHit(u)
-  return `cache ${gauge(Number.parseFloat(hit), width)} ${hit} · r ${tokens(u.cacheRead)} w ${tokens(u.cacheWrite)}`
-}
 
 const percentText = (n: number): string => n <= 0 ? '0%' : n < 0.1 ? '<0.1%' : `${n < 10 ? n.toFixed(1) : Math.round(n)}%`
 

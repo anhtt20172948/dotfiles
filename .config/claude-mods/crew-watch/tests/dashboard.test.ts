@@ -1,21 +1,15 @@
 import { expect, test } from 'claude-code/testing'
-import { clockText, clip, contextText, effortText, gauge, statusLine } from '../hooks/format'
-import { activityLane, dashboardLayout, crewState, fleetModels, laneGeometry, recentLog, toggleExpanded } from '../hooks/dashboard'
-
-test('layout keeps cards readable and inline output bounded', () => {
-  expect(dashboardLayout(40, 'dock', 1)).toMatchObject({ mode: 'cards', columns: 1, cardWidth: 40 })
-  expect(dashboardLayout(80, 'dock', 3).mode).toBe('lanes')
-  expect(dashboardLayout(120, 'dock', 3)).toMatchObject({ mode: 'cards', columns: 3, cardWidth: 39 })
-  expect(dashboardLayout(120, 'inline', 8)).toMatchObject({ mode: 'mini', shown: 3 })
-})
+import { clockText, clip, effortText, gauge, statusLine } from '../hooks/format'
+import { activityLane, crewState, fleetModels, laneGeometry, toggleExpanded } from '../hooks/dashboard'
+import { contextLine } from '../hooks/view'
 
 test('gauges clamp and context never invents a model window', () => {
   expect(gauge(150, 5)).toBe('▰▰▰▰▰')
   expect(gauge(-10, 5)).toBe('▱▱▱▱▱')
-  expect(contextText({ context: 50000, contextWindow: null })).toBe('ctx 50k · window not recorded')
-  expect(contextText({ context: 50000, contextWindow: null, contextModel: 'claude-test' })).toBe('ctx 50k · window n/a for test')
-  expect(contextText({ context: 0, contextWindow: null, contextModel: '' })).toBe('ctx - · no request yet')
-  expect(contextText({ context: 50000, contextWindow: 200000 })).toBe('ctx ▰▰▱▱▱▱▱▱ 25% · 50k/200k')
+  expect(contextLine({ context: 50000, contextWindow: null, contextModel: '' }, 8)).toBe('Ctx 50k · window not recorded')
+  expect(contextLine({ context: 50000, contextWindow: null, contextModel: 'claude-test' }, 8)).toBe('Ctx 50k · window n/a for test')
+  expect(contextLine({ context: 0, contextWindow: null, contextModel: '' }, 8)).toBe('Ctx — · no request yet')
+  expect(contextLine({ context: 50000, contextWindow: 200000, contextModel: '' }, 8)).toBe('Ctx ▰▰▱▱▱▱▱▱ 25% · 50k/200k')
   expect(effortText('high')).toBe('effort ▰▰▰▱ high')
   expect(effortText('default')).toBe('effort default')
   expect(effortText('xhigh')).toBe('effort ▰▰▰▰ xhigh')
@@ -28,13 +22,12 @@ test('lanes share the same minute axis and omit old or future activity', () => {
   expect(activityLane([{ minute: 80, count: 1 }, { minute: 91, count: 1 }], now, 4)).toBe('····')
 })
 
-test('fleet reducers merge models and keep a bounded chronological crew log', () => {
+test('fleet reducers merge models and toggle one open crewmate', () => {
   const crew = [
     { id: 'a', home: '/one', harness: 'claude', models: { opus: 2 }, events: [{ at: 3, kind: 'tool', text: 'Read' }] },
     { id: 'b', home: '/two', harness: 'codex', models: { opus: 1, gpt: 4 }, events: [{ at: 5, kind: 'status', text: 'done' }] },
   ] as const
   expect(fleetModels(crew)).toEqual([['gpt', 4], ['opus', 3]])
-  expect(recentLog(crew, 1).map(e => e.text)).toEqual(['done'])
   expect(toggleExpanded(null, '/one:a')).toBe('/one:a')
   expect(toggleExpanded('/one:a', '/one:a')).toBe(null)
   expect(crew[0].models.opus).toBe(2)

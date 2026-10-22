@@ -176,9 +176,14 @@ declare module 'claude-code' {
   interface PluginState {
     'crew-watch': {
       report: CrewReport | null
-      /** Why the last poll failed; empty after a good one. */
+      /** Why the last poll failed, or the report's own warnings; empty after a clean one. */
       error: string
       expanded: string | null
+      poll: PollState | null
+      mode: ViewMode
+      logsOpen: boolean
+      logFilter: LogFilter
+      help: boolean
     }
   }
 }
