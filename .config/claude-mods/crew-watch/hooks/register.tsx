@@ -8,6 +8,7 @@ import { DEFAULT_THEME, isNoColorSet, isThemeName, isTruecolorTerm, themePainter
 import type { Paint } from './theme'
 import { memberKey, toggleExpanded } from './dashboard'
 import { nextFilter } from './view'
+import type { LogEntry } from './view'
 import { drawPane } from './zones'
 
 type Dollar = EngineInterface
@@ -25,6 +26,8 @@ const modeAtom = atom({ plugin: 'crew-watch', key: 'mode' } as const, 'compact')
 const logsOpenAtom = atom({ plugin: 'crew-watch', key: 'logsOpen' } as const, false)
 const logFilterAtom = atom({ plugin: 'crew-watch', key: 'logFilter' } as const, 'all')
 const helpAtom = atom({ plugin: 'crew-watch', key: 'help' } as const, false)
+const quotaInfoAtom = atom({ plugin: 'crew-watch', key: 'quotaInfo' } as const, false)
+const openLogAtom = atom({ plugin: 'crew-watch', key: 'openLog' } as const, null)
 
 const HELP = [
   '/crew           open or close the Crew pane',
@@ -37,6 +40,7 @@ let configuredHomes: string[] = []
 let inFlight: Promise<void> | null = null
 let accountCache: { at: number; fingerprint: string; name: string } | null = null
 let themeName: string = DEFAULT_THEME
+let home = ''
 let paint: Paint = themePainter(DEFAULT_THEME, { isNoColor: false, isTruecolor: true })
 
 /** Builds the painter from the Theme option and what the terminal says (NO_COLOR, COLORTERM). */
@@ -45,6 +49,11 @@ async function loadPaint($: Dollar): Promise<void> {
     isNoColor: isNoColorSet(await $.env.get('NO_COLOR')),
     isTruecolor: isTruecolorTerm(await $.env.get('COLORTERM')),
   })
+}
+
+/** The home folder, so full paths the pane shows read `~` rather than the person's user name. */
+async function loadHome($: Dollar): Promise<void> {
+  home = (await $.env.get('HOME')) ?? ''
 }
 
 /** Reads the crew once; a call made while a read runs waits for that read. */
@@ -152,6 +161,7 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     await loadPaint($)
+    await loadHome($)
     await $.command.register({
       name: 'crew',
       description: 'Show what each Firstmate crewmate is doing: models, tokens, cache and tool calls',
@@ -194,6 +204,8 @@ export const register: Register = (on, options) => {
       logsOpen: await read($, logsOpenAtom),
       logFilter: await read($, logFilterAtom),
       help: await read($, helpAtom),
+      quotaInfo: await read($, quotaInfoAtom),
+      openLog: await read($, openLogAtom),
     }
     const frame = {
       width: e.props.bodyColumns,
@@ -203,6 +215,7 @@ export const register: Register = (on, options) => {
       now: await $.clock.now(),
       // Two refreshes and one read's timeout without a new report: the data is no longer current.
       staleMs: 2 * intervalMs + POLL_TIMEOUT_MS,
+      home,
     }
     return drawPane($.ui.resolve(e), paint, view, frame, {
       toggle: (m: CrewMember) => async () => {
@@ -213,8 +226,14 @@ export const register: Register = (on, options) => {
       mode: async () => {
         await update($, modeAtom, value => value === 'compact' ? 'details' : 'compact')
       },
+      quotaInfo: async () => {
+        await update($, quotaInfoAtom, value => !value)
+      },
       logs: async () => {
         await update($, logsOpenAtom, value => !value)
+      },
+      openLog: (entry: LogEntry) => async () => {
+        await update($, openLogAtom, value => value === entry.id ? null : entry.id)
       },
       filter: async () => {
         const expanded = await read($, expandedAtom)

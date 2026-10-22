@@ -8,7 +8,10 @@ export const tokens = (n: number): string => {
   return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 2 : 1)}M`
 }
 
-/** Share of all input tokens served from the prompt cache. */
+/**
+ * Share of all input tokens served from the prompt cache: cache read / (uncached input + cache read +
+ * cache write). `input` is the uncached part only (the collector splits Codex's cached input out).
+ */
 export const cacheHit = (u: Pick<CrewTotals, 'input' | 'cacheRead' | 'cacheWrite'>): string => {
   const all = u.input + u.cacheRead + u.cacheWrite
   return all === 0 ? '-' : `${Math.round((u.cacheRead / all) * 100)}%`
@@ -31,8 +34,7 @@ export const dispatchText = (m: CrewMember): string => {
 export const statusLine = (crew: readonly CrewMember[], totals: CrewTotals, now: number): string | undefined => {
   if (crew.length === 0) return undefined
   const active = crew.filter(m => isActive(m, now)).length
-  const all = totals.input + totals.output + totals.cacheRead + totals.cacheWrite
-  return `crew ${crew.length} (${active} active) · ${tokens(all)} tok · ${totals.toolCalls} tools · /crew`
+  return `crew ${crew.length} (${active} active) · ${tokens(totalTokens(totals))} tok · ${totals.toolCalls} tools · /crew`
 }
 
 /** Fixed-cell gauge; no control characters or raw theme colors. */
@@ -92,11 +94,46 @@ export const pad = (text: string, width: number): string => {
   return cut + ' '.repeat(Math.max(0, width - cells(cut)))
 }
 
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * The home folder written as `~` wherever it ends a name (`-I/home/me/inc` too), so no user name is
+ * shown; Claude's transcript folders spell a path with dashes (`-home-me--repo`), so that form is too.
+ * A longer name (`/home/me2`) is another folder and stays.
+ */
+export const tildeHome = (text: string, home: string): string => {
+  const root = home.replace(/\/+$/, '')
+  if (root === '' || root === '/') return text
+  const dashed = root.replace(/[^A-Za-z0-9]/g, '-')
+  return text
+    .replace(new RegExp(`${escapeRegExp(root)}(?![\\w.-])`, 'g'), '~')
+    .replace(new RegExp(`(^|[^A-Za-z0-9])${escapeRegExp(dashed)}(?![A-Za-z0-9])`, 'g'), '$1~')
+}
+
+/** Text as a preview shows it: the home folder as `~`, then every long path cut to its last part. */
+export const previewText = (text: string, home: string): string => shortPaths(tildeHome(text, home))
+
+/**
+ * Every absolute or `~` path of three or more parts cut to `…/` and its last part, as a preview shows
+ * it: `wc -l </home/me/data/report.md` reads `wc -l <…/report.md`. Relative paths, short ones
+ * (`/dev/null`, `~/notes`) and URLs stay whole.
+ */
+export const shortPaths = (text: string): string =>
+  text.replace(/(^|[^\w./~-])(~?\/(?!\/)[^\s'"`<>|;&()]*)/g, (whole, lead: string, path: string) => {
+    const parts = path.split('/').filter(Boolean)
+    const last = parts.at(-1)
+    return parts.length >= 3 && last !== undefined ? `${lead}…/${last}${path.endsWith('/') ? '/' : ''}` : whole
+  })
+
 export const clockText = (at: number, timeZone?: string): string => at > 0
   ? new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23', ...(timeZone ? { timeZone } : {}) }).format(new Date(at))
   : '--:--:--'
 
-export const totalTokens = (u: CrewTotals): number => u.input + u.output + u.cacheRead + u.cacheWrite
+/**
+ * Every token the crew's requests carried: uncached input, cache read, cache write and output. Thinking
+ * (reasoning) is part of output as both vendors bill it, so it is never added a second time.
+ */
+export const totalTokens = (u: Pick<CrewTotals, 'input' | 'output' | 'cacheRead' | 'cacheWrite'>): number => u.input + u.output + u.cacheRead + u.cacheWrite
 
 const percentText = (n: number): string => n <= 0 ? '0%' : n < 0.1 ? '<0.1%' : `${n < 10 ? n.toFixed(1) : Math.round(n)}%`
 
@@ -129,7 +166,8 @@ export const measuredText = (n: number): string => `${Number(n.toFixed(1))}%`
 /** An estimate never carries a decimal: it is rounded, and under a point it says so. */
 export const estimateText = (n: number): string => n <= 0 ? '0%' : n < 1 ? '<1%' : `~${Math.min(100, Math.round(n))}%`
 
-const SOURCES: Record<string, string> = {
+/** Where a vendor reading was taken, as the pane names it. */
+export const SOURCES: Record<string, string> = {
   session: 'this session',
   history: 'reading history',
   'account cache': 'ai-acct cache',
