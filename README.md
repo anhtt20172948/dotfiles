@@ -187,18 +187,23 @@ lays in `.claude-plugin/types` the first time it loads the mod.
 ### crew-watch
 
 `.config/claude-mods/crew-watch` draws the Crew Monitor: a header with the
-crew's live and active counts and how fresh the data is, then five zones in a
+crew's live, active and done counts and how fresh the data is, then five zones in a
 fixed order.
 
-1. **Overview**: the fleet's tokens, requests, tool calls and cache share.
+1. **Overview**: the fleet's tokens, requests, tool calls and cache share, and
+   a bar of what Tokens is made of (cache read, cache write, output, uncached
+   input) with a legend. The fleet's numbers live here alone.
 2. **Agents**: one compact card per crewmate with its status, name, harness,
-   model and effort, task, context gauge, requests, tools, tokens and the
-   account its usage went to. One crewmate's full details open below the cards.
-3. **Quota & Limits**: one line per provider and account with the vendor's
-   weekly percent, how old it is and when the window resets.
+   model and effort, task, context gauge and its latest status line. Its own
+   tokens, requests, tools, cache and account open with its number, below the
+   cards.
+3. **Quota & Limits**: one row per provider and account: name, a gauge of the
+   vendor's weekly percent, the percent, the time to its reset (`↻ 5d 4h`) and
+   `◷ stale` once the reading is over 30 minutes old. `i` adds each account's
+   notes.
 4. **Activity**: a 60-minute lane per crewmate, one cell per minute.
-5. **Recent Logs**: the newest three to five events, newest first, with a
-   filter and an expanded view.
+5. **Recent Logs**: the newest three to five events, newest first, one short
+   row each, with a filter; `Enter` on a row shows its full text.
 
 The context gauge needs the model's window: a Codex rollout supplies it, else
 Codex's own catalog (`~/.codex/models_cache.json`), and for Claude models a
@@ -214,11 +219,12 @@ key row under the header names them and says so while the pane is unfocused.
 | Key | Action |
 | --- | --- |
 | `1`–`9` | open or close that crewmate's details (one at a time) |
-| `d` | compact or details mode |
+| `d` | compact or details mode; details adds every figure and note |
+| `i` | quota notes: each account's source and age, estimates, crew shares and caveats |
 | `l` | more or fewer log entries |
 | `f` | log filter: All, Tools, Status, Errors, and Agent while details are open |
 | `h` | help: keys, status words and what each metric counts |
-| `Tab`, `Shift+Tab`, `Enter` | move between the pane's controls and press one (the engine's keys) |
+| `Tab`, `Shift+Tab`, `Enter` | move between the pane's controls, log rows included, and press one (the engine's keys); `Enter` on a log row shows or hides its full text |
 | `↑` `↓` `PgUp` `PgDn` `Home` `End` | scroll the pane (the engine's keys) |
 | `Esc` | back to the prompt (the engine's key) |
 
@@ -229,7 +235,11 @@ mod, so details close with their own number. The arrows scroll the pane and
 cannot move between crewmates; `Tab` does that. The engine documents only
 `Enter` for pressing the focused control, so nothing is bound to `Space`. No
 letter used here is an engine key inside a focused pane, and `q` and `x` are
-left alone (`ctrl+x x` closes the pane).
+left alone (`ctrl+x x` closes the pane). `Enter` cannot be a pane hotkey: it
+always presses whichever control has the focus. So each log row is a control
+of its own, and `Tab` to a row, then `Enter`, opens its full text; the quota
+notes take the letter `i`, and `d` still switches the whole pane between
+compact and details.
 
 What it shows, and what it does not:
 
@@ -242,26 +252,48 @@ What it shows, and what it does not:
   `● WORKING` and `● ACTIVE` (activity under 2 minutes), `◐ QUIET` (2 to 15
   minutes), `○ STALE` (over 15), `✓ DONE`, `× BLOCKED` and `◷ PAUSED` from the
   task's status line, `? UNKNOWN` with no activity and no status yet. Only
-  working and active count as active. A blocked crewmate's status line shows on
-  its card.
-- **Overview.** `Tokens` is in + out + cache read + cache write, summed over
-  the live crew since each task started; `Cache` is cache read / (in + cache
-  read + cache write), the share of input served from the prompt cache, never
-  called a hit rate. Details mode adds the in/out/thinking split, cache reads and
-  writes and requests per model.
+  working and active count as active. Each card ends with the crewmate's latest
+  status line (else its last tool call); in the row layout it is the third row,
+  left out only under 24 rows (a blocked one's stays). A running (working or
+  active) card has a purple border, a quiet one a dim purple border and a
+  blocked one a red border; a done card has a dim neutral border and a green
+  `✓`, so it sits back from the running ones.
+- **Overview.** `Tokens` is uncached input + cache read + cache write + output,
+  summed over the live crew since each task started. Thinking (reasoning) is
+  part of output, as both vendors bill it, so it is never added a second time;
+  Codex's cached input is split out of its input first, so nothing is counted
+  twice. `Cache` is cache read / (uncached input + cache read + cache write),
+  the share of all input served from the prompt cache, never called a hit rate.
+  The legend names each part (`░ uncached in 24`), because a small count beside
+  `828k` reads like `24k`: a crewmate with 24 uncached, 827,917 cache-read and
+  57,268 cache-write tokens has a cache share of 827,917 / 885,209 = 93.5%,
+  shown as 94%. Details mode writes both sums out with every term, says how
+  much of output was thinking where the log reports it, and lists requests per
+  model.
 - **Accounts.** Every quota figure belongs to one provider and account and is
   never summed across accounts or providers: two Claude accounts and a Codex
-  account are three lines. A card names the account its usage went to (`acct
-  claude <name>`, `acct codex <hash>`), or `account unknown`. Details mode adds,
-  per account, the crew's session and tools-direct shares and the notes on what
-  the figures can and cannot say.
+  account are three rows. A Claude account is named by its ai-acct name, a Codex
+  one by its plan (its id is a hash) unless two would then read the same.
+  `i` (and details mode) adds, per account, the reading's age and source, the
+  account's estimate, the crew's session and tools-direct shares and the notes
+  on what the figures can and cannot say; an open crewmate's details name the
+  account its usage went to.
 - **Missing data** shows as `—` or a sentence saying why, never as a zero: a
   harness whose logs cannot be read, an unknown model window, an account with no
   reading, no crewmates, no activity in the last hour.
-- **Logs.** The collector keeps the latest ten events per crewmate and cuts long
-  commands itself; the expanded log says `(source truncated)` where it did. An
-  error is a status line whose state is blocked, failed or needs-decision; no
-  severity is guessed from free text.
+- **Logs.** A row is the time, a tag (the tool's name such as `BASH` or `EDIT`,
+  `STAT` for a status line, `× ERR` for an error), the crewmate when more than
+  one is live, the command or path in bold and the rest dim:
+  `12:45:51  BASH    wc -l <…/report.md`. A preview writes the home folder as
+  `~` (and its dashed form in Claude's transcript folders) and cuts every path
+  of three or more parts to its last part, so the user name never shows in a
+  screenshot; URLs and short paths such as `/dev/null` stay whole. The full
+  text (`Enter` on the row) and the crewmate details write the home folder as
+  `~` too.
+  The collector keeps the latest ten events per crewmate and cuts long commands
+  itself; the full text says `(source truncated)` where it did. An error is a
+  status line whose state is blocked, failed or needs-decision; no severity is
+  guessed from free text.
 
 The layout follows the pane's own size, not the terminal's. From 110 columns
 the cards sit two to a row; below that they stack; below 70 columns, past four
@@ -269,8 +301,11 @@ crewmates (three in one column) or under 24 rows each crewmate is a two-line
 row. Under 24 rows Activity and the log preview fold to one line each; from 36
 rows the log shows five entries. A docked pane is about 90 columns wide until
 it is widened. Inline above the prompt (below 110 terminal columns, or outside
-fullscreen) the pane is a summary of at most eight rows: header, totals, up to
-three crewmates and one quota line per provider.
+fullscreen) the pane is a summary of at most eight rows, and never more than the
+engine shows it: header, totals, up to three crewmates and one quota line per
+provider. Short of rows (a 24-row terminal shows five) the providers share one
+quota line before any crewmate gives way, so no provider's row scrolls out of
+sight; on a narrow pane that shared line is cut at its edge.
 
 To preview a change, run Claude Code in fullscreen with the mod loaded from the
 checkout and the installed copy turned off for that session, then type

@@ -55,7 +55,7 @@ test('axis and lane cells share an explicit gutter and a gap after the name', ()
 test('latest protocol state overrides fresh transcript activity', () => {
   const now = 1000000
   const state = (status: string, lastAt = now - 60000) => crewState({ status, lastAt }, now)
-  expect(state('done [at=900]: committed')).toMatchObject({ mark: '✓', label: 'done · waiting for firstmate', color: 'merged' })
+  expect(state('done [at=900]: committed')).toMatchObject({ mark: '✓', label: 'done · waiting for firstmate', color: 'success' })
   expect(state('blocked [at=900]: needs help')).toMatchObject({ label: 'blocked', color: 'error' })
   expect(state('paused [at=900]: validating')).toMatchObject({ label: 'paused / waiting', color: 'permission' })
   expect(state('waiting: CI')).toMatchObject({ label: 'paused / waiting' })

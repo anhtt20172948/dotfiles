@@ -1,10 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { CrewEvent, CrewReport, QuotaReading } from '../types'
-import { cells, clip, pad } from '../hooks/format'
+import { cacheHit, cells, clip, pad, shortPaths, tildeHome, totalTokens } from '../hooks/format'
 import {
-  NONE, STALE_READING_MS, accountsOf, contextExact, contextLine, effectiveFilter, filterLabel, filterLogs, headingParts, isActive, kpiText, layoutFor,
-  logEntries, logTag, nextFilter, quotaBrief, quotaEntries, quotaFigure, sourceState, statusOf, untilText, usageLine,
+  KPI_DEFINITIONS, NONE, STALE_READING_MS, accountsOf, cardBorder, contextExact, contextLine, crewCounts, effectiveFilter, filterLabel, filterLogs, fitSegments,
+  headingParts, isActive, kpiText, layoutFor, logEntries, logKey, logPreview, nextFilter, quotaBrief, quotaEntries, quotaLine, quotaNames, quotaSource, sourceState,
+  statusMessage, statusOf, tokenBar, tokenFormulas, tokenParts, toolTag, untilText,
 } from '../hooks/view'
 
 const NOW = 1_800_000_000_000
@@ -97,11 +98,7 @@ test('context is shown only against a known window; zero, missing and over-full 
   }
 })
 
-test('usage of a harness whose logs cannot be read shows dashes, never zeros', () => {
-  const m = { readable: false, requests: 0, toolCalls: 0, input: 0, output: 0, harness: 'pi' }
-  expect(usageLine(m)).toBe(`${NONE} req · ${NONE} tools · pi logs not readable`)
-  expect(usageLine({ ...m, readable: true, requests: 19, toolCalls: 22, input: 38_000, output: 7_300, harness: 'claude' })).toBe('19 req · 22 tools · in 38k / out 7.3k')
-  expect(usageLine({ ...m, readable: true, requests: 19, toolCalls: 22 }, true)).toBe('19 req · 22 tools')
+test('a harness whose logs cannot be read shows dashes, never zeros', () => {
   expect(contextLine({ context: 0, contextWindow: null, contextModel: '', readable: false }, 6)).toBe(`Ctx ${NONE} · logs not readable`)
   expect(accountsOf({ quota: {}, readable: false }, {})).toBe(`acct ${NONE} · logs not readable`)
   expect(isActive({ lastAt: NOW - 1_000, status: '' }, NOW)).toBe(true)
@@ -122,18 +119,25 @@ test('a crewmate names the account its usage went to, or says it is unknown', ()
   expect(accountsOf({ quota: {} }, readings)).toBe(`acct ${NONE} · no usage in this week's window`)
 })
 
-test('a weekly figure is the measured vendor percent with its age and reset, or why there is none', () => {
-  expect(quotaFigure(reading(), NOW, 6)).toEqual({ text: 'week ▰▰▱▱▱▱ 35% · measured 4m ago · resets in 2d 4h', tone: 'text' })
-  expect(quotaFigure(reading({ stale: true, observedAt: NOW - 3 * 3_600_000 }), NOW, 6).text).toBe('week ▰▰▱▱▱▱ 35% · stale 3h0m ago · resets in 2d 4h')
-  expect(quotaFigure(reading({ stale: true, observedAt: null, resetsAt: null }), NOW, 6)).toEqual({ text: 'week ▰▰▱▱▱▱ 35% · stale, age unknown', tone: 'warning' })
-  expect(quotaFigure(reading({ percent: null }), NOW, 6).text).toBe(`week % ${NONE}: no reading`)
-  expect(quotaFigure(reading({ percent: null, reset: true }), NOW, 6).text).toBe(`week % ${NONE}: window reset`)
-  expect(quotaFigure(reading({ account: 'unknown', accountKnown: false, percent: null }), NOW, 6).text).toBe(`week % ${NONE}: account unknown`)
-  expect(quotaFigure(reading({ indexed: false }), NOW, 6).text).toBe('indexing local logs…')
+test('a default quota row is the measured percent, the time to reset and a stale mark, or a dash and why', () => {
+  expect(quotaLine(reading(), NOW)).toEqual({ percent: 35, figure: '35%', reset: '↻ 2d 4h', note: '', tone: 'text' })
+  expect(quotaLine(reading({ stale: true, observedAt: NOW - 3 * 3_600_000 }), NOW)).toEqual({ percent: 35, figure: '35%', reset: '↻ 2d 4h', note: '◷ stale', tone: 'warning' })
+  expect(quotaLine(reading({ stale: true, observedAt: null, resetsAt: null }), NOW)).toMatchObject({ reset: '', note: '◷ stale' })
+  expect(quotaLine(reading({ percent: null }), NOW)).toEqual({ percent: null, figure: NONE, reset: '↻ 2d 4h', note: 'no reading', tone: 'subtle' })
+  expect(quotaLine(reading({ percent: null, reset: true }), NOW).note).toBe('window reset')
+  expect(quotaLine(reading({ account: 'unknown', accountKnown: false, percent: null }), NOW)).toMatchObject({ figure: NONE, note: 'account unknown' })
+  expect(quotaLine(reading({ indexed: false }), NOW)).toMatchObject({ figure: NONE, note: 'indexing local logs…' })
   // A reset already passed is not shown as a future one.
-  expect(quotaFigure(reading({ resetsAt: NOW - 1 }), NOW, 6).text).toBe('week ▰▰▱▱▱▱ 35% · measured 4m ago')
+  expect(quotaLine(reading({ resetsAt: NOW - 1 }), NOW).reset).toBe('')
   // Past half an hour a reading is stale even when the report that carried it called it current.
-  expect(quotaFigure(reading({ resetsAt: null }), NOW - 240_000 + STALE_READING_MS + 1, 6)).toEqual({ text: 'week ▰▰▱▱▱▱ 35% · stale 30m ago', tone: 'warning' })
+  expect(quotaLine(reading({ resetsAt: null }), NOW - 240_000 + STALE_READING_MS + 1)).toMatchObject({ note: '◷ stale', tone: 'warning' })
+  // The notes (i) carry what the row leaves out: the reading's age and source, or why there is none.
+  expect(quotaSource(reading(), NOW)).toEqual({ text: 'week 35% measured 4m ago · source this session', tone: 'subtle' })
+  expect(quotaSource(reading({ stale: true, observedAt: NOW - 3 * 3_600_000, source: 'history' }), NOW)).toEqual({ text: 'week 35% stale 3h0m ago · source reading history', tone: 'warning' })
+  expect(quotaSource(reading({ observedAt: null, stale: true }), NOW).text).toBe('week 35% stale, age unknown · source this session')
+  expect(quotaSource(reading({ percent: null }), NOW).text).toBe(`week % ${NONE}: no reading yet`)
+  expect(quotaSource(reading({ percent: null, reset: true }), NOW).text).toBe(`week % ${NONE}: the window reset since the last reading`)
+  expect(quotaSource(reading({ account: 'unknown', accountKnown: false, percent: null }), NOW).text).toBe(`week % ${NONE}: no account could be tied to this usage`)
   expect([2 * 86_400_000 + 4 * 3_600_000 + 59_000, 3 * 3_600_000 + 12 * 60_000, 59.9 * 60_000, 30_000].map(untilText)).toEqual(['2d 4h', '3h 12m', '59m', '<1m'])
 })
 
@@ -176,7 +180,9 @@ test('the log is newest first, tags errors from the status protocol only and kee
   expect(new Set(logEntries([{ home: '/fm', id: 'a', harness: 'claude', events: [event(0, 'status', 'x'), event(0, 'status', 'x')] }]).map(e => e.id)).size).toBe(2)
   // "error" inside a working line's text is not a severity; the protocol's state word is.
   expect(entries.map(e => e.level)).toEqual(['info', 'error', 'info', 'info'])
-  expect(entries.map(logTag)).toEqual(['◇ STAT', '× ERR ', '▸ TOOL', '▸ TOOL'])
+  expect(entries.map(e => logPreview(e).tag)).toEqual(['STAT', '× ERR', 'EXEC', 'BASH'])
+  expect(new Set(entries.map(logKey)).size).toBe(4)
+  expect(logKey(entries[0] as (typeof entries)[number])).toMatch(/^log-[0-9a-z]+$/)
   expect(entries.find(e => e.at === 4)?.sourceTruncated).toBe(true)
   expect(logEntries(crew).map(e => e.id)).toEqual(entries.map(e => e.id))
   expect(filterLogs(entries, 'tools', null).map(e => e.at)).toEqual([4, 3])
@@ -207,4 +213,111 @@ test('wide and zero-width characters are measured in terminal cells, so clipping
   expect(clip('測試測試', 4)).toBe('測…')
   expect(cells(pad('測試', 7))).toBe(7)
   expect(clip('abc', 0)).toBe('')
+})
+
+// The captain's screenshot of crew-demo-scout read "cache 94%" beside "in 24 · read 828k · write 57k". Its
+// transcript holds 24 uncached input tokens, not 24k: the formula was right and the bare "24" misled.
+const SCOUT = { requests: 12, input: 24, output: 9_066, cacheRead: 827_917, cacheWrite: 57_268, reasoning: 0, toolCalls: 21 }
+
+test('Cache is cache read over all input and Tokens adds the four parts once, thinking inside output', () => {
+  expect(cacheHit(SCOUT)).toBe('94%')
+  // 827,917 / (24 + 827,917 + 57,268) = 93.53%; with 24k uncached input it would be 91.1%.
+  expect(cacheHit({ ...SCOUT, input: 24_000 })).toBe('91%')
+  expect(totalTokens(SCOUT)).toBe(894_275)
+  // Thinking is part of output as the vendors bill it: reporting it never grows Tokens.
+  expect(totalTokens({ ...SCOUT, reasoning: 5_000 } as typeof SCOUT)).toBe(894_275)
+  expect(kpiText(SCOUT, false)).toBe('Tokens 894k · Requests 12 · Tool calls 21 · Cache 94%')
+  expect(tokenFormulas(SCOUT)).toEqual([
+    'Tokens 894,275 = uncached in 24 + cache read 827,917 + cache write 57,268 + out 9,066',
+    'Cache 94% = cache read 827,917 / (uncached in 24 + cache read 827,917 + cache write 57,268) = 93.5%',
+    'thinking not reported apart from out',
+  ])
+  expect(tokenFormulas({ ...SCOUT, reasoning: 2_700 })[2]).toBe('thinking 2,700, already counted in out')
+  expect(tokenFormulas({ ...SCOUT, input: 0, cacheRead: 0, cacheWrite: 0 })[1]).toBe(`Cache ${NONE}: no input tokens yet`)
+  expect(KPI_DEFINITIONS).toContain('Tokens = uncached input + cache read + cache write + output')
+  expect(KPI_DEFINITIONS).toContain('thinking is part of output, so it is not added again')
+  expect(KPI_DEFINITIONS).toContain('Cache = cache read / (uncached input + cache read + cache write)')
+  // The legend names the uncached part, so a small count is never read as a share of the others.
+  expect(tokenParts(SCOUT).map(p => p.label)).toEqual(['read', 'write', 'out', 'uncached in'])
+  expect(tokenParts(SCOUT).reduce((n, p) => n + p.value, 0)).toBe(totalTokens(SCOUT))
+})
+
+test('the token bar fills its width in proportion and keeps a cell for every part used', () => {
+  const bar = tokenBar(tokenParts(SCOUT), 60)
+  expect(bar.map(s => s.text.length)).toEqual([53, 5, 1, 1])
+  expect(bar.map(s => s.text[0])).toEqual(['█', '▓', '▒', '░'])
+  expect(bar.reduce((n, s) => n + s.text.length, 0)).toBe(60)
+  // An unused part draws nothing; nothing used draws no bar; too narrow for every part, shares alone.
+  expect(tokenBar(tokenParts({ input: 0, output: 10, cacheRead: 30, cacheWrite: 0 }), 8).map(s => s.text)).toEqual(['██████', '▒▒'])
+  expect(tokenBar(tokenParts({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }), 20)).toEqual([])
+  expect(tokenBar(tokenParts(SCOUT), 2).reduce((n, s) => n + s.text.length, 0)).toBe(2)
+})
+
+test('each account has its own row name: Claude by account, Codex by plan unless two would match', () => {
+  const entries: [string, QuotaReading][] = [
+    ['claude|andang|seven_day', reading()],
+    ['claude|unknown|seven_day', reading({ account: 'unknown', accountKnown: false })],
+    ['codex|codex-60305a97|codex:10080m', reading({ provider: 'codex', account: 'codex-60305a97', plan: 'Plus' })],
+  ]
+  expect([...quotaNames(entries).values()]).toEqual(['claude andang', 'claude unknown', 'codex Plus'])
+  const twins: [string, QuotaReading][] = [...entries, ['codex|codex-9f00aa11|codex:10080m', reading({ provider: 'codex', account: 'codex-9f00aa11', plan: 'Plus' })]]
+  expect([...quotaNames(twins).values()].slice(2)).toEqual(['codex 60305a97', 'codex 9f00aa11'])
+  expect(quotaNames([['codex|codex-1|w', reading({ provider: 'codex', account: 'codex-1', plan: '' })]]).get('codex|codex-1|w')).toBe('codex 1')
+})
+
+test('a log preview is a tag, the command and a short path; the full text keeps it with home as ~', () => {
+  const entry = (text: string, kind: CrewEvent['kind'] = 'tool', level: 'info' | 'error' = 'info') => ({ text, kind, level })
+  expect(logPreview(entry('Bash: wc -l </home/anhtran/.local/share/firstmate/data/crew-demo-scout/report.md'))).toEqual({ tag: 'BASH', tone: 'suggestion', head: 'wc', rest: '-l <…/report.md' })
+  expect(logPreview(entry('Edit: /home/anhtran/repo/hooks/zones.tsx'))).toMatchObject({ tag: 'EDIT', head: '…/zones.tsx', rest: '' })
+  expect(logPreview(entry('Read: hooks/zones.tsx'))).toMatchObject({ tag: 'READ', head: 'hooks/zones.tsx' })
+  expect(logPreview(entry('done [at=1792648595]: Scout report written', 'status'))).toEqual({ tag: 'STAT', tone: 'success', head: 'done:', rest: 'Scout report written' })
+  expect(logPreview(entry('blocked [at=1]: needs a decision', 'status', 'error'))).toMatchObject({ tag: '× ERR', tone: 'error', head: 'blocked:' })
+  expect(logPreview(entry('step 3'))).toMatchObject({ tag: 'TOOL', head: 'step', rest: '3' })
+  // A call with no argument to show is its bare name: the tag still names the tool.
+  expect(logPreview(entry('TodoWrite'))).toEqual({ tag: 'TODO', tone: 'suggestion', head: '', rest: '' })
+  expect(['Bash', 'TodoWrite', 'WebSearch', 'mcp__github__search', 'exec_command', 'constructor', '???'].map(toolTag)).toEqual(['BASH', 'TODO', 'SEARCH', 'MCP', 'EXEC', 'CONSTR', 'TOOL'])
+  // No preview carries a home folder: every absolute path of two or more parts is cut to its last part.
+  expect(shortPaths('cd /tmp/a/b && cat ~/notes/today.md "/srv/a b/c/x"')).toBe('cd …/b && cat …/today.md "/srv/a b/c/x"')
+  expect(shortPaths('python3 -I /home/me/.config/x/ --home /home…')).toBe('python3 -I …/x/ --home /home…')
+  expect(shortPaths('x|/opt/a/b/c;/opt/d/e/f')).toBe('x|…/c;…/f')
+  // Short paths and URLs stay whole: they hold no folder of the person's.
+  expect(shortPaths('ls 2>/dev/null ~/notes /etc/hosts')).toBe('ls 2>/dev/null ~/notes /etc/hosts')
+  expect(shortPaths('WebFetch https://github.com/a/b/c file:///x/y/z')).toBe('WebFetch https://github.com/a/b/c file:///x/y/z')
+  // The home folder never survives, wherever it sits; a longer name is another folder.
+  expect(tildeHome('O=/home/anhtran/.local/x; ls /home/anhtran /home/anhtran2/y; cd /home/anhtran', '/home/anhtran')).toBe('O=~/.local/x; ls ~ /home/anhtran2/y; cd ~')
+  expect(tildeHome('cc -I/home/anhtran/inc a|/home/anhtran/bin/x', '/home/anhtran/')).toBe('cc -I~/inc a|~/bin/x')
+  expect(logPreview(entry('Bash: cd /home/anhtran && ls -la /home/anhtran/'), '/home/anhtran')).toMatchObject({ head: 'cd', rest: '~ && ls -la ~/' })
+  expect(tildeHome('/home/anhtran/x', '')).toBe('/home/anhtran/x')
+  // Claude's transcript folders spell the home with dashes; that user name is hidden too, a longer one is not.
+  expect(tildeHome('~/.claude/projects/-home-anhtran--treehouse-dotfiles-7/a.jsonl -home-anhtran2-x', '/home/anhtran')).toBe('~/.claude/projects/~--treehouse-dotfiles-7/a.jsonl -home-anhtran2-x')
+  expect(logPreview(entry('Read: /home/anhtran/.claude/projects/-home-anhtran--treehouse-d…'), '/home/anhtran').head).toBe('…/~--treehouse-d…')
+  expect(logPreview(entry('Bash: ls -home-anhtran-x'), '/home/anhtran').rest).toBe('~-x')
+  expect(tildeHome('/x', '/')).toBe('/x')
+})
+
+test('a card says the latest status in a word and only a running or blocked one draws a strong border', () => {
+  const m = (status: string, lastAt = NOW - 10_000, lastTool = '') => ({ status, lastAt, lastTool })
+  expect(statusMessage(m('done [at=1]: Scout report written'), NOW)).toEqual({ text: '✓ Scout report written', tone: 'success' })
+  expect(statusMessage(m('done [at=1]'), NOW)).toEqual({ text: '✓ done', tone: 'success' })
+  expect(statusMessage(m('blocked [at=1]: needs a decision on /home/me/a/b.md'), NOW)).toEqual({ text: '× blocked: needs a decision on …/b.md', tone: 'error' })
+  expect(statusMessage(m('working [at=1]: lockfile'), NOW)).toEqual({ text: 'working: lockfile', tone: 'subtle' })
+  expect(statusMessage(m('', NOW, 'Bash: npm test'), NOW)).toEqual({ text: '▸ Bash: npm test', tone: 'subtle' })
+  expect(statusMessage(m('', 0), NOW)).toEqual({ text: `${NONE} no status line yet`, tone: 'subtle' })
+  expect(cardBorder(m('working [at=1]: x'), NOW)).toEqual({ color: 'merged', dim: false })
+  expect(cardBorder(m(''), NOW)).toEqual({ color: 'merged', dim: false })
+  expect(cardBorder(m('blocked [at=1]: x'), NOW)).toEqual({ color: 'error', dim: false })
+  expect(cardBorder(m('done [at=1]: x'), NOW)).toEqual({ color: 'border', dim: true })
+  expect(cardBorder(m('', NOW - 3_600_000), NOW)).toEqual({ color: 'border', dim: true })
+  // Quiet is not finished: its border stays purple, only dimmer.
+  expect(cardBorder(m('working [at=1]: x', NOW - 300_000), NOW)).toEqual({ color: 'merged', dim: true })
+  expect(statusOf(m('done [at=1]: x'), NOW)).toMatchObject({ mark: '✓', color: 'success' })
+  expect(crewCounts([m('done [at=1]: x'), m('working [at=1]: y'), m('', NOW - 3_600_000)], NOW)).toEqual({ live: 3, active: 1, done: 1 })
+})
+
+test('segments fill one line and cut where the width ends, padding kept', () => {
+  const parts = [{ text: '12:45:51  ', tone: 'subtle' }, { text: 'BASH    ', tone: 'suggestion' }, { text: 'wc', tone: 'text' }, { text: ' -l <…/report.md', tone: 'subtle' }]
+  expect(fitSegments(parts, 80).map(s => s.text).join('')).toBe('12:45:51  BASH    wc -l <…/report.md')
+  expect(fitSegments(parts, 20).map(s => s.text)).toEqual(['12:45:51  ', 'BASH    ', 'wc'])
+  expect(fitSegments(parts, 13).map(s => s.text)).toEqual(['12:45:51  ', 'BA…'])
+  expect(fitSegments(parts, 0)).toEqual([])
 })

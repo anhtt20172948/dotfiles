@@ -4,8 +4,8 @@
  * absence, never as a made-up number.
  */
 import type { CrewEvent, CrewMember, CrewReport, CrewTotals, LogFilter, PollState, QuotaReading } from '../types'
-import { ago, cacheHit, cells, clip, gauge, measuredText, tokens, totalTokens } from './format'
-import { crewState, harnessColor, memberKey } from './dashboard'
+import { SOURCES, ago, cacheHit, cells, clip, gauge, measuredText, previewText, tokens, totalTokens } from './format'
+import { crewState, harnessColor, isActive, memberKey } from './dashboard'
 
 export { isActive } from './dashboard'
 
@@ -53,6 +53,8 @@ export type Layout = {
   logRows: number
   /** True when Activity shows one summary line instead of its lanes. */
   activityCollapsed: boolean
+  /** Under 24 rows: agent rows drop their status line (a blocked one's stays). */
+  short: boolean
 }
 
 /**
@@ -73,6 +75,7 @@ export const layoutFor = (width: number, rows: number, count: number, placement:
     condensed,
     logRows: short ? 0 : rows >= 36 ? 5 : 3,
     activityCollapsed: short,
+    short,
   }
 }
 
@@ -103,7 +106,60 @@ export const cacheShare = (u: Pick<CrewTotals, 'input' | 'cacheRead' | 'cacheWri
 }
 
 /** What each fleet KPI counts, said once (Details and help). */
-export const KPI_DEFINITIONS = 'Tokens = in + out + cache read + cache write, summed over the live crew since each task started. Cache = cache read / (in + cache read + cache write): the share of input served from the prompt cache.'
+export const KPI_DEFINITIONS = 'Tokens = uncached input + cache read + cache write + output, summed over the live crew since each task started; thinking is part of output, so it is not added again. Cache = cache read / (uncached input + cache read + cache write): the share of all input tokens served from the prompt cache, not a hit rate.'
+
+/** One part of the Tokens total, with its own glyph so the bar and legend read without colour. */
+export type TokenPart = { label: string; glyph: string; tone: string; value: number }
+
+/** The four parts Tokens adds up, in the bar's order: cache read, cache write, output, uncached input. */
+export const tokenParts = (u: Pick<CrewTotals, 'input' | 'output' | 'cacheRead' | 'cacheWrite'>): TokenPart[] => [
+  { label: 'read', glyph: '█', tone: 'permission', value: u.cacheRead },
+  { label: 'write', glyph: '▓', tone: 'suggestion', value: u.cacheWrite },
+  { label: 'out', glyph: '▒', tone: 'merged', value: u.output },
+  { label: 'uncached in', glyph: '░', tone: 'text', value: u.input },
+]
+
+/**
+ * The parts as one bar of `width` cells, each part's cells in proportion (largest remainders round up);
+ * a part above zero keeps at least one cell while there is room for each. Empty when nothing was used.
+ */
+export const tokenBar = (parts: readonly TokenPart[], width: number): Segment[] => {
+  const size = Math.max(0, Math.floor(width))
+  const shown = parts.filter(p => p.value > 0)
+  const total = shown.reduce((n, p) => n + p.value, 0)
+  if (total <= 0 || size === 0) return []
+  const least = size >= shown.length ? 1 : 0
+  const spare = size - least * shown.length
+  const exact = shown.map(p => p.value * spare / total)
+  const short = spare - exact.reduce((n, x) => n + Math.floor(x), 0)
+  const bumped = new Set(exact.map((x, i) => [x - Math.floor(x), i] as const).sort((a, b) => b[0] - a[0] || a[1] - b[1]).slice(0, short).map(([, i]) => i))
+  return shown
+    .map((p, i) => ({ text: p.glyph.repeat(least + Math.floor(exact[i] ?? 0) + (bumped.has(i) ? 1 : 0)), tone: p.tone }))
+    .filter(s => s.text !== '')
+}
+
+const exact = (n: number): string => n.toLocaleString('en-US')
+
+/**
+ * The Tokens and Cache figures written out with every term, for Details: the numbers a reader can
+ * recompute, so a rounded `24` beside `828k` cannot pass for 24k.
+ */
+export const tokenFormulas = (u: Pick<CrewTotals, 'input' | 'output' | 'cacheRead' | 'cacheWrite' | 'reasoning'>): string[] => {
+  const input = u.input + u.cacheRead + u.cacheWrite
+  const terms = `uncached in ${exact(u.input)} + cache read ${exact(u.cacheRead)} + cache write ${exact(u.cacheWrite)}`
+  return [
+    `Tokens ${exact(totalTokens(u))} = ${terms} + out ${exact(u.output)}`,
+    input === 0 ? `Cache ${NONE}: no input tokens yet` : `Cache ${cacheShare(u)} = cache read ${exact(u.cacheRead)} / (${terms}) = ${(u.cacheRead * 100 / input).toFixed(1)}%`,
+    u.reasoning > 0 ? `thinking ${exact(u.reasoning)}, already counted in out` : 'thinking not reported apart from out',
+  ]
+}
+
+/** The header's counts: crewmates listed, those working or active, and those done. */
+export const crewCounts = (crew: readonly Pick<CrewMember, 'lastAt' | 'status'>[], now: number): { live: number; active: number; done: number } => ({
+  live: crew.length,
+  active: crew.filter(m => isActive(m, now)).length,
+  done: crew.filter(m => statusOf(m, now).label === 'DONE').length,
+})
 
 /** The context line: a gauge and the percent only when the window is known; over 100% is shown, not clamped. */
 export const contextLine = (m: Pick<CrewMember, 'context' | 'contextWindow' | 'contextModel'> & Partial<Pick<CrewMember, 'readable'>>, bar: number, label = 'Ctx'): string => {
@@ -125,11 +181,33 @@ export const contextExact = (m: Pick<CrewMember, 'context' | 'contextWindow' | '
   return `${used} / ${m.contextWindow.toLocaleString('en-US')} tokens (${pct}%)${m.windowSource ? ` · window from ${m.windowSource}` : ''}`
 }
 
-/** Requests, tools and tokens; `—` where the harness's logs cannot be read rather than a false 0. */
-export const usageLine = (m: Pick<CrewMember, 'readable' | 'requests' | 'toolCalls' | 'input' | 'output' | 'harness'>, condensed = false): string => {
-  if (!m.readable) return `${NONE} req · ${NONE} tools · ${m.harness} logs not readable`
-  const head = `${m.requests} req · ${m.toolCalls} tools`
-  return condensed ? head : `${head} · in ${tokens(m.input)} / out ${tokens(m.output)}`
+const STAMP = /\s*\[at=\d+\]/
+
+/**
+ * A crewmate's latest word on its task: its status line without the stamp (done reads `✓ <what>`,
+ * blocked `× <line>`), else its last tool call; long paths cut to their last part, home never shown.
+ */
+export const statusMessage = (m: Pick<CrewMember, 'lastAt' | 'status' | 'lastTool'>, now: number, home = ''): { text: string; tone: string } => {
+  const label = statusOf(m, now).label
+  const line = previewText(m.status.replace(STAMP, '').trim(), home)
+  if (label === 'DONE') return { text: `✓ ${line.replace(/^done\b\s*:?\s*/i, '') || 'done'}`, tone: 'success' }
+  if (label === 'BLOCKED') return { text: `× ${line}`, tone: 'error' }
+  if (line !== '') return { text: line, tone: 'subtle' }
+  if (m.lastTool !== '') return { text: `▸ ${previewText(m.lastTool, home)}`, tone: 'subtle' }
+  return { text: `${NONE} no status line yet`, tone: 'subtle' }
+}
+
+/**
+ * A card's border by state: purple while the crewmate runs (working or active), dim purple while it is
+ * quiet (no activity for 2 to 15 minutes, not finished), red while blocked, and a dim neutral one
+ * otherwise, so a finished card sits back and only its green check stands out.
+ */
+export const cardBorder = (m: Pick<CrewMember, 'lastAt' | 'status'>, now: number): { color: string; dim: boolean } => {
+  const label = statusOf(m, now).label
+  if (label === 'WORKING' || label === 'ACTIVE') return { color: 'merged', dim: false }
+  if (label === 'QUIET') return { color: 'merged', dim: true }
+  if (label === 'BLOCKED') return { color: 'error', dim: false }
+  return { color: 'border', dim: true }
 }
 
 /** The quota keys a crewmate's usage was charged to, each named by provider and account. */
@@ -157,15 +235,45 @@ export const STALE_READING_MS = 30 * 60_000
 const isStaleReading = (r: Pick<QuotaReading, 'stale' | 'observedAt'>, now: number): boolean =>
   r.stale || r.observedAt === null || now - r.observedAt > STALE_READING_MS
 
-/** One account's weekly figure: the vendor percent as measured and how old it is, or why there is none. */
-export const quotaFigure = (r: QuotaReading, now: number, bar: number): { text: string; tone: string } => {
+/**
+ * One account's default Quota row: the vendor's weekly percent as measured (`—` and why when there is
+ * none), the time to its reset when known, and a stale mark once the reading is over half an hour old.
+ */
+export type QuotaLine = { percent: number | null; figure: string; reset: string; note: string; tone: string }
+
+export const quotaLine = (r: QuotaReading, now: number): QuotaLine => {
+  const reset = r.resetsAt !== null && r.resetsAt > now ? `↻ ${untilText(r.resetsAt - now)}` : ''
+  const none = (note: string): QuotaLine => ({ percent: null, figure: NONE, reset, note, tone: 'subtle' })
+  if (!r.indexed) return none('indexing local logs…')
+  if (!r.accountKnown) return none('account unknown')
+  if (r.percent === null) return none(r.reset ? 'window reset' : 'no reading')
+  const stale = isStaleReading(r, now)
+  return { percent: r.percent, figure: measuredText(r.percent), reset, note: stale ? '◷ stale' : '', tone: stale ? 'warning' : 'text' }
+}
+
+/** Where an account's figure comes from and how old it is, for the Quota notes (`i`). */
+export const quotaSource = (r: QuotaReading, now: number): { text: string; tone: string } => {
   if (!r.indexed) return { text: 'indexing local logs…', tone: 'subtle' }
-  if (!r.accountKnown) return { text: `week % ${NONE}: account unknown`, tone: 'warning' }
-  if (r.percent === null) return { text: `week % ${NONE}: ${r.reset ? 'window reset' : 'no reading'}`, tone: 'warning' }
+  if (!r.accountKnown) return { text: `week % ${NONE}: no account could be tied to this usage`, tone: 'warning' }
+  if (r.percent === null) return { text: `week % ${NONE}: ${r.reset ? 'the window reset since the last reading' : 'no reading yet'}`, tone: 'warning' }
   const stale = isStaleReading(r, now)
   const when = r.observedAt === null ? 'stale, age unknown' : `${stale ? 'stale' : 'measured'} ${ago(Math.max(0, now - r.observedAt))} ago`
-  const reset = r.resetsAt !== null && r.resetsAt > now ? ` · resets in ${untilText(r.resetsAt - now)}` : ''
-  return { text: `week ${gauge(r.percent, bar)} ${measuredText(r.percent)} · ${when}${reset}`, tone: stale ? 'warning' : 'text' }
+  const source = r.source ? ` · source ${SOURCES[r.source] ?? r.source}` : ''
+  return { text: `week ${measuredText(r.percent)} ${when}${source}`, tone: stale ? 'warning' : 'subtle' }
+}
+
+/**
+ * Each account's name in the Quota zone: a Claude account by its ai-acct name, a Codex one by its plan
+ * (its id is only a hash) unless two of a provider would then read the same; never merged.
+ */
+export const quotaNames = (entries: readonly [string, QuotaReading][]): Map<string, string> => {
+  const id = (r: QuotaReading) => r.accountKnown ? r.account.replace(/^codex-/, '') : 'unknown'
+  const short = (r: QuotaReading) => r.provider === 'codex' && r.accountKnown && r.plan ? r.plan : id(r)
+  const counts = entries.reduce((n, [, r]) => n.set(`${r.provider} ${short(r)}`, (n.get(`${r.provider} ${short(r)}`) ?? 0) + 1), new Map<string, number>())
+  return new Map(entries.map(([key, r]) => {
+    const name = `${r.provider} ${short(r)}`
+    return [key, (counts.get(name) ?? 0) > 1 ? `${r.provider} ${id(r)}` : name]
+  }))
 }
 
 const PROVIDER_ORDER = ['claude', 'codex']
@@ -253,6 +361,51 @@ export const filterLogs = (entries: readonly LogEntry[], filter: LogFilter, agen
 export const filterLabel = (filter: LogFilter, agentId: string | undefined): string =>
   filter === 'agent' ? `Agent: ${agentId ?? NONE}` : FILTER_LABELS[filter]
 
-/** The tag column of a log row: a glyph and a word, so an error reads without red. */
-export const logTag = (entry: Pick<LogEntry, 'kind' | 'level'>): string =>
-  entry.level === 'error' ? '× ERR ' : entry.kind === 'tool' ? '▸ TOOL' : '◇ STAT'
+/** A run of text in one tone, one piece of a line drawn as several Texts. */
+export type Segment = { text: string; tone: string; bold?: boolean }
+
+/** Segments laid on one line of `width` cells: the one that reaches the edge is clipped with `…`, any after it dropped. */
+export const fitSegments = (segments: readonly Segment[], width: number): Segment[] =>
+  segments.reduce<{ out: Segment[]; room: number }>((acc, s) => {
+    if (acc.room <= 0 || s.text === '') return acc
+    if (cells(s.text) <= acc.room) return { out: [...acc.out, s], room: acc.room - cells(s.text) }
+    return { out: [...acc.out, { ...s, text: clip(s.text, acc.room) }], room: 0 }
+  }, { out: [], room: Math.max(0, width) }).out
+
+/** Cells the tag column takes: the longest tag (`SEARCH`, `NBEDIT`) fits. */
+export const TAG_CELLS = 6
+
+const TOOL_TAGS: Record<string, string> = {
+  todowrite: 'TODO', webfetch: 'FETCH', websearch: 'SEARCH', multiedit: 'EDIT', notebookedit: 'NBEDIT',
+  exec_command: 'EXEC', apply_patch: 'PATCH', write_stdin: 'STDIN',
+}
+
+/** A tool's tag: its name upper-cased in at most six cells (`Bash` BASH, `TodoWrite` TODO, an MCP tool MCP). */
+export const toolTag = (name: string): string => {
+  const key = name.trim().toLowerCase()
+  if (key.startsWith('mcp__')) return 'MCP'
+  if (Object.hasOwn(TOOL_TAGS, key)) return TOOL_TAGS[key] ?? 'TOOL'
+  return key.replace(/[^a-z0-9]/g, '').slice(0, TAG_CELLS).toUpperCase() || 'TOOL'
+}
+
+/**
+ * A log row's preview: a tag (the tool's name, STAT for a status line, `× ERR` for an error, so an
+ * error reads without red), the command or path as the head and the rest of it. Absolute paths are
+ * cut to their last part and the home folder written `~`, so the person's user name never shows in a
+ * preview or a screenshot.
+ */
+export const logPreview = (entry: Pick<LogEntry, 'kind' | 'level' | 'text'>, home = ''): { tag: string; tone: string; head: string; rest: string } => {
+  const text = entry.text.replace(STAMP, '')
+  // A call is `Name: detail`, or the bare name when the call had no argument to show.
+  const call = entry.kind === 'tool' ? /^([\w.-]{1,64})(?::\s+([\s\S]*))?$/.exec(text) : null
+  const tag = entry.level === 'error' ? '× ERR' : entry.kind === 'status' ? 'STAT' : call?.[1] ? toolTag(call[1]) : 'TOOL'
+  const tone = entry.level === 'error' ? 'error' : entry.kind === 'status' ? 'success' : 'suggestion'
+  const [head = '', ...rest] = previewText(call ? call[2] ?? '' : text, home).trim().split(' ')
+  return { tag, tone, head, rest: rest.join(' ') }
+}
+
+/** A short, stable address for a log row's Button, from its entry id. */
+export const logKey = (entry: Pick<LogEntry, 'id'>): string => {
+  const hash = Array.from(entry.id).reduce((h, char) => Math.imul(h ^ (char.codePointAt(0) ?? 0), 16_777_619) >>> 0, 2_166_136_261)
+  return `log-${hash.toString(36)}`
+}

@@ -32,6 +32,8 @@ __pycache__/
 !.claude/skills/
 .claude/skills/*
 !.claude/skills/dotfiles-patterns/
+# Type declarations Claude Code writes beside a mod each time it loads one.
+.config/claude-mods/*/.claude-plugin/types/
 .treehouse/
 # Local account credentials must never be versioned.
 .claude-b/

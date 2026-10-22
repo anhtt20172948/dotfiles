@@ -7,6 +7,7 @@ import type { CrewMember, CrewReport, QuotaFigure, QuotaReading } from '../types
 import { PALETTES } from '../hooks/theme'
 import { accountFromLimits } from '../hooks/account'
 import { callTokensText, cells, estimateText, quotaRows, toolTokenNote, toolTokenText } from '../hooks/format'
+import { logEntries, logKey } from '../hooks/view'
 
 const NOW = 1_800_000_000_000
 
@@ -219,7 +220,20 @@ const overflows = (node: unknown, out: string[] = []): string[] => {
 
 const HEADINGS = ['OVERVIEW', 'AGENTS', 'QUOTA & LIMITS', 'ACTIVITY', 'RECENT LOGS']
 
-test('the pane draws a header and the five zones in order; default cards carry no quota', async ($, on) => {
+/** The two reads of a mounted drawing the helpers below use. */
+type Mounted = { find: (target: { key: string }) => Promise<unknown>; findAll: (target: { type: string }) => Promise<unknown[]> }
+
+/** The text of the element drawn under `key`: a line built of several Texts reads as one. */
+const textAt = async (ui: Mounted, key: string): Promise<string | undefined> => {
+  const node = await ui.find({ key })
+  return node === undefined ? undefined : textOf(node)
+}
+
+/** The log rows drawn: one Button each, addressed by its entry. */
+const logRows = async (ui: Mounted): Promise<Drawn[]> =>
+  (await ui.findAll({ type: 'Button' })).map(b => b as Drawn).filter(b => /^log-/.test(String(b.key ?? b.props?.key ?? '')))
+
+test('the pane draws a header and the five zones in order; cards and quota rows stay short', async ($, on) => {
   stub(on, { report: REFERENCE })
   await start($)
   const ui = await $.ui.mount(sized(120, 40))
@@ -227,33 +241,55 @@ test('the pane draws a header and the five zones in order; default cards carry n
   const at = HEADINGS.map(title => shown.indexOf(title))
   expect(at.every(i => i >= 0)).toBe(true)
   expect([...at].sort((a, b) => a - b)).toEqual(at)
-  expect(shown[0]).toBe('CREW MONITOR · 2 live · 2 active')
+  expect(shown[0]).toBe('CREW MONITOR · 2 live · 2 active · 0 done')
   expect(shown[1]).toBe('● LIVE · updated 4s ago')
+  // Overview holds the fleet's numbers and what Tokens is made of, each part named.
   expect(shown).toContain('Tokens 2.10M · Requests 27 · Tool calls 30 · Cache 92%')
+  expect(await textAt(ui, 'token-legend')).toBe('█ read 1.93M · ▓ write 85k · ▒ out 9.1k · ░ uncached in 75k')
+  expect((await textAt(ui, 'token-bar'))?.length).toBe(60)
   // The cache figure is labelled as what it is, never a hit rate.
   expect(shown.some(line => /hit rate/i.test(line))).toBe(false)
-  // Agent cards: status word, recency, provider and model, context, requests and tools, the account.
+  // Agent cards: status word, recency, provider and model, task, context and the latest status, nothing of the fleet's.
   expect(shown).toContain('1: ▸ crew-watch-transparent')
-  expect(shown).toContain(' ● ACTIVE · 24s')
-  expect(shown).toContain(' ● WORKING · 8s')
+  expect(await textAt(ui, 'title-/fm:crew-watch-transparent')).toBe(' ● ACTIVE · 24s')
+  expect(await textAt(ui, 'title-/fm:workflow-cryptography-advisory')).toBe(' ● WORKING · 8s')
   expect(shown).toContain('codex gpt-6.1-sol/medium · ship / workflow')
   expect(shown.some(line => line.includes('11% · 109k/1.00M'))).toBe(true)
   expect(shown.some(line => line.includes('5% · 44k/828k'))).toBe(true)
-  expect(shown).toContain('19 req · 22 tools · in 38k / out 7.3k')
-  expect(shown).toContain('acct claude andang')
-  expect(shown).toContain('acct codex 60305a97')
-  // Weekly figures live in Quota & Limits alone: one line per account, none in the cards.
-  const quota = shown.indexOf('QUOTA & LIMITS')
-  expect(shown.slice(0, quota).filter(line => /week|of week/.test(line))).toEqual([])
-  const accounts = shown.slice(quota, shown.indexOf('ACTIVITY'))
-  expect(accounts.filter(line => line.startsWith('claude andang · Max 5x') && line.includes('32% · measured 2m ago · resets in 23h 59m')).length).toBe(1)
-  expect(accounts.filter(line => line.startsWith('claude thanhnv') && line.includes('week % —: no reading')).length).toBe(1)
-  expect(accounts.filter(line => line.startsWith('codex 60305a97 · Plus') && line.includes('29% · measured 8s ago')).length).toBe(1)
+  expect(shown).toContain('▸ Bash: npm test')
+  expect(shown).toContain('working: lockfile')
+  const agents = shown.slice(shown.indexOf('AGENTS'), shown.indexOf('QUOTA & LIMITS'))
+  expect(agents.filter(line => /\breq\b|tools|tokens|cache|acct|\bin \d|week/i.test(line))).toEqual([])
+  // Quota & Limits: one row per account, never summed; its notes wait for i.
+  const accounts = shown.slice(shown.indexOf('QUOTA & LIMITS'), shown.indexOf('ACTIVITY'))
+  expect(await textAt(ui, `quota-line-${KEY}`)).toBe('claude andang   ▰▰▰▰▱▱▱▱▱▱▱▱   32%  ↻ 23h 59m')
+  expect(await textAt(ui, `quota-line-${OTHER}`)).toBe('claude thanhnv                   —  ↻ 23h 59m  no reading')
+  expect(await textAt(ui, `quota-line-${CODEX}`)).toBe('codex Plus      ▰▰▰▱▱▱▱▱▱▱▱▱   29%  ↻ 23h 59m')
+  expect(accounts.some(line => /source|est|uncalibrated|tools direct|measured|neither exact/.test(line))).toBe(false)
   expect(shown.some(line => /61%|average|total quota/i.test(line))).toBe(false)
-  // Logs: newest first, the source's own cut is not hidden in the preview.
+  // Logs: newest first, a tag and the command; the source's own cut is not hidden; no home folder in a preview.
   const logs = shown.slice(shown.indexOf('RECENT LOGS'))
-  expect(logs.findIndex(line => line.includes('uv lock --upgrade-package cryptogr…')) < logs.findIndex(line => line.includes('Read: hooks/zones.tsx'))).toBe(true)
+  expect(logs.findIndex(line => line.includes('EXEC    workflow-cryptograp…  uv lock --upgrade-package cryptogr…')) < logs.findIndex(line => line.includes('READ    crew-watch-transpar…  hooks/zones.tsx'))).toBe(true)
+  expect(logs.some(line => line.endsWith('BASH    crew-watch-transpar…  W=.; O=…/report.json; python3 -I scripts/crew_usage.py --home /home…'))).toBe(true)
+  expect(shown.some(line => line.includes('/home/anhtran'))).toBe(false)
   expect(overflows(await ui.drawn())).toEqual([])
+  await ui.unmount()
+})
+
+test('a running card draws a purple border and a done card a dim one with a green check', async ($, on) => {
+  const done = member({ id: 'crew-demo-scout', model: 'haiku', effort: 'low', kind: 'scout', project: 'dotfiles', status: 'done [at=1]: Scout report written', lastAt: NOW - 360_000 })
+  stub(on, { report: { ...REFERENCE, crew: [done, REFERENCE.crew[1] as CrewMember] } })
+  await start($)
+  const ui = await $.ui.mount(sized(120, 40))
+  const panel = async (id: string) => (await ui.find({ key: `panel-/fm:${id}` }) as Drawn | undefined)?.props
+  expect(await panel('crew-demo-scout')).toMatchObject({ borderColor: 'subtle', borderDimColor: true })
+  expect(await panel('workflow-cryptography-advisory')).toMatchObject({ borderColor: 'merged', borderDimColor: false })
+  const title = await ui.find({ key: 'title-/fm:crew-demo-scout' }) as Drawn
+  const [mark, word] = (title.children ?? []).filter(child => (child as Drawn)?.type === 'Text') as Drawn[]
+  expect([textOf(mark), mark?.props?.color]).toEqual([' ✓', 'success'])
+  expect([textOf(word), word?.props?.color]).toEqual([' DONE · 6m', 'subtle'])
+  expect(lines(await ui.drawn())).toContain('✓ Scout report written')
+  expect(await ui.find({ text: 'CREW MONITOR · 2 live · 1 active · 1 done' })).toBeDefined()
   await ui.unmount()
 })
 
@@ -275,9 +311,9 @@ test('agents sit two to a row from 110 columns, stack below, and list as rows at
     }
     // Status and full names stay readable at every width, and nothing runs past the pane.
     const shown = lines(tree)
-    // Each account's weekly figure keeps its reset time: the line splits rather than cut it.
-    expect(shown.filter(line => line.includes('resets in 23h 59m')).length).toBe(2)
-    expect(shown.some(line => line.endsWith('…') && line.includes('week'))).toBe(false)
+    // Each account's row keeps its percent and reset time at every width.
+    expect(shown.filter(line => line === '  ↻ 23h 59m').length).toBe(3)
+    for (const key of [KEY, CODEX]) expect((await textAt(ui, `quota-line-${key}`))?.endsWith('%  ↻ 23h 59m')).toBe(true)
     for (const name of ['crew-watch-transparent', 'workflow-cryptography-advisory']) expect(shown.some(line => line.includes(name))).toBe(true)
     expect(shown.some(line => line.includes('WORKING'))).toBe(true)
     expect(overflows(tree)).toEqual([])
@@ -298,55 +334,78 @@ test('a short pane folds Activity and the log preview; a tall one shows five log
   const short = await view(120, 20)
   expect(short.some(line => /^2 of 2 readable crewmates logged activity in \d+ min · newest 8s ago$/.test(line))).toBe(true)
   expect(short.some(line => line.startsWith('12 entries · newest '))).toBe(true)
-  expect(short.filter(line => line.includes('▸ TOOL')).length).toBe(0)
+  expect(short.filter(line => /^\d\d:\d\d:\d\d  TOOL /.test(line)).length).toBe(0)
   const mid = await view(80, 32)
-  expect(mid.filter(line => line.includes('▸ TOOL')).length).toBe(3)
+  expect(mid.filter(line => /^\d\d:\d\d:\d\d  TOOL /.test(line)).length).toBe(3)
   const tall = await view(120, 40)
-  expect(tall.filter(line => line.includes('▸ TOOL')).length).toBe(5)
+  expect(tall.filter(line => /^\d\d:\d\d:\d\d  TOOL /.test(line)).length).toBe(5)
   expect(tall.some(line => line.includes('newest first · All · 5 of 12 · l more'))).toBe(true)
 })
 
-test('keys switch details, logs, filters and help, and every hotkey is unique', { timeoutMs: 30_000 }, async ($, on) => {
-  stub(on, { report: REFERENCE })
+test('keys switch details, quota notes, logs, filters and help, and every hotkey is unique', { timeoutMs: 30_000 }, async ($, on) => {
+  stub(on, { report: REFERENCE, env: { HOME: '/home/anhtran' } })
   await start($)
   const ui = await $.ui.mount(sized(120, 40, { isFocused: true }))
   const hotkeys = (await ui.findAll({ type: 'Button' })).map(b => (b as Drawn).props?.hotkey).filter(Boolean)
-  expect(hotkeys).toEqual(['d', 'l', 'f', 'h', '1', '2'])
-  // Compact by default: no level-C rows.
-  expect(await ui.find({ text: /^in 75k · out 9\.1k · thinking 2\.7k$/ })).toBeUndefined()
-  await ui.press({ key: 'key-mode' })
-  expect(await ui.find({ text: /^in 75k · out 9\.1k · thinking 2\.7k$/ })).toBeDefined()
-  expect(await ui.find({ text: /^Tokens = in \+ out \+ cache read \+ cache write/ })).toBeDefined()
-  expect(await ui.find({ text: /neither exact nor an upper bound/ })).toBeDefined()
+  expect(hotkeys).toEqual(['d', 'i', 'l', 'f', 'h', '1', '2'])
+  // Compact by default: no level-C rows, no quota notes.
+  const formula = 'Tokens 2,099,100 = uncached in 75,000 + cache read 1,930,000 + cache write 85,000 + out 9,100'
+  expect(await ui.find({ text: formula })).toBeUndefined()
+  expect(await ui.find({ text: /neither exact nor an upper bound/ })).toBeUndefined()
+  // i shows each account's notes and hides them again.
+  await ui.press({ key: 'key-quota' })
+  expect(await ui.find({ text: '  week 29% measured 8s ago · source codex log' })).toBeDefined()
+  expect(await ui.find({ text: '  week 32% measured 2m ago · source this session' })).toBeDefined()
   expect(await ui.find({ text: '  session <1% of week est' })).toBeDefined()
-  expect(await ui.find({ text: '  source codex log' })).toBeDefined()
+  expect(await ui.find({ text: '  account now est ~38%' })).toBeDefined()
   expect(await ui.find({ text: '  no crew usage in this window' })).toBeDefined()
+  expect(await ui.find({ text: /neither exact nor an upper bound/ })).toBeDefined()
+  expect(await ui.find({ text: /^tools direct: / })).toBeDefined()
+  expect(await ui.find({ text: formula })).toBeUndefined()
+  await ui.press({ key: 'key-quota' })
+  expect(await ui.find({ text: /neither exact nor an upper bound/ })).toBeUndefined()
+  // d adds every figure: the sums written out, and the quota notes too.
+  await ui.press({ key: 'key-mode' })
+  expect(await ui.find({ text: formula })).toBeDefined()
+  expect(await ui.find({ text: 'Cache 92% = cache read 1,930,000 / (uncached in 75,000 + cache read 1,930,000 + cache write 85,000) = 92.3%' })).toBeDefined()
+  expect(await ui.find({ text: 'thinking 2,700, already counted in out' })).toBeDefined()
+  expect(await ui.find({ text: /^Tokens = uncached input \+ cache read \+ cache write \+ output/ })).toBeDefined()
+  expect(await ui.find({ text: /neither exact nor an upper bound/ })).toBeDefined()
   expect((await ui.find({ key: 'key-mode' }) as Drawn | undefined)?.props?.label).toBe('compact')
-  // Logs expand to full entries that say where the source cut them.
+  // Enter on a log row (a press) shows its full text under it, home as ~, and where the source cut it.
+  const entries = logEntries(REFERENCE.crew)
+  const long = entries.find(e => e.text.startsWith('Bash: W=.')) as (typeof entries)[number]
+  await ui.press({ key: logKey(long) })
+  expect(await ui.find({ text: 'crew-watch-transparent · Bash: W=.; O=~/.local/share/firstmate/data/crew-watch-ui-redesign/live/report.json; python3 -I scripts/crew_usage.py --home /home… (source truncated)' })).toBeDefined()
+  expect(lines(await ui.drawn()).some(line => line.includes('/home/anhtran'))).toBe(false)
+  await ui.press({ key: logKey(long) })
+  expect(await ui.find({ text: /\(source truncated\)$/ })).toBeUndefined()
+  // l lists more rows, still previews.
   await ui.press({ key: 'key-logs' })
-  expect(await ui.find({ text: /uv lock --upgrade-package cryptogr… \(source truncated\)/ })).toBeDefined()
-  expect(await ui.find({ text: /--home \/home… \(source truncated\)/ })).toBeDefined()
+  expect((await logRows(ui)).length).toBe(4)
   // Filters: All -> Tools -> Status -> Errors (nothing matches, and it says so) -> All.
   await ui.press({ key: 'key-filter' })
-  expect(await ui.find({ text: /newest first · Tools · 4 of 4$/ })).toBeDefined()
+  expect(await ui.find({ text: /newest first · Tools · 4 of 4 · Enter full text$/ })).toBeDefined()
   await ui.press({ key: 'key-filter' })
   expect(await ui.find({ text: 'No matching logs (filter: Status).' })).toBeDefined()
   await ui.press({ key: 'key-filter' })
   expect(await ui.find({ text: 'No matching logs (filter: Errors).' })).toBeDefined()
   await ui.press({ key: 'key-filter' })
-  expect(await ui.find({ text: /newest first · All · 4 of 4$/ })).toBeDefined()
+  expect(await ui.find({ text: /newest first · All · 4 of 4 · Enter full text$/ })).toBeDefined()
   // With a crewmate open the cycle offers its own log.
   await ui.press({ key: 'card-/fm:workflow-cryptography-advisory' })
   for (let i = 0; i < 4; i++) await ui.press({ key: 'key-filter' })
-  expect(await ui.find({ text: /newest first · Agent: workflow-cryptography-advisory · 2 of 2$/ })).toBeDefined()
+  expect(await ui.find({ text: /newest first · Agent: workflow-cryptography-advisory · 2 of 2 · Enter full text$/ })).toBeDefined()
   // Closing the crewmate ends its filter; it never stays as an Agent filter that filters nothing.
   await ui.press({ key: 'card-/fm:workflow-cryptography-advisory' })
-  expect(await ui.find({ text: /newest first · All · 4 of 4$/ })).toBeDefined()
+  expect(await ui.find({ text: /newest first · All · 4 of 4 · Enter full text$/ })).toBeDefined()
   expect((await ui.find({ key: 'key-filter' }) as Drawn | undefined)?.props?.label).toBe('filter All')
   await ui.press({ key: 'card-/fm:workflow-cryptography-advisory' })
   await ui.press({ key: 'key-help' })
   expect(await ui.find({ text: 'HELP' })).toBeDefined()
-  expect(await ui.find({ text: /^d {14}compact or details mode$/ })).toBeDefined()
+  expect(await ui.find({ text: /^d {14}compact or details mode/ })).toBeDefined()
+  expect(await ui.find({ text: /^i {14}quota notes/ })).toBeDefined()
+  expect(await ui.find({ text: /^Enter {10}press the focused control; on a log row, show or hide its full text$/ })).toBeDefined()
   expect(await ui.find({ text: /^Esc .*close details with its number\)$/ })).toBeDefined()
   expect(overflows(await ui.drawn())).toEqual([])
   await ui.press({ key: 'key-help' })
@@ -385,7 +444,7 @@ test('a failed read says SOURCE ERROR with its reason and the age of the last go
   await start($)
   const none = await $.ui.mount(sized(80, 24))
   // Before any report the crew's size is unknown, not zero.
-  expect(await none.find({ text: 'CREW MONITOR · — live · — active' })).toBeDefined()
+  expect(await none.find({ text: 'CREW MONITOR · — live · — active · — done' })).toBeDefined()
   expect(await none.find({ text: '× SOURCE ERROR · no data yet' })).toBeDefined()
   expect(await none.find({ text: '× SOURCE ERROR: crew_usage.py failed: ValueError: boom' })).toBeDefined()
   expect(await none.find({ text: `Tokens — · Requests — · Tool calls — · Cache —` })).toBeDefined()
@@ -406,7 +465,7 @@ test('a failed read says SOURCE ERROR with its reason and the age of the last go
   const stale = await $.ui.mount(sized(80, 24))
   expect(await stale.find({ text: '◷ STALE · updated 1m ago' })).toBeDefined()
   // Ages keep moving with the clock while the data is stale: the crewmate last seen 90 s ago is no longer active.
-  expect(await stale.find({ text: ' ● ACTIVE · 1m' })).toBeUndefined()
+  expect(await stale.find({ text: ' ACTIVE · 1m' })).toBeUndefined()
   expect(await stale.find({ text: '! cache not saved: disk full' })).toBeDefined()
   expect(await stale.find({ text: /SOURCE ERROR/ })).toBeUndefined()
 })
@@ -430,15 +489,13 @@ test('missing data reads as missing: no crew, unreadable harness, unknown model,
   await refresh($)
   const ui = await $.ui.mount(sized(80, 32))
   const shown = lines(await ui.drawn())
-  expect(shown).toContain(' ? UNKNOWN · —')
-  expect(shown).toContain('— req · — tools · pi logs not readable')
+  expect(await textAt(ui, 'title-/fm:pi-task')).toBe(' ? UNKNOWN · —')
+  expect(shown).toContain('— no status line yet')
   expect(shown).toContain('Ctx — · logs not readable')
-  expect(shown).toContain('acct — · logs not readable')
   expect(shown).toContain('Ctx — · no request yet')
   expect(shown).toContain('excludes 1 crewmate: pi logs not readable')
   expect(shown).toContain('Ctx 5.0k · window n/a for unreleased')
-  expect(shown).toContain('acct claude account unknown')
-  expect(shown.some(line => line.startsWith('claude account unknown') && line.includes('week % —: account unknown'))).toBe(true)
+  expect(await textAt(ui, 'quota-line-claude|unknown|seven_day')).toBe('claude unknown                 —  ↻ 23h 59m  account unknown')
   expect(shown.some(line => line.startsWith('history unavailable: pi logs not readable'))).toBe(true)
   expect(shown.some(line => /NaN|undefined|Infinity/.test(line))).toBe(false)
   await ui.press({ key: 'card-/fm:pi-task' })
@@ -446,17 +503,22 @@ test('missing data reads as missing: no crew, unreadable harness, unknown model,
   expect(await ui.find({ text: '— no tool call yet' })).toBeDefined()
   expect(await ui.find({ text: 'tools —: pi logs not readable' })).toBeDefined()
   expect(await ui.find({ text: /harness pi · transcripts not readable/ })).toBeDefined()
+  expect(await ui.find({ text: '— no quota figure: acct — · logs not readable' })).toBeDefined()
+  await ui.press({ key: 'card-/fm:mystery' })
+  expect(await ui.find({ text: 'claude account unknown' })).toBeDefined()
   // Details mode adds no zeros for it either.
+  await ui.press({ key: 'card-/fm:mystery' })
+  await ui.press({ key: 'card-/fm:pi-task' })
   await ui.press({ key: 'key-mode' })
   const details = lines(await ui.drawn())
-  expect(details.filter(line => line.startsWith('thinking ')).length).toBe(2)
-  expect(details.some(line => /^tools 0 · 0 tok$|0 transcripts/.test(line))).toBe(false)
+  expect(details.some(line => /^tools 0 · 0 tok$|0 transcripts|0 requests/.test(line))).toBe(false)
   await ui.unmount()
   // With no readable crewmate at all, the fleet totals are unknown, not zero.
   world.report = { ...REPORT, crew: [REPORT.crew[1] as CrewMember], totals: { requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, toolCalls: 0 } }
   await refresh($)
   const blind = await $.ui.mount(sized(80, 24))
   expect(await blind.find({ text: 'Tokens — · Requests — · Tool calls — · Cache —' })).toBeDefined()
+  expect(await blind.find({ key: 'token-legend' })).toBeUndefined()
   expect(await blind.find({ text: 'no readable usage from 1 crewmate: pi logs not readable' })).toBeDefined()
   expect(await blind.find({ text: 'Activity history unavailable: no crewmate\'s logs are readable.' })).toBeDefined()
 })
@@ -481,7 +543,7 @@ test('many crewmates, long unicode names and long commands stay inside the pane 
       const buttons = (await ui.findAll({ type: 'Button' })).map(b => (b as Drawn).props?.hotkey).filter(h => /^\d$/.test(String(h)))
       expect(buttons).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9'])
       expect((await ui.findAll({ type: 'Box' })).filter(b => String((b as Drawn).key ?? (b as Drawn).props?.key ?? '').startsWith('row-')).length).toBe(12)
-      expect(await ui.find({ text: /^× blocked \[at=1\]: the review/ })).toBeDefined()
+      expect(await ui.find({ text: /^ {2}× blocked: the review/ })).toBeDefined()
       if (mode === 'details') await ui.press({ key: 'key-mode' })
       await ui.unmount()
     }
@@ -495,13 +557,25 @@ test('inline above the prompt the summary keeps zone order within eight rows, ac
   const tree = await mini.drawn() as Drawn
   const shown = lines(tree)
   expect((tree.children ?? []).filter(Boolean).length).toBe(8)
-  expect(shown[0]).toMatch(/^CREW · 9 live · \d active · ● LIVE updated 4s ago$/)
+  expect(shown[0]).toMatch(/^CREW · 9 live · \d active · 0 done · ● LIVE updated 4s ago$/)
   expect(shown[1]).toBe('Tok 2.10M · Req 27 · Tools 30 · Cache 92%')
   expect(shown[2]).toMatch(/^● crew-0 · ACTIVE 34s · claude sonnet\/medium$/)
   expect(shown).toContain('+6 more · dock /crew for details')
   expect(shown.slice(-2)).toEqual(['claude week: andang 32% · thanhnv —', 'codex week: 60305a97 29%'])
   await mini.unmount()
+  // Shown five rows (a 24-row terminal), the providers share one quota row and a crewmate gives way.
+  const tight = await $.ui.mount(sized(80, 5, { placement: 'inline' }))
+  const few = lines(await tight.drawn())
+  expect(few.length).toBe(5)
+  expect(few.slice(2)).toEqual(['● crew-0 · ACTIVE 34s · claude sonnet/medium', '+8 more · dock /crew for details', 'claude week: andang 32% · thanhnv — · codex week: 60305a97 29%'])
+  await tight.unmount()
+  // Never more rows than shown: with four and an error to say, the crew line gives way, not the error.
   world.fail = 'read unavailable'
+  await refresh($)
+  const four = await $.ui.mount(sized(80, 4, { placement: 'inline' }))
+  expect(lines(await four.drawn()).length).toBe(4)
+  expect(await four.find({ text: /read unavailable/ })).toBeDefined()
+  await four.unmount()
   await refresh($)
   const failed = await $.ui.mount(sized(80, 24, { placement: 'inline' }))
   const again = await failed.drawn() as Drawn
@@ -762,3 +836,44 @@ for (const theme of ['default', 'nord', 'catppuccin-latte']) {
     }
   })
 }
+
+test('details and previews write the home folder as ~ and never show the user name', async ($, on) => {
+  const home = '/home/anhtran'
+  const mine = member({
+    home: `${home}/.local/share/firstmate`, worktree: `${home}/wt/login`, description: `Fix ${home}/repo/login.ts`,
+    status: `working [at=1]: editing ${home}/wt/login/a.ts`, lastTool: `Read: ${home}/wt/login/a.ts`,
+    events: [{ at: NOW - 30_000, kind: 'tool', text: `Read: ${home}/.claude/projects/-home-anhtran--wt-login/x.jsonl` }],
+  })
+  stub(on, { report: { ...REPORT, crew: [mine] }, env: { HOME: home } })
+  await start($)
+  const ui = await $.ui.mount(sized(120, 40, { isFocused: true }))
+  await ui.press({ key: `card-${home}/.local/share/firstmate:fix-login` })
+  expect(await ui.find({ text: 'Fix ~/repo/login.ts' })).toBeDefined()
+  expect(await ui.find({ text: /^branch fm\/fix-login\nworktree ~\/wt\/login\nhome ~\/.local\/share\/firstmate\n/ })).toBeDefined()
+  expect(lines(await ui.drawn()).some(line => line.includes('anhtran'))).toBe(false)
+  await ui.unmount()
+})
+
+test('agent rows keep the status line unless the pane is short', async ($, on) => {
+  const crew = Array.from({ length: 5 }, (_, i) => member({ id: `crew-${i}`, status: i === 0 ? 'done [at=1]: shipped' : 'working [at=1]: tests' }))
+  stub(on, { report: { ...REPORT, crew } })
+  await start($)
+  const tall = await $.ui.mount(sized(120, 40))
+  expect(lines(await tall.drawn())).toContain('  ✓ shipped')
+  await tall.unmount()
+  const short = await $.ui.mount(sized(120, 20))
+  expect(lines(await short.drawn())).not.toContain('  ✓ shipped')
+  await short.unmount()
+})
+
+test('a narrow quota row keeps its stale mark before the reset time', async ($, on) => {
+  const stale = { ...REFERENCE.quota.readings, [CODEX]: reading({ provider: 'codex', account: 'codex-60305a97', scope: 'codex:10080m', plan: 'Plus', percent: 29, observedAt: NOW - 3_600_000, stale: true }) }
+  stub(on, { report: { ...REFERENCE, quota: { ...REFERENCE.quota, readings: stale } } })
+  await start($)
+  const wide = await $.ui.mount(sized(120, 40))
+  expect(await textAt(wide, `quota-line-${CODEX}`)).toBe('codex Plus      ▰▰▰▱▱▱▱▱▱▱▱▱   29%  ↻ 23h 59m  ◷ stale')
+  await wide.unmount()
+  const narrow = await $.ui.mount(sized(40, 40))
+  expect(await textAt(narrow, `quota-line-${CODEX}`)).toBe('codex Plus        29%  ◷ stale  ↻ 23h 5…')
+  await narrow.unmount()
+})

@@ -184,6 +184,10 @@ declare module 'claude-code' {
       logsOpen: boolean
       logFilter: LogFilter
       help: boolean
+      /** Quota & Limits shows each account's notes (`i`). */
+      quotaInfo: boolean
+      /** The log entry whose full text is shown, by its id; null for none. */
+      openLog: string | null
     }
   }
 }

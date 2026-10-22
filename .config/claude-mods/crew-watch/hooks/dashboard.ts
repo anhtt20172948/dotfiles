@@ -18,7 +18,7 @@ export const activityState = (lastAt: number, now: number): { mark: string; labe
 /** A terminal status remains authoritative while the worker awaits its supervisor. */
 export const crewState = (m: Pick<CrewMember, 'lastAt' | 'status'>, now: number) => {
   const status = /^\s*([a-z-]+)\b/i.exec(m.status)?.[1]?.toLowerCase()
-  if (status === 'done') return { mark: '✓', label: 'done · waiting for firstmate', color: 'merged' }
+  if (status === 'done') return { mark: '✓', label: 'done · waiting for firstmate', color: 'success' }
   if (status === 'blocked' || status === 'failed' || status === 'needs-decision') return { mark: '×', label: 'blocked', color: 'error' }
   if (status === 'paused' || status === 'waiting') return { mark: '◷', label: 'paused / waiting', color: 'permission' }
   const idle = activityState(m.lastAt, now)
