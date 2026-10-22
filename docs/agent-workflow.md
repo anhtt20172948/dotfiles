@@ -155,7 +155,7 @@ runs [`tests/run.sh`](../tests/run.sh):
 
 ```bash
 tests/run.sh lint   # shellcheck on the scripts that are clean
-tests/run.sh test   # headless Neovim tests and shell tests
+tests/run.sh test   # headless Neovim, shell and Python tests
 tests/run.sh        # both
 ```
 

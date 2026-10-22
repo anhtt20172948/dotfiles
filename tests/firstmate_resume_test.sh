@@ -58,9 +58,10 @@ use) ;;
 exec) shift; exec "$@" ;;
 esac
 ''')
+    # The args go first: run() returns once the "<agent>:<cwd>:" line shows up.
     for agent in ("claude", "codex"):
-        executable(agent, f'''printf '{agent}:%s:%s\\n' "$PWD" "$*" >> "$LOG"
-printf 'arg:%s\\n' "$@" >> "$LOG"
+        executable(agent, f'''printf 'arg:%s\\n' "$@" >> "$LOG"
+printf '{agent}:%s:%s\\n' "$PWD" "$*" >> "$LOG"
 [[ ${{1:-}} != debug ]] || {{ printf '{{"models":[]}}\\n'; exit 0; }}
 exit 0
 ''')

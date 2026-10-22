@@ -15,6 +15,11 @@ end
 
 Snacks = { rename = { on_rename_file = function() end } }
 
+local diagnostic_config_calls = 0
+vim.diagnostic.config = function()
+	diagnostic_config_calls = diagnostic_config_calls + 1
+end
+
 local function snapshot(value)
 	if type(value) == "function" then
 		return "<function>"
@@ -43,6 +48,16 @@ local config = assert(setup_calls[1], "neo-tree setup was not called")
 local defaults = config.default_component_configs or {}
 local icon = defaults.icon or {}
 local diagnostics = defaults.diagnostics or {}
+
+local directory_glyphs = vim.empty_dict()
+for _, dependency in ipairs(specs[2].dependencies) do
+	if type(dependency) == "table" and dependency[1] == "echasnovski/mini.icons" then
+		for name, entry in pairs(dependency.opts.directory) do
+			directory_glyphs[name] = entry.glyph
+		end
+	end
+end
+
 print(vim.json.encode({
 	setup_count = #setup_calls,
 	sentinel = config.sentinel,
@@ -56,4 +71,6 @@ print(vim.json.encode({
 	folder_empty = icon.folder_empty,
 	folder_empty_open = icon.folder_empty_open,
 	diagnostics = diagnostics.symbols,
+	diagnostic_config_calls = diagnostic_config_calls,
+	directory_glyphs = directory_glyphs,
 }))
