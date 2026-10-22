@@ -1,4 +1,4 @@
-import type { CrewEvent, CrewMember, CrewTotals, MemberQuota, QuotaProvider, QuotaShare, ToolTokens } from '../types'
+import type { CrewEvent, CrewMember, CrewTotals, MemberQuota, QuotaFigure, QuotaReading, ToolTokens } from '../types'
 import { crewState } from './dashboard'
 
 /** 1234 -> 1.2k, 1234567 -> 1.23M. */
@@ -81,7 +81,7 @@ export const cacheText = (u: CrewTotals, width = 8): string => {
   return `cache ${gauge(Number.parseFloat(hit), width)} ${hit} · r ${tokens(u.cacheRead)} w ${tokens(u.cacheWrite)}`
 }
 
-const percentText = (n: number): string => n > 0 && n < 0.1 ? '<0.1%' : `${n < 10 ? n.toFixed(1) : Math.round(n)}%`
+const percentText = (n: number): string => n <= 0 ? '0%' : n < 0.1 ? '<0.1%' : `${n < 10 ? n.toFixed(1) : Math.round(n)}%`
 
 /** Tokens charged to a tool call: its request's output share and the input its result added (~ estimated). */
 export const callTokensText = (e: Pick<CrewEvent, 'outTokens' | 'inTokens' | 'estimated'>): string =>
@@ -103,44 +103,82 @@ export const toolTokenNote = (m: Pick<CrewMember, 'toolCalls' | 'toolTokens'>): 
   return rows.some(tt => tt.estCalls > 0) ? '~ estimated from result size: no later request measured it' : ''
 }
 
-/** How the account is signed in when no plan label is recorded; says what is missing instead of "unknown". */
-const planRows = (name: string, info: QuotaProvider | undefined): { text: string; tone: string }[] => {
-  if (info?.plan) return [{ text: `${name} ${info.plan}`, tone: 'subtle' }]
-  switch (info?.login) {
-    case 'token': return [{ text: `${name} token login`, tone: 'subtle' }, { text: 'plan not exposed by token login', tone: 'subtle' }]
-    case 'api-key': return [{ text: `${name} API key`, tone: 'subtle' }, { text: 'billed by usage: no plan', tone: 'subtle' }]
-    case 'rollout': return [{ text: `${name} plan not in rollout`, tone: 'subtle' }]
-    default: return [{ text: `${name} plan not recorded locally`, tone: 'subtle' }]
-  }
+/** A share of local usage: a measured fraction, so one decimal under 10%. */
+const shareText = (fraction: number): string => percentText(fraction * 100)
+
+/** The vendor's own number at its own time, as given (one decimal at most). */
+export const measuredText = (n: number): string => `${Number(n.toFixed(1))}%`
+
+/** An estimate never carries a decimal: it is rounded, and under a point it says so. */
+export const estimateText = (n: number): string => n <= 0 ? '0%' : n < 1 ? '<1%' : `~${Math.min(100, Math.round(n))}%`
+
+const SOURCES: Record<string, string> = {
+  session: 'this session',
+  history: 'reading history',
+  'account cache': 'ai-acct cache',
+  'codex log': 'codex log',
 }
 
-const shareText = (s: QuotaShare): string =>
-  s.percent !== null ? `${percentText(s.percent)} of week` : s.share !== null ? `${percentText(s.share * 100)} of local` : '-'
+const HEAD_CELLS = 32
 
-/** Where the weekly percent came from and how old it is; stale past half an hour or when its age is unknown. */
-export const readingText = (info: Pick<QuotaProvider, 'source' | 'readAt'>, now: number): string =>
-  `read ${info.readAt ? `${ago(now - info.readAt)} ago` : 'time unknown'} · ${info.source}`
+/** `acct` is the ai-acct name, `codex-1a2b3c4d` a hashed Codex creator, `unknown` a session of no known account. */
+export const accountText = (r: Pick<QuotaReading, 'provider' | 'account' | 'plan' | 'login'>): string => {
+  if (r.account === 'unknown') return `${r.provider} account unknown`
+  const how = r.plan || (r.login === 'token' ? 'token login' : r.login === 'api-key' ? 'API key' : '')
+  const tail = how ? ` · ${how}` : ''
+  // A long account name gives way to the plan: the row must fit a collapsed card.
+  return `${r.provider} ${clip(r.account.replace(/^codex-/, ''), Math.max(6, HEAD_CELLS - r.provider.length - 1 - Array.from(tail).length))}${tail}`
+}
+
+/** How old a measured reading is, or that it is not known; past half an hour or unknown it is stale. */
+const ageText = (r: Pick<QuotaReading, 'observedAt' | 'stale'>, now: number): string =>
+  r.observedAt === null ? 'stale, age unknown' : `${r.stale ? 'stale' : 'measured'} ${ago(now - r.observedAt)} ago`
+
+/** Whole weighted tokens as a compact count: the unit is price-weighted, so it carries a label. */
+const wtokText = (n: number): string => `${tokens(Math.round(n))} wtok`
+
+const figureRow = (label: string, f: QuotaFigure): { text: string; tone: string } => {
+  if (f.percent === null) return { text: `${label} ${f.share === null ? '-' : `${shareText(f.share)} of local`}`, tone: 'text' }
+  return { text: `${label} ${estimateText(f.percent)} ${f.basis === 'estimated' ? 'of week est' : 'as of reading'}`, tone: 'text' }
+}
 
 /**
- * The plan and weekly-limit lines for one crewmate or the whole fleet. Each
- * stays within 32 cells, a collapsed card's narrowest row, so no figure is cut.
+ * The account, reading and quota lines of one crewmate or the whole fleet, one block per account it
+ * used. Each row stays within 32 cells, a collapsed card's narrowest row, so no figure is cut. A
+ * figure says whether it is measured (the vendor's percent at a time), estimated (that plus local
+ * tokens since, at an uncalibrated rate) or only a raw share of local usage; a reading older than
+ * half an hour, or of unknown age, is stale and never called current.
  */
-export const quotaRows = (quota: Record<string, MemberQuota>, providers: Record<string, QuotaProvider>, now: number): { text: string; tone: string }[] =>
-  Object.entries(quota).flatMap(([name, q]) => {
-    const info = providers[name]
-    const head = planRows(name, info)
-    if (!info) return head
-    if (!info.indexed) return [...head, { text: 'indexing local logs…', tone: 'subtle' }]
-    const shares = [{ text: `session ${shareText(q.session)}`, tone: 'text' }, { text: `tools direct ${shareText(q.tools)}`, tone: 'text' }]
-    return info.percentUsed === null
-      ? [...head, ...shares, { text: info.reset ? 'week % unknown: window reset' : 'week % unknown', tone: 'warning' }]
-      : [
-          ...head,
-          { text: `week ${percentText(info.percentUsed)} used · ${info.stale ? 'stale' : 'current'}`, tone: info.stale ? 'warning' : 'subtle' },
-          { text: readingText(info, now), tone: 'subtle' },
-          ...shares,
-        ]
+export const quotaRows = (
+  quota: Record<string, MemberQuota>,
+  readings: Record<string, QuotaReading>,
+  now: number,
+  fleet = false,
+): { text: string; tone: string }[] =>
+  Object.entries(quota).flatMap(([key, q]) => {
+    const r = readings[key]
+    if (!r) return []
+    const head = { text: accountText(r), tone: 'subtle' }
+    const shares = [figureRow('session', q.session), figureRow('tools direct', q.tools)]
+    if (!r.indexed) return [head, { text: 'indexing local logs…', tone: 'subtle' }]
+    if (r.percent === null) {
+      const why = r.reset ? 'week % unknown: window reset' : r.accountKnown ? 'week % unknown: no reading' : 'week %: account unknown'
+      return [head, ...shares, { text: why, tone: 'warning' }]
+    }
+    const measured = [
+      { text: `week ${measuredText(r.percent)} ${ageText(r, now)}`, tone: r.stale ? 'warning' : 'subtle' },
+      { text: `source ${SOURCES[r.source] ?? r.source}`, tone: 'subtle' },
+    ]
+    const account = !fleet ? [] : [
+      ...(r.forecast !== null ? [{ text: `account now est ${estimateText(r.forecast)}`, tone: 'text' }] : []),
+      ...(r.sinceCost !== null ? [{ text: `local since ${wtokText(r.sinceCost)}`, tone: 'subtle' }] : []),
+    ]
+    const since = q.session.basis === 'settled' && q.session.since ? [{ text: `session since ${wtokText(q.session.since)}`, tone: 'subtle' }] : []
+    const sure = [q.session, q.tools].some(f => f.basis !== 'raw')
+      ? [{ text: `${r.confidence.label} · ${r.confidence.samples} sample${r.confidence.samples === 1 ? '' : 's'}`, tone: r.confidence.label === 'low' ? 'warning' : 'subtle' }]
+      : []
+    return [head, ...measured, ...account, ...shares, ...since, ...sure]
   })
 
-export const QUOTA_NOTE = 'local logs only: other machines and the web are not seen, so with a current reading shares are upper bounds; a stale one can understate them'
+export const QUOTA_NOTE = 'measured is the vendor percent at its own time; est adds the local tokens since, at a rate not yet fitted to your usage (uncalibrated). Other machines, the web and sessions that never ran this mod are not tied to an account, so a figure is neither exact nor an upper bound; a stale reading shows only the local tokens since it'
 export const TOOLS_DIRECT_NOTE = 'tools direct: call output and the first read of its result; later cache re-reads count to the session only'

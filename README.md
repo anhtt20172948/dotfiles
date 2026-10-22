@@ -221,37 +221,95 @@ guessing. This is a call's direct cost: every later request re-reads its result
 from the prompt cache, and those re-reads count to the session, never to the
 call.
 
-Weekly quota share. Vendors do not publish weekly caps in tokens, so none is
-hard-coded. The estimate is `window % used x weighted tokens of the crewmate
-(or the direct cost of its tool calls) since the window started / weighted
-tokens of every local session of that provider since then`, scanning
-`~/.claude/projects` and `~/.codex/sessions`. A resumed or forked Claude
-session copies earlier messages into a new transcript, so each message id
-counts once, in the first transcript parsed that logged it. Tokens are
-weighted by relative price per type and model family (a cache read costs a
-tenth of an input token, a cache write a quarter more or, kept for an hour,
-twice as much, an output token several times more; the table is
-`PRICE_RATIO`/`FAMILY_PRICE` in `crew_usage.py`). The percent and reset time
-come from local sources only, the freshest reading still in force first: the
-rate limits of the pane session's last API response (`$.session.usage()`),
-dated by the newest response in that session's own transcript, Claude Code's
-cached usage in `~/.claude.json`, and the rate-limit events in Codex rollouts.
-The plan comes from Claude's local auth metadata (rate-limit tier or
-subscription type) and from the plan type in Codex rollouts. A named account
-selected with `ai-acct` signs in with `CLAUDE_CODE_OAUTH_TOKEN`, which leaves
-no credentials file or account record, so there is no plan to read: the card
-says `claude token login` and `plan not exposed by token login` rather than
-guessing. Each card shows
-the plan, the weekly percent marked `current` or `stale` (more than 30 minutes
-old, or of unknown age), where and how long ago it was read, the session's
-share of the week and the tool calls' direct share (`tools direct`), each on
-its own row; the fleet box shows the total. A reading whose window has reset is
-ignored; with no weekly reading the card shows the raw share of local usage
-and says the weekly percent is unknown. Usage from other machines or the web
-is not seen locally, so with a current reading the share is an upper bound for
-local work; a stale reading can understate it. Each refresh stops indexing ten
-seconds after it starts; the first indexes the last week of local logs over
-several refreshes and shows "indexing local logs" until it finishes.
+Weekly quota. Vendors do not publish weekly caps in tokens, so none is
+hard-coded, and the dashboard says for each figure what it is. Everything is
+keyed by provider, account and limit scope (Claude `seven_day`; Codex the window
+of at least 7200 minutes of its own `codex` limit), and a vendor percent is only
+ever compared with the local usage of the same account.
+
+- **Accounts.** A Claude session is tied to its `ai-acct` account without
+  opening any token file: the pane's `AI_ACCT_FINGERPRINT` is matched against
+  the fingerprints `agent-statusline-claude` stores in
+  `~/.cache/ai-acct/claude-<name>.limits.json`, and only the account *name* is
+  kept. Each session writes `session id -> name` into
+  `~/.cache/crew-watch/accounts.json`, which is how another session's
+  transcripts find their account. A Codex rollout is told apart by a short hash
+  of its creator account id (the id is never stored). A session of no known
+  account is `unknown`: it shows only its raw share of the local usage and never
+  a percent. Another account's usage is never multiplied by this account's
+  percent. Only sessions that ran this mod are tied to an account, so an
+  account's local usage is a lower bound of its real usage and its share of
+  local usage a partial one.
+- **Measured vs estimated.** The vendor percent is an anchor `P(t0)` dated by
+  the response that carried it: the pane session's last response
+  (`$.session.usage()`, dated by the newest response in its own transcript), the
+  reading history below (so a pane also shows another account's latest reading
+  with its true age), `ai-acct`'s stored window (of unknown age, so always
+  stale) and Codex rollout rate-limit events. The card shows `week 26% measured
+  4m ago` and `source ...` separately from the estimate `session ~2% of week
+  est`, which is the anchor plus the weighted tokens spent since it
+  (`P(t0) + slope x tokens`) while the period has not reset. Tokens are weighted
+  by relative price per type and model family (`PRICE_RATIO`/`FAMILY_PRICE` in
+  `crew_usage.py`), and the slope is that period's own average up to the anchor:
+  an explicitly uncalibrated prior, never a fitted weight. A new reading
+  re-anchors and records how far the forecast missed it.
+- **Settled intervals.** A crewmate's share sums settled intervals: each rise
+  of the vendor percent is split by the crewmate's share of the account's usage
+  inside that interval alone, so spending after the reading cannot make an
+  earlier share shrink. Usage is kept per request, and the task start and the
+  window start cut at each request's own time, so an old transcript that was
+  resumed and edited recently counts only what the task did, and nothing from
+  before the window.
+- **Stale readings.** A reading older than 30 minutes, or of unknown age, is
+  stale: it keeps its timestamp (`stale 3h ago`), is never called current or an
+  upper bound, and shows only what was settled plus the raw local delta since
+  (`session since 120k wtok`; `wtok` is price-weighted tokens), with no
+  extrapolation, unless the confidence below is `calibrated` and the reading is
+  under two hours old (the horizon that calibration measured). A reading whose
+  window has reset is dropped as an anchor.
+- **Confidence.** Each estimate carries `uncalibrated`, `low` or `calibrated`
+  and the number of samples behind it. A sample is a recorded residual of a
+  forecast 10 minutes to 2 hours old against a vendor reading that rose by at
+  least a point; `calibrated` needs ten of them with the 90th percentile error
+  within half the rise. It never means fitted weights. Estimates are shown
+  rounded (`~2%`, `<1%`), because a one-point vendor step and an unfitted rate
+  cannot support a decimal. The Codex aggregate error measured in the audit was
+  about 4 points on 20 samples, so no per-crewmate precision is claimed.
+
+The plan comes from Claude's local auth metadata and the Codex plan type. A
+named `ai-acct` account signs in with `CLAUDE_CODE_OAUTH_TOKEN`, which leaves no
+credentials file, so it carries only the account name and `token login`. Usage
+from other machines or the web is not seen, so a figure is neither exact nor an
+upper bound. The first refresh indexes the last week of local logs over several
+refreshes (each stops after ten seconds) and shows "indexing local logs" until
+it finishes. Claude Code's cached `/usage` is no longer a source: it cannot be
+tied to an account.
+
+#### Reading history
+
+Every genuinely new observation is appended as one JSON line to
+`${XDG_STATE_HOME:-~/.local/state}/crew-watch/readings.jsonl` (directory mode
+700, file mode 600), outside the repository: schema version, provider, account
+key, source, `observedAt` (the response's time, `null` when unknown, never faked
+as now), `receivedAt`, an anonymous session key, kind and scope, the raw
+percent, `resetsAt`, duration, the plan label and, once a reading met an older
+one, the forecast's `residual`. A repeated callback of the same response is not
+a new observation; the same percent in a later response is. A reading of
+unknown time counts once per session. No token, OAuth value, fingerprint, prompt
+or tool result is written, and an account of unknown identity is not recorded.
+Sessions take a lock and append atomically, so several can run together. The
+file is bounded: every observation is kept for two days, older ones only where
+the percent moved, and anything older than five weekly periods is dropped (a
+rewrite starts past 2 MiB and thins until about 1 MiB). To delete it:
+
+```sh
+rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/crew-watch"
+```
+
+The dashboard then starts from the live readings again, with no calibration
+evidence. `~/.cache/crew-watch/accounts.json` is a cache of session account
+names and can be deleted too: sessions of that account show as `unknown` until
+they run the mod again.
 
 Its three options in `/config` are `homes` (Firstmate homes, comma-separated;
 empty defaults to the session's working directory), `intervalSeconds`

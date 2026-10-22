@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { CrewMember, CrewReport } from '../types'
+import { accountFromLimits } from './account'
 import { QUOTA_NOTE, TOOLS_DIRECT_NOTE, ago, cacheHit, cacheText, callTokensText, clip, clockText, contextText, dispatchText, effortText, gauge, modelsText, quotaRows, statusLine, tokens, toolTokenNote, toolTokenText, toolTokenTotal, totalTokens } from './format'
 import { DEFAULT_THEME, isNoColorSet, isThemeName, isTruecolorTerm, themePainter } from './theme'
 import type { Paint } from './theme'
@@ -12,6 +13,7 @@ type Dollar = EngineInterface
 const PANE = 'crew-watch'
 const TITLE = 'Crew'
 const POLL_TIMEOUT_MS = 20_000
+const ACCOUNT_CACHE_MS = 60_000
 
 const reportAtom = atom({ plugin: 'crew-watch', key: 'report' } as const, null)
 const errorAtom = atom({ plugin: 'crew-watch', key: 'error' } as const, '')
@@ -26,6 +28,7 @@ const HELP = [
 let intervalMs = 5000
 let configuredHomes: string[] = []
 let inFlight: Promise<void> | null = null
+let accountCache: { at: number; fingerprint: string; name: string } | null = null
 let themeName: string = DEFAULT_THEME
 let paint: Paint = themePainter(DEFAULT_THEME, { isNoColor: false, isTruecolor: true })
 
@@ -64,6 +67,29 @@ async function claudeLogin($: Dollar): Promise<string> {
   return (await $.env.get('ANTHROPIC_API_KEY')) ? 'api-key' : ''
 }
 
+/**
+ * The ai-acct account this session runs as: its AI_ACCT_FINGERPRINT (a one-way hash, never the token)
+ * matched against the fingerprints beside each account's stored limits. Only the name is passed on.
+ * Empty when the session has no fingerprint or no account matches; then its quota stays "unknown".
+ */
+async function claudeAccount($: Dollar): Promise<string> {
+  try {
+    const fingerprint = await $.env.get('AI_ACCT_FINGERPRINT')
+    if (!fingerprint) return ''
+    const now = await $.clock.now()
+    if (accountCache !== null && now - accountCache.at < ACCOUNT_CACHE_MS && accountCache.fingerprint === fingerprint) return accountCache.name
+    const base = (await $.env.get('XDG_CACHE_HOME')) || `${(await $.env.get('HOME')) ?? ''}/.cache`
+    const dir = `${base}/ai-acct`
+    const names = (await $.fs.list(dir)).map(entry => entry.name).filter(name => name.endsWith('.limits.json'))
+    const files = await Promise.all(names.map(async name => ({ name, text: String(await $.fs.read(`${dir}/${name}`)) })))
+    const name = accountFromLimits(fingerprint, files) ?? ''
+    accountCache = { at: now, fingerprint, name }
+    return name
+  } catch {
+    return ''
+  }
+}
+
 async function readCrew($: Dollar): Promise<void> {
   try {
     const homes = configuredHomes.length > 0 ? configuredHomes : [await $.session.root()]
@@ -77,6 +103,8 @@ async function readCrew($: Dollar): Promise<void> {
       await $.session.id(),
       '--claude-login',
       await claudeLogin($),
+      '--claude-account',
+      await claudeAccount($),
       ...homes.flatMap(home => ['--home', home]),
     ]
     const run = await $.process.run(argv, { timeoutMs: POLL_TIMEOUT_MS })
@@ -147,7 +175,7 @@ export const register: Register = (on, options) => {
     const W = Math.max(1, e.props.bodyColumns)
     const crew = report?.crew ?? []
     const now = report?.generatedAt ?? 0
-    const providers = report?.quota.providers ?? {}
+    const readings = report?.quota.readings ?? {}
     const layout = dashboardLayout(W, e.props.placement, crew.length)
     const active = crew.filter(m => ['working', 'active'].includes(crewState(m, now).label)).length
     const row = (text: string, color = 'text', width = W) => <Text color={c(color)} wrap="truncate">{clip(text, width)}</Text>
@@ -204,7 +232,7 @@ export const register: Register = (on, options) => {
           {line(`read ${tokens(m.cacheRead)} · write ${tokens(m.cacheWrite)}`, 'subtle')}
           {line(`tools ${m.toolCalls} · ${tokens(spent)} tok`)}
           {top.map(([name, count]) => line(`${clip(name, Math.max(4, inner - 22))} ${gauge(count * 100 / maximum, 5)} ${count} ${tokens(toolTokenTotal(m.toolTokens[name]))}`, color))}
-          {quotaRows(m.quota, providers, now).map(r => line(r.text, r.tone))}
+          {quotaRows(m.quota, readings, now).map(r => line(r.text, r.tone))}
           {!m.readable ? line(`usage is not readable for the ${m.harness} harness`, 'subtle') : m.sessions === 0 ? line('no transcript found for its worktree yet', 'subtle') : null}
           {m.lastTool ? line(`▸ ${m.lastTool}`, 'subtle') : null}
           {m.lastText ? line(`“${m.lastText}”`, 'subtle') : null}
@@ -256,7 +284,7 @@ export const register: Register = (on, options) => {
           {report ? row(`in ${tokens(report.totals.input)} · out ${tokens(report.totals.output)} · thinking ${tokens(report.totals.reasoning)}`, 'subtle', inner) : null}
           {report ? row(`cache ${gauge(Number.parseFloat(cacheHit(report.totals)))} ${cacheHit(report.totals)}`, 'permission', inner) : null}
           {report ? row(`read ${tokens(report.totals.cacheRead)} · write ${tokens(report.totals.cacheWrite)}`, 'subtle', inner) : null}
-          {report ? quotaRows(report.quota.fleet, providers, now).map(r => row(r.text, r.tone, inner)) : null}
+          {report ? quotaRows(report.quota.fleet, readings, now, true).map(r => row(r.text, r.tone, inner)) : null}
           {report && Object.keys(report.quota.fleet).length > 0 ? <Text color={c('subtle')} wrap="wrap">{QUOTA_NOTE}</Text> : null}
           {report && Object.keys(report.quota.fleet).length > 0 ? <Text color={c('subtle')} wrap="wrap">{TOOLS_DIRECT_NOTE}</Text> : null}
           {models.map(([model, count]) => row(`${model} ×${count}`, 'suggestion', inner))}
