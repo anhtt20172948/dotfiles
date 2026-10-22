@@ -3,12 +3,24 @@ import type { Engine } from 'claude-code/testing'
 
 import type { On } from 'claude-code'
 
-import type { CrewMember, CrewReport } from '../types'
+import type { CrewMember, CrewReport, QuotaFigure, QuotaReading } from '../types'
 import { dashboardLayout } from '../hooks/dashboard'
 import { PALETTES } from '../hooks/theme'
-import { callTokensText, quotaRows, toolTokenNote, toolTokenText } from '../hooks/format'
+import { accountFromLimits } from '../hooks/account'
+import { callTokensText, estimateText, quotaRows, toolTokenNote, toolTokenText } from '../hooks/format'
 
 const NOW = 1_800_000_000_000
+
+const KEY = 'claude|andang|seven_day'
+
+const figure = (over: Partial<QuotaFigure> = {}): QuotaFigure => ({ share: 0.2, percent: 7.4, settled: 7, open: 0.4, since: null, basis: 'estimated', ...over })
+
+const reading = (over: Partial<QuotaReading> = {}): QuotaReading => ({
+  provider: 'claude', account: 'andang', accountKnown: true, scope: 'seven_day', plan: 'Max 5x', login: 'token', percent: 37,
+  observedAt: NOW - 120_000, source: 'session', resetsAt: NOW + 86_400_000, windowMs: 7 * 86_400_000, windowStart: NOW - 5 * 86_400_000,
+  windowStartKnown: true, stale: false, reset: false, indexed: true, localCost: 1e6, sinceCost: 20_000, forecast: 38.4,
+  confidence: { label: 'uncalibrated', samples: 0 }, ...over,
+})
 
 const member = (over: Partial<CrewMember>): CrewMember => ({
   id: 'fix-login',
@@ -47,7 +59,7 @@ const member = (over: Partial<CrewMember>): CrewMember => ({
     Edit: { calls: 8, output: 3_000, input: 1_600, estimated: 400, estCalls: 1 },
   },
   quota: {
-    claude: { session: { share: 0.2, percent: 7.4 }, tools: { share: 0.08, percent: 2.96 } },
+    [KEY]: { session: figure(), tools: figure({ share: 0.08, percent: 2.96, settled: 2.9, open: 0.06 }) },
   },
   topTools: [
     { name: 'Bash', count: 20 },
@@ -67,10 +79,8 @@ const REPORT: CrewReport = {
   ],
   totals: { requests: 12, input: 120, output: 15_400, cacheRead: 1_900_000, cacheWrite: 98_000, reasoning: 4_000, toolCalls: 31 },
   quota: {
-    providers: {
-      claude: { plan: 'Max 5x', login: 'account', percentUsed: 37, resetsAt: NOW + 86_400_000, windowStart: NOW - 5 * 86_400_000, windowStartKnown: true, source: 'this session', readAt: NOW - 120_000, stale: false, reset: false, indexed: true, localCost: 1e6 },
-    },
-    fleet: { claude: { session: { share: 0.2, percent: 7.4 }, tools: { share: 0.08, percent: 2.96 } } },
+    readings: { [KEY]: reading() },
+    fleet: { [KEY]: { session: figure(), tools: figure({ share: 0.08, percent: 2.96, settled: 2.9, open: 0.06 }) } },
   },
   errors: [],
 }
@@ -120,14 +130,16 @@ test('the pane shows each crewmate\'s models, tokens, cache and tools, on every 
     expect((await ui.find({ type: 'Text', text: /cache ▰/ }))?.text).toContain('95%')
     expect(await ui.find({ text: /tools 31 · 47k tok/ })).toBeDefined()
     expect(await ui.find({ text: /Bash ▰.* 20 42k/ })).toBeDefined()
-    expect(await ui.find({ text: 'claude Max 5x' })).toBeDefined()
-    expect(await ui.find({ text: 'week 37% used · current' })).toBeDefined()
-    expect(await ui.find({ text: 'read 2m ago · this session' })).toBeDefined()
-    expect(await ui.find({ text: 'session 7.4% of week' })).toBeDefined()
-    expect(await ui.find({ text: 'tools direct 3.0% of week' })).toBeDefined()
-    expect(await ui.find({ text: /with a current reading shares are upper bounds/ })).toBeDefined()
+    expect(await ui.find({ text: 'claude andang · Max 5x' })).toBeDefined()
+    expect(await ui.find({ text: 'week 37% measured 2m ago' })).toBeDefined()
+    expect(await ui.find({ text: 'source this session' })).toBeDefined()
+    expect(await ui.find({ text: 'session ~7% of week est' })).toBeDefined()
+    expect(await ui.find({ text: 'tools direct ~3% of week est' })).toBeDefined()
+    expect(await ui.find({ text: 'uncalibrated · 0 samples' })).toBeDefined()
+    expect(await ui.find({ text: 'account now est ~38%' })).toBeDefined()
+    expect(await ui.find({ text: /neither exact nor an upper bound/ })).toBeDefined()
     expect(await ui.find({ text: /later cache re-reads count to the session only/ })).toBeDefined()
-    expect(await ui.find({ text: /other machines and the web are not seen/ })).toBeDefined()
+    expect(await ui.find({ text: /Other machines, the web and sessions that never ran this mod/ })).toBeDefined()
     expect(await ui.find({ text: /Bash ▰/ })).toBeDefined()
     expect((await ui.find({ type: 'Text', text: /npm test/ }))?.text).toContain('▸')
     expect((await ui.find({ type: 'Text', text: /not readable for the pi harness/ }))).toBeTruthy()
@@ -256,7 +268,7 @@ test('collapsed cards at 80 to 120 columns show the session and tools-direct sha
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
   // Card figures differ from the fleet box's, so a find can only match a card row, and only unclipped.
-  const quota = { claude: { session: { share: 0.1, percent: 4.4 }, tools: { share: 0.02, percent: 0.9 } } }
+  const quota = { [KEY]: { session: figure({ share: 0.1, percent: 4.4 }), tools: figure({ share: 0.02, percent: 0.9 }) } }
   let report = REPORT
   on('env.get', () => ({ value: undefined }))
   on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(report), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
@@ -266,7 +278,7 @@ test('collapsed cards at 80 to 120 columns show the session and tools-direct sha
     await $.command.run({ command: 'crew', args: 'refresh', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } })
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns: columns } })
     expect(dashboardLayout(columns, 'dock', size).mode).toBe('cards')
-    for (const text of ['session 4.4% of week', 'tools direct 0.9% of week', 'read 2m ago · this session', 'week 37% used · current']) {
+    for (const text of ['session ~4% of week est', 'tools direct <1% of week est', 'source this session', 'week 37% measured 2m ago']) {
       expect(await ui.find({ text })).toBeDefined()
     }
     await ui.unmount()
@@ -279,35 +291,120 @@ test('token and quota text states what is unknown instead of inventing numbers',
   expect(toolTokenText(undefined)).toBe('tok n/a')
   expect(toolTokenNote({ toolCalls: 3, toolTokens: {} })).toBe('per-call tokens unavailable: the transcript has no usage fields')
   expect(toolTokenNote({ toolCalls: 0, toolTokens: {} })).toBe('')
-  const share = { session: { share: 0.31, percent: null }, tools: { share: 0.004, percent: null } }
-  const provider = { plan: '', login: '', percentUsed: null, resetsAt: null, windowStart: 0, windowStartKnown: false, source: '', readAt: null, stale: false, reset: true, indexed: true, localCost: 5 }
-  expect(quotaRows({ codex: share }, { codex: provider }, NOW).map(r => r.text)).toEqual([
-    'codex plan not recorded locally',
+  const raw = figure({ share: 0.31, percent: null, settled: null, open: null, basis: 'raw' })
+  const rawTools = figure({ share: 0.004, percent: null, settled: null, open: null, basis: 'raw' })
+  const share = { session: raw, tools: rawTools }
+  const codexKey = 'codex|codex-1a2b3c4d|codex:10080m'
+  const codex = reading({ provider: 'codex', account: 'codex-1a2b3c4d', scope: 'codex:10080m', plan: '', login: 'rollout', percent: null, observedAt: null, source: '', reset: true, forecast: null, sinceCost: null })
+  // No reading: only the raw share of local usage, and why there is no percent.
+  expect(quotaRows({ [codexKey]: share }, { [codexKey]: codex }, NOW).map(r => r.text)).toEqual([
+    'codex 1a2b3c4d',
     'session 31% of local',
     'tools direct 0.4% of local',
     'week % unknown: window reset',
   ])
-  expect(quotaRows({ codex: share }, { codex: { ...provider, indexed: false } }, NOW).map(r => r.text)).toEqual(['codex plan not recorded locally', 'indexing local logs…'])
-  const old = { ...provider, plan: 'Max 20x · Team', percentUsed: 10, source: 'usage cache', readAt: NOW - 4 * 86_400_000, stale: true, reset: false }
-  const measured = { session: { share: 0.31, percent: 3.1 }, tools: { share: 0.004, percent: 0.04 } }
-  expect(quotaRows({ claude: measured }, { claude: old }, NOW)).toEqual([
-    { text: 'claude Max 20x · Team', tone: 'subtle' },
-    { text: 'week 10% used · stale', tone: 'warning' },
-    { text: 'read 4d ago · usage cache', tone: 'subtle' },
-    { text: 'session 3.1% of week', tone: 'text' },
-    { text: 'tools direct <0.1% of week', tone: 'text' },
+  expect(quotaRows({ [codexKey]: share }, { [codexKey]: { ...codex, reset: false } }, NOW).at(-1)?.text).toBe('week % unknown: no reading')
+  expect(quotaRows({ [codexKey]: share }, { [codexKey]: { ...codex, indexed: false } }, NOW).map(r => r.text)).toEqual(['codex 1a2b3c4d', 'indexing local logs…'])
+  // An account nobody could be tied to never carries a percent: raw share only, and it says so.
+  const unknownKey = 'claude|unknown|seven_day'
+  const unknown = reading({ account: 'unknown', accountKnown: false, plan: '', login: 'token', percent: null, observedAt: null, source: '', forecast: null, sinceCost: null })
+  expect(quotaRows({ [unknownKey]: share }, { [unknownKey]: unknown }, NOW).map(r => r.text)).toEqual([
+    'claude account unknown',
+    'session 31% of local',
+    'tools direct 0.4% of local',
+    'week %: account unknown',
   ])
-  // A token login (ai-acct) records no plan: say so, within a collapsed card's 32 cells.
-  const token = quotaRows({ claude: share }, { claude: { ...provider, login: 'token', indexed: false } }, NOW).map(r => r.text)
-  expect(token).toEqual(['claude token login', 'plan not exposed by token login', 'indexing local logs…'])
-  expect(quotaRows({ codex: share }, { codex: { ...provider, login: 'rollout', indexed: false } }, NOW)[0]?.text).toBe('codex plan not in rollout')
-  expect(quotaRows({ claude: share }, { claude: { ...provider, login: 'api-key', indexed: false } }, NOW)[0]?.text).toBe('claude API key')
-  const undated = quotaRows({ claude: measured }, { claude: { ...old, readAt: null } }, NOW)
-  expect(undated[2]?.text).toBe('read time unknown · usage cache')
+  // A stale reading keeps its time, is never "measured now" and shows the raw delta, not an extrapolation.
+  const old = reading({ plan: 'Max 20x · Team', percent: 10, source: 'history', observedAt: NOW - 4 * 86_400_000, stale: true, forecast: null, sinceCost: 5_000 })
+  const settled = { session: figure({ percent: 3.1, settled: 3.1, open: null, since: 120_000, basis: 'settled' }), tools: figure({ percent: 0.04, settled: 0.04, open: null, basis: 'settled' }) }
+  expect(quotaRows({ [KEY]: settled }, { [KEY]: old }, NOW)).toEqual([
+    { text: 'claude andang · Max 20x · Team', tone: 'subtle' },
+    { text: 'week 10% stale 4d ago', tone: 'warning' },
+    { text: 'source reading history', tone: 'subtle' },
+    { text: 'session ~3% as of reading', tone: 'text' },
+    { text: 'tools direct <1% as of reading', tone: 'text' },
+    { text: 'session since 120k wtok', tone: 'subtle' },
+    { text: 'uncalibrated · 0 samples', tone: 'subtle' },
+  ])
+  expect(quotaRows({ [KEY]: settled }, { [KEY]: { ...old, observedAt: null } }, NOW)[1]?.text).toBe('week 10% stale, age unknown')
+  // Half an hour is the limit: just inside is measured, the account line only appears in the fleet box.
+  const fresh = quotaRows({ [KEY]: { session: figure(), tools: figure() } }, { [KEY]: reading({ confidence: { label: 'low', samples: 1 } }) }, NOW, true).map(r => r.text)
+  expect(fresh).toContain('account now est ~38%')
+  expect(fresh).toContain('local since 20k wtok')
+  expect(fresh).toContain('low · 1 sample')
+  expect(quotaRows({ [KEY]: { session: figure(), tools: figure() } }, { [KEY]: reading() }, NOW).map(r => r.text)).not.toContain('account now est ~38%')
+  // Estimates carry no decimal and never read as exact.
+  expect([0, 0.4, 1.4, 99.6, 140].map(estimateText)).toEqual(['0%', '<1%', '~1%', '~100%', '~100%'])
+  expect(quotaRows({}, {}, NOW)).toEqual([])
+  expect(quotaRows({ missing: share }, {}, NOW)).toEqual([])
   // A collapsed card's narrowest row is 32 cells: no quota row may be cut there.
-  const rows = [...undated, ...quotaRows({ claude: measured }, { claude: { ...old, source: 'this session', readAt: NOW - 86_340_000 } }, NOW),
-    ...quotaRows({ codex: share }, { codex: provider }, NOW)]
-  expect(rows.filter(r => r.text.length > 32)).toEqual([])
+  const rows = [...quotaRows({ [KEY]: settled }, { [KEY]: old }, NOW), ...quotaRows({ [KEY]: settled }, { [KEY]: { ...old, observedAt: null } }, NOW),
+    ...quotaRows({ [KEY]: { session: figure({ percent: 100, settled: 100 }), tools: figure({ percent: 99.9 }) } }, { [KEY]: reading({ confidence: { label: 'calibrated', samples: 12 } }) }, NOW),
+    ...quotaRows({ [codexKey]: share }, { [codexKey]: codex }, NOW), ...quotaRows({ [unknownKey]: share }, { [unknownKey]: unknown }, NOW)]
+  const long = reading({ account: 'work-personal-account-name-xx', plan: 'Max 20x · Team' })
+  rows.push(...quotaRows({ [KEY]: { session: figure(), tools: figure() } }, { [KEY]: long }, NOW))
+  expect(rows.filter(r => Array.from(r.text).length > 32)).toEqual([])
+  expect(quotaRows({ [KEY]: { session: figure(), tools: figure() } }, { [KEY]: long }, NOW)[0]?.text).toBe('claude work-pe… · Max 20x · Team')
+})
+
+const LIMITS_A = JSON.stringify({ fingerprint: 'a'.repeat(64), time: 1, windows: {} })
+const LIMITS_B = JSON.stringify({ fingerprint: 'b'.repeat(64), time: 1, windows: {} })
+
+test('the account is found by fingerprint and only its name is handed on', () => {
+  const files = [{ name: 'claude-alpha.limits.json', text: LIMITS_A }, { name: 'claude-beta.limits.json', text: LIMITS_B }, { name: 'claude-UPPER.limits.json', text: LIMITS_B }]
+  expect(accountFromLimits('b'.repeat(64), files)).toBe('beta')
+  expect(accountFromLimits('c'.repeat(64), files)).toBeUndefined()
+  expect(accountFromLimits('not-a-fingerprint', files)).toBeUndefined()
+  expect(accountFromLimits(undefined, files)).toBeUndefined()
+  expect(accountFromLimits('a'.repeat(64), [{ name: 'claude-alpha.limits.json', text: 'not json' }])).toBeUndefined()
+  // A name that is not a plain account name, or is the reserved "unknown", is never an account.
+  expect(accountFromLimits('b'.repeat(64), [{ name: 'claude-unknown.limits.json', text: LIMITS_B }, { name: 'claude-UPPER.limits.json', text: LIMITS_B }])).toBeUndefined()
+})
+
+test('the pane passes its account name to the script, never the fingerprint', async ($, on) => {
+  let argv: readonly string[] = []
+  const reads: string[] = []
+  on('command.register', () => ({ value: { command: 'crew' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.root', () => ({ value: '/fm' }))
+  on('session.id', () => ({ value: 'pane-session' }))
+  on('clock.every', () => ({ value: undefined }))
+  on('clock.now', () => ({ value: NOW }))
+  on('ui.status', () => ({ value: undefined }))
+  on('env.get', (_, e) => ({ value: ({ AI_ACCT_FINGERPRINT: 'b'.repeat(64), XDG_CACHE_HOME: '/cache' } as Record<string, string>)[e.name] }))
+  on('fs.list', () => ({ value: ['claude-alpha.limits.json', 'claude-beta.limits.json'].map(name => ({ name, kind: 'file' as const, size: 1, mtimeMs: 0, isLink: false })) }))
+  on('fs.read', (_, e) => {
+    reads.push(e.path)
+    return { value: e.path.includes('beta') ? LIMITS_B : LIMITS_A }
+  })
+  on('process.run', (_, e) => {
+    argv = e.argv
+    return { value: { exitCode: 0, stdout: JSON.stringify(REPORT), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  await $.session.start({ cwd: '/fm', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'crew', args: 'refresh', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } })
+  expect(argv[argv.indexOf('--claude-account') + 1]).toBe('beta')
+  expect(argv.join(' ')).not.toContain('b'.repeat(64))
+  // Only the stored limit files of ai-acct are opened: never a token file.
+  expect(reads.every(path => path.startsWith('/cache/ai-acct/claude-') && path.endsWith('.limits.json'))).toBe(true)
+})
+
+test('a session without a fingerprint or a matching account passes an empty account', async ($, on) => {
+  let argv: readonly string[] = []
+  on('command.register', () => ({ value: { command: 'crew' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.root', () => ({ value: '/fm' }))
+  on('session.id', () => ({ value: 'pane-session' }))
+  on('clock.every', () => ({ value: undefined }))
+  on('ui.status', () => ({ value: undefined }))
+  on('env.get', () => ({ value: undefined }))
+  on('process.run', (_, e) => {
+    argv = e.argv
+    return { value: { exitCode: 0, stdout: JSON.stringify(REPORT), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  await $.session.start({ cwd: '/fm', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'crew', args: 'refresh', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } })
+  expect(argv[argv.indexOf('--claude-account') + 1]).toBe('')
 })
 
 type Drawn = { type?: string; props?: Record<string, unknown>; children?: unknown[] }

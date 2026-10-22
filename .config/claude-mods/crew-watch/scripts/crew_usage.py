@@ -32,20 +32,29 @@ their token_count events; a log without usage fields attributes nothing.
 This is a call's direct cost: every later request re-reads its result from the
 cache, and those re-reads count to the session only, never to the call.
 
-Weekly quota share. Vendors publish no weekly caps in tokens, so the share is
-(weekly window percent used) x (weighted tokens of the crewmate, or the direct
-cost of its tool calls, since the window started) / (weighted tokens of every
-local session of that provider since then). Tokens are weighted by PRICE_RATIO
-and FAMILY_PRICE below. The percent, reset time and plan come from local
-sources only: the rate limits of the pane session's last API response
-(--claude-limits, read at the newest response in its own transcript, found by
---claude-session), Claude Code's cached usage in ~/.claude.json, Codex rollout
-rate-limit events and Claude's local plan metadata. The freshest reading whose
-window has not reset wins, reported with its source and read time; one older
-than STALE_MS, or of unknown age, is flagged stale. Without a reading only the
-raw share of local usage is reported. Usage from other machines or the web is
-invisible here, so with a current reading the share is an upper bound for local
-work; a stale reading can understate it.
+Weekly quota. Vendors publish no weekly caps in tokens, so none is hard-coded.
+Every figure is keyed by provider + account + scope (see crew_quota.py): the
+percent of one account's limit is only compared with the local usage of that
+same account. A Claude session is tied to its account by the ai-acct name the
+pane passes (--claude-account, found from AI_ACCT_FINGERPRINT) and a registry of
+session id -> account name that every session keeps; a Codex rollout by a hash
+of its creator account id. A session of no known account is "unknown" and shows
+only its raw share of local usage.
+
+The vendor percent is an anchor, dated by the response that carried it: the
+rate limits of the pane session's last API response (--claude-limits, dated by
+the newest response in its own transcript, found by --claude-session), the
+reading history, ai-acct's stored limit windows (of unknown age) and Codex
+rollout rate-limit events. The freshest one whose window has not reset wins.
+Every new observation is appended to ~/.local/state/crew-watch/readings.jsonl.
+Between readings the estimate is the anchor plus the weighted tokens since it,
+priced by PRICE_RATIO and FAMILY_PRICE below, with a slope that is an
+uncalibrated prior. A member's share sums settled intervals (each rise of the
+vendor percent split by the member's share of that interval alone), so usage
+after the reading cannot change it. A reading older than STALE_MS, or of unknown
+age, is stale: it keeps its timestamp and only the raw local delta is shown.
+Costs are kept per request, so a task start and a window start cut at the
+request's own time, never at a file's mtime or a 15-minute bucket.
 """
 
 import argparse
@@ -58,7 +67,11 @@ import sys
 import time
 from datetime import datetime
 
-CACHE_VERSION = 9
+# `python3 -I` leaves the script's own folder off sys.path.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import crew_quota as quota  # noqa: E402
+
+CACHE_VERSION = 10
 HOME = os.path.expanduser("~")
 CLAUDE_PROJECTS = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR", os.path.join(HOME, ".claude")), "projects")
 CODEX_SESSIONS = os.path.join(os.environ.get("CODEX_HOME", os.path.join(HOME, ".codex")), "sessions")
@@ -67,11 +80,11 @@ LOOKBACK_DAYS = 30
 SNIPPET = 180
 MAX_EVENTS = 10
 ACTIVITY_MINUTES = 60
-BUCKET_MS = 15 * 60000
-WEEK_MS = 7 * 86400000
+WEEK_MS = quota.WEEK_MS
 CHARS_PER_TOKEN = 4
 SCAN_BUDGET_SECONDS = 10
-STALE_MS = 30 * 60000
+RESIDUAL_LIMIT = 50
+STALE_MS = quota.STALE_MS
 
 # Relative price of a token by type, per provider (input = 1). Only ratios
 # matter for a share: a cache read costs a tenth of an input token, a Claude
@@ -156,6 +169,7 @@ def empty_agg():
         "lastText": "",
         "lastAt": 0,
         "cost": {},
+        "acctCost": {},
         "toolTokens": {},
     }
 
@@ -172,27 +186,26 @@ def weigh(provider, model, fresh=0, output=0, cache_read=0, cache_write=0, cache
 
 
 def add_cost(agg, provider, at, session=0.0, tool=0.0):
-    """Weighted tokens by provider and 15-minute bucket: [whole session, its tool calls]."""
+    """Weighted tokens by provider and request time (ms): [whole session, its tool calls]."""
     if at <= 0 or not (session or tool):
         return
     slots = agg["cost"].setdefault(provider, {})
-    key = str(at // BUCKET_MS)
+    key = str(at)
     old = slots.get(key, (0.0, 0.0))
     slots[key] = [old[0] + session, old[1] + tool]
 
 
-def window_cost(agg, provider, start):
-    """(session, tool calls) weighted tokens in buckets that end after start."""
-    first = start // BUCKET_MS
-    session = tools = 0.0
-    for key, (whole, calls) in agg["cost"].get(provider, {}).items():
-        if int(key) >= first:
-            session += whole
-            tools += calls
-    return max(0.0, session), max(0.0, tools)
+def fold_cost(into, provider, account, slots, since=0):
+    """Add per-request costs to into's costs of one account, keeping only requests at or after since."""
+    mine = into["acctCost"].setdefault(provider, {}).setdefault(account, {})
+    for key, (whole, calls) in slots.items():
+        if int(key) >= since:
+            old = mine.get(key, (0.0, 0.0))
+            mine[key] = [old[0] + whole, old[1] + calls]
 
 
-def merge(into, part):
+def merge(into, part, account=quota.UNKNOWN, since=0):
+    """Fold part into into; part's own costs belong to account, and only requests at or after since count."""
     for k in ("requests", "input", "output", "cacheRead", "cacheWrite", "reasoning", "toolCalls"):
         into[k] += part[k]
     for k in ("tools", "models"):
@@ -203,11 +216,11 @@ def merge(into, part):
         mine = into["toolTokens"].setdefault(name, {"calls": 0, "output": 0, "input": 0, "estimated": 0, "estCalls": 0})
         for k, v in tt.items():
             mine[k] += v
-    for provider, buckets in part["cost"].items():
-        mine = into["cost"].setdefault(provider, {})
-        for key, (whole, calls) in buckets.items():
-            old = mine.get(key, (0.0, 0.0))
-            mine[key] = [old[0] + whole, old[1] + calls]
+    for provider, slots in part["cost"].items():
+        fold_cost(into, provider, account, slots, since)
+    for provider, accounts in part["acctCost"].items():
+        for name, slots in accounts.items():
+            fold_cost(into, provider, name, slots, since)
     for minute, count in part["activity"].items():
         into["activity"][minute] = into["activity"].get(minute, 0) + count
     into["activity"] = dict(sorted(into["activity"].items(), key=lambda item: int(item[0]))[-ACTIVITY_MINUTES:])
@@ -426,7 +439,7 @@ def read_new_lines(path, entry):
 
 def fresh_entry():
     return {"offset": 0, "agg": empty_agg(), "msgId": None, "msgUsage": None, "msgAt": 0, "msgModel": "", "meta": {},
-            "flow": {"cur": None, "open": None}, "ids": []}
+            "flow": {"cur": None, "open": None}, "ids": [], "readings": []}
 
 
 def claude_writes(usage):
@@ -532,6 +545,23 @@ def parse_claude(path, entry, owners, worktree=""):
             agg["lastAt"] = max(agg["lastAt"], at)
 
 
+def weekly_window(windows):
+    """The longest window of at least a week, or None."""
+    weekly = [w for w in windows if (w.get("minutes") or 0) >= 7200]
+    return max(weekly, key=lambda w: w["minutes"]) if weekly else None
+
+
+def note_codex_reading(entry, limit_id, limits):
+    """Queue a weekly rate-limit observation of this rollout for the reading history (written once per poll)."""
+    week = weekly_window(limits["windows"])
+    percent = week.get("percent") if week else None
+    if week and isinstance(percent, (int, float)) and not isinstance(percent, bool):
+        # The newest observations are the ones worth keeping when a long rollout is read at once.
+        del entry["readings"][: max(0, len(entry["readings"]) + 1 - quota.PENDING_LIMIT)]
+        entry["readings"].append({"at": limits["at"], "limitId": limit_id, "plan": limits["plan"], "percent": float(percent),
+                                  "minutes": week["minutes"], "resetsAt": (week.get("resetsAt") or 0) * 1000 or None})
+
+
 def parse_codex(path, entry, worktree=""):
     for row in read_new_lines(path, entry):
         agg = entry["agg"]
@@ -541,6 +571,7 @@ def parse_codex(path, entry, worktree=""):
         at = ts_ms(row.get("timestamp"))
         if kind == "session_meta":
             meta["cwd"] = payload.get("cwd") or ""
+            meta["account"] = quota.codex_account(payload.get("creator_account_id"))
         elif kind == "turn_context":
             if payload.get("model"):
                 if payload["model"] != meta.get("model"):
@@ -555,9 +586,12 @@ def parse_codex(path, entry, worktree=""):
             if isinstance(limits, dict):
                 windows = [w for w in (limits.get("primary"), limits.get("secondary")) if isinstance(w, dict)]
                 if windows:
-                    meta["limits"] = {"at": at, "plan": limits.get("plan_type") or "", "windows": [
+                    # One entry per limit id: a model-specific limit is never mistaken for the account's own.
+                    limit_id = str(limits.get("limit_id") or "codex")
+                    meta.setdefault("limits", {})[limit_id] = {"at": at, "plan": limits.get("plan_type") or "", "windows": [
                         {"percent": w.get("used_percent"), "minutes": w.get("window_minutes"), "resetsAt": w.get("resets_at")}
                         for w in windows]}
+                    note_codex_reading(entry, limit_id, meta["limits"][limit_id])
             total = info.get("total_token_usage") or {}
             last = info.get("last_token_usage") or {}
             # Codex repeats a token_count when only its rate limits changed.
@@ -766,13 +800,34 @@ def collect_tasks(home, depth, seen):
     return tasks
 
 
+def accounts_path():
+    """The session -> account registry, beside the log cache."""
+    return os.path.join(os.path.dirname(CACHE_PATH), "accounts.json")
+
+
+def claude_session_id(path):
+    """The session a Claude transcript belongs to: its own file name, or the folder a subagent transcript sits in."""
+    parts = os.path.relpath(path, CLAUDE_PROJECTS).split(os.sep)
+    if len(parts) < 2 or parts[0] == "..":
+        return ""
+    return parts[1][: -len(".jsonl")] if parts[1].endswith(".jsonl") else parts[1]
+
+
+def entry_account(provider, path, entry, sessions):
+    """The account a transcript or rollout was written under, or "unknown" when nothing ties it to one."""
+    if provider == "codex":
+        return (entry.get("meta") or {}).get("account") or quota.UNKNOWN
+    known = sessions.get(claude_session_id(path))
+    return quota.claude_account_name(known["account"]) if known else quota.UNKNOWN
+
+
 def scan_local(files, scan, owners, codex_index, touched, now, deadline):
     """Every local session of the last week, per provider, for the quota denominator.
 
     Files a crewmate owns reuse that entry; the rest are parsed into a separate
     cache so their tool texts are never abbreviated for the wrong worktree.
     Parsing stops at the run's deadline; the next poll resumes, and the provider
-    is flagged as still indexing.
+    is flagged as still indexing. Returns (path, entry) pairs per provider.
     """
     since = now - WEEK_MS
     todo = []
@@ -786,7 +841,7 @@ def scan_local(files, scan, owners, codex_index, touched, now, deadline):
     indexed = {"claude": True, "codex": True}
     for provider, path in todo:
         if path in touched:
-            found[provider].append(files[path])
+            found[provider].append((path, files[path]))
             continue
         entry = scan.get(path)
         if time.monotonic() > deadline:
@@ -798,34 +853,20 @@ def scan_local(files, scan, owners, codex_index, touched, now, deadline):
             else:
                 parse_codex(path, entry)
         if entry is not None:
-            found[provider].append(entry)
+            found[provider].append((path, entry))
     for path in [p for p in scan if p in touched or modified_ms(p) < since]:
         del scan[path]
     return found, indexed
 
 
-def quota_of(agg, providers):
-    """Per provider: the estimated share of the weekly limit for the session and for its tool calls."""
-    out = {}
-    for name, info in providers.items():
-        session, tools = window_cost(agg, name, info["windowStart"])
-        if session <= 0 and tools <= 0:
-            continue
-        percent = info["percentUsed"]
-        measured = info["indexed"]
-        out[name] = {
-            "session": quota_share(percent, session, info["localCost"]) if measured else {"share": None, "percent": None},
-            "tools": quota_share(percent, tools, info["localCost"]) if measured else {"share": None, "percent": None},
-        }
-    return out
-
-
-def quota_share(percent, part, total):
-    """Share of local usage and, with a current window percent, of the weekly limit."""
-    if total <= 0 or part < 0:
-        return {"share": None, "percent": None}
-    share = min(1.0, part / total)
-    return {"share": share, "percent": None if percent is None else percent * share}
+def account_indexes(found, sessions):
+    """Per (provider, account): every local request's weighted cost by its own time."""
+    maps = {}
+    for provider, items in found.items():
+        for path, entry in items:
+            account = entry_account(provider, path, entry, sessions)
+            maps.setdefault((provider, account), []).append(entry["agg"]["cost"].get(provider, {}))
+    return {key: quota.CostIndex(*slots) for key, slots in maps.items()}
 
 
 def read_json(path):
@@ -877,11 +918,17 @@ def claude_login():
     return "account" if claude_plan() else ""
 
 
-def window_candidate(source, percent, resets_at, window_ms, read_at):
-    if not isinstance(percent, (int, float)) or isinstance(percent, bool):
+def number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def candidate(provider, account, source, scope, percent, resets_at, window_ms, observed_at, plan="", session=""):
+    """One vendor reading of one account's weekly limit; None unless the percent is a number."""
+    if not number(percent):
         return None
-    return {"source": source, "percent": float(percent), "resetsAt": resets_at or None,
-            "windowMs": window_ms or WEEK_MS, "readAt": read_at or None}
+    return {"provider": provider, "account": account, "source": source, "scope": scope, "percent": float(percent),
+            "resetsAt": resets_at or None, "windowMs": window_ms or WEEK_MS, "observedAt": observed_at or None,
+            "plan": plan, "session": session}
 
 
 def session_transcript(session_id):
@@ -896,60 +943,214 @@ def session_transcript(session_id):
     return next((path for path in paths if os.path.isfile(path)), None)
 
 
-def claude_candidates(limits, limits_at):
-    """The pane session's rate limits, read at its last API response (None when unknown), and Claude Code's cached /usage."""
+def pane_candidates(limits, limits_at, account, plan, session_id):
+    """The pane session's rate limits, as of its last API response (None when that time is unknown)."""
     out = []
     for limit in limits if isinstance(limits, list) else []:
         if isinstance(limit, dict) and limit.get("kind") == "seven_day":
-            out.append(window_candidate("this session", limit.get("percentUsed"), ts_ms(limit.get("resetsAt")), WEEK_MS,
-                                        limits_at))
-    cached = claude_global_config().get("cachedUsageUtilization")
-    week = ((cached or {}).get("utilization") or {}).get("seven_day") if isinstance(cached, dict) else None
-    if isinstance(week, dict):
-        out.append(window_candidate("usage cache", week.get("utilization"), ts_ms(week.get("resets_at")), WEEK_MS,
-                                    cached.get("fetchedAtMs")))
+            out.append(candidate("claude", account, "session", "seven_day", limit.get("percentUsed"),
+                                 ts_ms(limit.get("resetsAt")), WEEK_MS, limits_at, plan, session_id))
+    return [c for c in out if c]
+
+
+def ai_acct_cache_dir():
+    return os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.join(HOME, ".cache")), "ai-acct")
+
+
+def account_cache_candidates():
+    """ai-acct's stored seven-day window per account: the window only, never the fingerprint beside it.
+
+    The file's time is when a status-line callback wrote it, not when the vendor
+    measured it, so these readings are of unknown age.
+    """
+    directory = ai_acct_cache_dir()
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError:
+        return []
+    out = []
+    for name in names:
+        match = re.fullmatch(r"claude-([a-z0-9][a-z0-9_-]{0,31})\.limits\.json", name)
+        if not match or quota.claude_account_name(match[1]) == quota.UNKNOWN:
+            continue
+        week = (read_json(os.path.join(directory, name)).get("windows") or {}).get("seven_day")
+        if isinstance(week, dict) and number(week.get("resets_at")):
+            out.append(candidate("claude", match[1], "account cache", "seven_day", week.get("used"),
+                                 week["resets_at"] * 1000, WEEK_MS, None))
+    return [c for c in out if c]
+
+
+def history_candidates(history):
+    """The newest dated reading of each key in the history."""
+    newest = {}
+    for rec in history:
+        if rec.get("observedAt") is None:
+            continue
+        key = quota.reading_key(rec["provider"], rec["account"], rec["scope"])
+        if key not in newest or rec["observedAt"] > newest[key]["observedAt"]:
+            newest[key] = rec
+    return [candidate(r["provider"], r["account"], "history", r["scope"], r["percent"], r.get("resetsAt"),
+                      r.get("durationMs"), r["observedAt"], r.get("plan") or "", r.get("session") or "") for r in newest.values()]
+
+
+def codex_candidates(found, sessions):
+    """The newest weekly rate-limit event of each Codex account's own limit (id "codex") any local rollout recorded."""
+    newest = {}
+    for path, entry in found:
+        account = entry_account("codex", path, entry, sessions)
+        limits = (entry.get("meta") or {}).get("limits", {}).get("codex")
+        if limits and (account not in newest or limits["at"] >= newest[account]["at"]):
+            newest[account] = limits
+    out = []
+    for account, limits in newest.items():
+        week = weekly_window(limits["windows"])
+        if week:
+            out.append(candidate("codex", account, "codex log", f"codex:{week['minutes']}m", week.get("percent"),
+                                 (week.get("resetsAt") or 0) * 1000, week["minutes"] * 60000, limits["at"], limits["plan"].title()))
+    return [c for c in out if c]
+
+
+def new_records(pane, found, sessions, now):
+    """The observations of this poll for the history: the pane's own response and every queued Codex event.
+
+    An account of unknown identity is never recorded: its percent belongs to nobody in particular.
+    """
+    out = []
+    for c in pane:
+        if c["account"] != quota.UNKNOWN:
+            out.append(quota.make_record("claude", c["account"], c["source"], c["scope"], "seven_day", c["percent"],
+                                         c["resetsAt"], c["windowMs"], c["observedAt"], now, c["session"], c["plan"]))
+    for path, entry in found["codex"]:
+        account = entry_account("codex", path, entry, sessions)
+        if account == quota.UNKNOWN:
+            continue
+        for r in entry["readings"]:
+            out.append(quota.make_record("codex", account, "codex log", f"{r['limitId']}:{r['minutes']}m", "weekly", r["percent"],
+                                         r["resetsAt"], r["minutes"] * 60000, r["at"], now, path, r["plan"].title()))
     return out
 
 
-def codex_candidates(entries):
-    """The newest rate-limit event any local rollout recorded, and the plan it names."""
-    newest = None
-    for entry in entries:
-        limits = entry.get("meta", {}).get("limits")
-        if limits and (newest is None or limits["at"] >= newest["at"]):
-            newest = limits
-    plan = (newest or {}).get("plan") or ""
-    weekly = [w for w in (newest or {}).get("windows", []) if (w.get("minutes") or 0) >= 7200]
-    if not weekly:
-        return [], plan
-    week = max(weekly, key=lambda w: w["minutes"])
-    return [window_candidate("codex log", week.get("percent"), (week.get("resetsAt") or 0) * 1000,
-                             week["minutes"] * 60000, newest["at"])], plan
+def record_with_residuals(records, history, indexes, indexed):
+    """The records not in the history yet, each with how its forecast missed it (oldest first).
+
+    Only the newest RESIDUAL_LIMIT are compared, so a first poll that backfills a
+    week of rollouts stays quick; the older ones are history without a residual.
+    """
+    known = list(history)
+    seen = {quota.observation_key(r) for r in known}
+    fresh = []
+    for rec in sorted(records, key=lambda r: r.get("observedAt") or 0):
+        key = quota.observation_key(rec)
+        if key not in seen:
+            seen.add(key)
+            fresh.append(rec)
+    out = []
+    for i, rec in enumerate(fresh):
+        residual = None
+        if i >= len(fresh) - RESIDUAL_LIMIT:
+            index = indexes.get((rec["provider"], rec["account"]), quota.CostIndex())
+            residual = quota.residual_against(known, rec, index, indexed[rec["provider"]])
+        out.append({**rec, "residual": residual} if residual else rec)
+        known.append(out[-1])
+    return out
 
 
-def pick_window(candidates, now):
-    """The freshest weekly reading still in force; a window that has reset says nothing about the new one."""
-    live = [c for c in candidates if c["resetsAt"] is None or c["resetsAt"] > now]
-    return max(live, key=lambda c: c["readAt"] or 0) if live else None
+def build_readings(groups, candidates, history, indexes, indexed, now, pane_account, plan, login):
+    """Per (provider, account): the vendor anchor, what has happened since and how far to trust it.
+
+    Returns (public readings by key, internals by (provider, account)). A percent is only ever
+    carried by an account that is known; "unknown" keeps raw local usage and nothing else.
+    """
+    readings, inner = {}, {}
+    for provider, account in sorted(groups):
+        mine = [c for c in candidates if c["provider"] == provider and c["account"] == account] if account != quota.UNKNOWN else []
+        anchor = quota.pick_anchor(mine, now)
+        scope = anchor["scope"] if anchor else quota.default_scope(provider)
+        known = bool(anchor and anchor["resetsAt"])
+        start = max(anchor["resetsAt"] - anchor["windowMs"], now - WEEK_MS) if known else now - WEEK_MS
+        index = indexes.get((provider, account)) or quota.CostIndex()
+        dated = bool(anchor and anchor["observedAt"] is not None)
+        stale = bool(anchor) and quota.is_stale(anchor["observedAt"], now)
+        sure = quota.confidence(history, provider, account, scope)
+        slope = quota.prior_slope(anchor["percent"], index, start, anchor["observedAt"]) if anchor and known and dated else None
+        # A stale anchor is extrapolated only with a trusted slope, and never past the horizon the
+        # calibration was measured over.
+        trusted = sure["label"] == "calibrated" and dated and now - anchor["observedAt"] <= quota.MAX_HORIZON_MS
+        usable = slope is not None and (not stale or trusted)
+        since = index.between(anchor["observedAt"], now)[0] if dated else None
+        blocks, boundary, inclusive = None, start, True
+        if anchor and known and anchor["percent"] > 0:
+            seen = quota.period_readings(history, provider, account, scope, anchor["resetsAt"], start)
+            if dated and not any(r["observedAt"] == anchor["observedAt"] for r in seen):
+                seen = sorted(seen + [{"percent": anchor["percent"], "observedAt": anchor["observedAt"]}], key=lambda r: r["observedAt"])
+            blocks, boundary, inclusive, _ = quota.settled_blocks(seen, start)
+        readings[quota.reading_key(provider, account, scope)] = {
+            "provider": provider,
+            "account": account,
+            "accountKnown": account != quota.UNKNOWN,
+            "scope": scope,
+            "plan": (anchor or {}).get("plan") or (plan if (provider, account) == ("claude", pane_account) else ""),
+            "login": login if provider == "claude" and account == pane_account else "rollout" if provider == "codex" else "",
+            "percent": anchor["percent"] if anchor else None,
+            "observedAt": anchor["observedAt"] if anchor else None,
+            "source": anchor["source"] if anchor else "",
+            "resetsAt": anchor["resetsAt"] if anchor else None,
+            "windowMs": anchor["windowMs"] if anchor else WEEK_MS,
+            "windowStart": start,
+            "windowStartKnown": known,
+            "stale": stale,
+            "reset": bool(mine) and anchor is None,
+            "indexed": indexed[provider],
+            "localCost": index.between(start, now, True)[0],
+            "sinceCost": since,
+            "forecast": min(100.0, anchor["percent"] + slope * since) if usable and known and since is not None else None,
+            "confidence": sure,
+        }
+        inner[(provider, account)] = {"key": quota.reading_key(provider, account, scope), "index": index, "blocks": blocks,
+                                      "boundary": boundary, "inclusive": inclusive, "slope": slope if usable else None}
+    return readings, inner
 
 
-def provider_window(candidates, plan, now, login=""):
-    candidates = [c for c in candidates if c]
-    window = pick_window(candidates, now)
-    known = bool(window and window["resetsAt"])
-    start = window["resetsAt"] - window["windowMs"] if known else now - WEEK_MS
-    return {
-        "plan": plan,
-        "login": login,
-        "percentUsed": window["percent"] if window else None,
-        "resetsAt": window["resetsAt"] if window else None,
-        "windowStart": max(start, now - WEEK_MS),
-        "windowStartKnown": known,
-        "source": window["source"] if window else "",
-        "readAt": window["readAt"] if window else None,
-        "stale": bool(window) and (window["readAt"] is None or now - window["readAt"] > STALE_MS),
-        "reset": bool(candidates) and window is None,
-    }
+def figure(share, settled, extra, since):
+    """One quota figure: share of local usage, settled points, estimated points since, and what the basis is."""
+    if settled is None:
+        return {"share": share, "percent": None, "settled": None, "open": None, "since": since, "basis": "raw"}
+    return {"share": share, "percent": settled + (extra or 0.0), "settled": settled, "open": extra, "since": since,
+            "basis": "estimated" if extra is not None else "settled"}
+
+
+def quota_of(agg, ctx):
+    """Per account the member (or the fleet) used: its share of the week, from settled intervals plus the open one."""
+    out = {}
+    now, readings, inner, indexed = ctx["now"], ctx["readings"], ctx["inner"], ctx["indexed"]
+    for provider, accounts in agg["acctCost"].items():
+        for account, slots in accounts.items():
+            if (provider, account) not in inner:
+                continue
+            info = inner[(provider, account)]
+            reading = readings[info["key"]]
+            member = quota.CostIndex(slots)
+            whole = member.between(reading["windowStart"], now, True)
+            if whole == (0.0, 0.0):
+                continue
+            figures = []
+            for dim in (0, 1):
+                if not indexed[provider]:
+                    figures.append({"share": None, "percent": None, "settled": None, "open": None, "since": None, "basis": "raw"})
+                    continue
+                share = min(1.0, whole[dim] / reading["localCost"]) if reading["localCost"] > 0 else None
+                settled = extra = None
+                if reading["percent"] is not None:
+                    if reading["percent"] == 0:
+                        settled = 0.0
+                    elif info["blocks"]:
+                        settled = quota.settled_percent(info["blocks"], member, info["index"], dim)
+                    if settled is not None and info["slope"] is not None and reading["forecast"] is not None:
+                        extra = info["slope"] * member.between(info["boundary"], now, info["inclusive"])[dim]
+                since = member.between(reading["observedAt"], now)[dim] if reading["observedAt"] is not None else None
+                figures.append(figure(share, settled, extra, since))
+            out[info["key"]] = {"session": figures[0], "tools": figures[1]}
+    return out
 
 
 def main():
@@ -958,6 +1159,7 @@ def main():
     ap.add_argument("--claude-limits", default="[]", help="JSON rate-limit windows of the pane session's last API response")
     ap.add_argument("--claude-session", default="", help="the pane session's id, to date those rate limits")
     ap.add_argument("--claude-login", default="", choices=["", "token", "api-key"], help="how the pane session signs in, when this process cannot see its environment")
+    ap.add_argument("--claude-account", default="", help="the ai-acct account name the pane session runs as, when it is known")
     args = ap.parse_args()
     deadline = time.monotonic() + SCAN_BUDGET_SECONDS
     homes = args.home or [os.environ.get("FM_HOME") or os.getcwd()]
@@ -975,6 +1177,13 @@ def main():
     files = cache.setdefault("files", {})
     owners = message_owners(files, cache.setdefault("scan", {}))
     touched = set()
+    known_sessions = quota.load_accounts(accounts_path())
+    pane_session = args.claude_session if re.fullmatch(r"[\w-]+", args.claude_session or "") else ""
+    pane_account = quota.claude_account_name(args.claude_account)
+    if pane_session and pane_account != quota.UNKNOWN:
+        known_sessions = quota.register_account(accounts_path(), pane_session, pane_account, now)
+    elif pane_session in known_sessions:
+        pane_account = quota.claude_account_name(known_sessions[pane_session]["account"])
 
     seen = set()
     tasks = []
@@ -992,14 +1201,14 @@ def main():
         harness = meta.get("harness") or "?"
         worktree = meta.get("worktree") or ""
         agg = empty_agg()
-        sessions = 0
+        count = 0
         if worktree:
             for path in claude_files(worktree, task["since"]):
                 entry = files.setdefault(path, fresh_entry())
                 parse_claude(path, entry, owners, worktree)
                 touched.add(path)
-                merge(agg, settled_agg(entry, "claude"))
-                sessions += 1
+                merge(agg, settled_agg(entry, "claude"), entry_account("claude", path, entry, known_sessions), task["since"])
+                count += 1
             if codex_index is None:
                 codex_index = codex_files(cache, now)
             prefix = worktree.rstrip("/") + "/"
@@ -1008,9 +1217,9 @@ def main():
                     entry = files.setdefault(path, fresh_entry())
                     parse_codex(path, entry, worktree)
                     touched.add(path)
-                    merge(agg, settled_agg(entry, "codex"))
-                    sessions += 1
-        rows.append((task, agg, sessions))
+                    merge(agg, settled_agg(entry, "codex"), entry_account("codex", path, entry, known_sessions), task["since"])
+                    count += 1
+        rows.append((task, agg, count))
         merge(totals, agg)
 
     if codex_index is None:
@@ -1020,24 +1229,33 @@ def main():
         limits = json.loads(args.claude_limits)
     except ValueError:
         limits = []
-    own = session_transcript(args.claude_session)
+    own = session_transcript(pane_session)
     own_entry = files.get(own) if own in touched else cache["scan"].get(own)
-    limits_at = own_entry["agg"]["lastAt"] if own_entry else None
-    codex_cands, codex_rollout_plan = codex_candidates(found["codex"])
-    providers = {
-        "claude": provider_window(claude_candidates(limits, limits_at), claude_plan(), now, args.claude_login or claude_login()),
-        "codex": provider_window(codex_cands, codex_rollout_plan.title(), now, "rollout"),
-    }
-    for name, info in providers.items():
-        info["indexed"] = indexed[name]
-        info["localCost"] = sum(window_cost(e["agg"], name, info["windowStart"])[0] for e in found[name])
+    limits_at = own_entry["agg"]["lastAt"] if own_entry and own_entry["agg"]["lastAt"] else None
+    plan = claude_plan()
+    login = args.claude_login or claude_login()
+    history = quota.read_history()
+    indexes = account_indexes(found, known_sessions)
+    pane = pane_candidates(limits, limits_at, pane_account, plan, pane_session)
+    candidates = pane + account_cache_candidates() + history_candidates(history) + codex_candidates(found["codex"], known_sessions)
+    fresh = record_with_residuals(new_records(pane, found, known_sessions, now), history, indexes, indexed)
+    written = quota.append_readings(fresh, now) if fresh else 0
+    history = history + fresh
+    if written is not None:
+        for entry in [*files.values(), *cache["scan"].values()]:
+            entry["readings"] = []
+    elif fresh:
+        errors.append("reading history not saved")
+    groups = {(provider, account) for provider, account in indexes} | {(c["provider"], c["account"]) for c in candidates}
+    readings, inner = build_readings(groups, candidates, history, indexes, indexed, now, pane_account, plan, login)
+    ctx = {"now": now, "readings": readings, "inner": inner, "indexed": indexed}
 
     crew = []
-    for task, agg, sessions in rows:
+    for task, agg, count in rows:
         meta = task["meta"]
         harness = meta.get("harness") or "?"
         worktree = meta.get("worktree") or ""
-        readable = harness.startswith("claude") or harness == "codex" or sessions > 0
+        readable = harness.startswith("claude") or harness == "codex" or count > 0
         window, window_model, window_source = resolve_window(harness, agg, meta.get("model"))
         top = sorted(agg["tools"].items(), key=lambda kv: -kv[1])[:4]
         statuses = status_events(os.path.join(task["home"], "state", task["id"] + ".status"))
@@ -1063,7 +1281,7 @@ def main():
                 "status": task["status"],
                 "statusAt": task["statusAt"],
                 "readable": readable,
-                "sessions": sessions,
+                "sessions": count,
                 "models": agg["models"],
                 "requests": agg["requests"],
                 "input": agg["input"],
@@ -1082,7 +1300,7 @@ def main():
                 "toolCalls": agg["toolCalls"],
                 "toolTokens": agg["toolTokens"],
                 "topTools": [{"name": n, "count": c} for n, c in top],
-                "quota": quota_of(agg, providers),
+                "quota": quota_of(agg, ctx),
                 "lastTool": agg["lastTool"],
                 "lastText": agg["lastText"],
                 "lastAt": max(agg["lastAt"], task["statusAt"]),
@@ -1110,7 +1328,7 @@ def main():
             "generatedAt": now,
             "crew": crew,
             "totals": {k: totals[k] for k in ("requests", "input", "output", "cacheRead", "cacheWrite", "reasoning", "toolCalls")},
-            "quota": {"providers": providers, "fleet": quota_of(totals, providers)},
+            "quota": {"readings": readings, "fleet": quota_of(totals, ctx)},
             "errors": errors,
         },
         sys.stdout,

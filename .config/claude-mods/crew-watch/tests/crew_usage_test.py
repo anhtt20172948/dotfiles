@@ -17,6 +17,11 @@ usage = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(usage)
 
 
+def spent(agg, provider):
+    """(session, tool calls) weighted tokens of every request an aggregate logged."""
+    return usage.quota.CostIndex(agg["cost"].get(provider, {})).between(0, float("inf"), True)
+
+
 def ts_of(stamp):
     return int(datetime.fromisoformat(stamp).timestamp() * 1000)
 
@@ -29,11 +34,12 @@ class TelemetryTest(unittest.TestCase):
         # Never read the real account, quota cache or session logs.
         home = Path(self.tmp.name) / "home"
         for name, value in (("HOME", str(home)), ("CLAUDE_PROJECTS", str(home / ".claude" / "projects")),
-                            ("CODEX_SESSIONS", str(home / ".codex" / "sessions"))):
+                            ("CODEX_SESSIONS", str(home / ".codex" / "sessions")),
+                            ("CACHE_PATH", str(home / ".cache" / "crew-watch" / "cache.json"))):
             patcher = patch.object(usage, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
-        env = patch.dict(os.environ, {"XDG_CACHE_HOME": str(home / ".cache")})
+        env = patch.dict(os.environ, {"XDG_CACHE_HOME": str(home / ".cache"), "XDG_STATE_HOME": str(home / ".local" / "state")})
         env.start()
         self.addCleanup(env.stop)
         os.environ.pop("CLAUDE_CONFIG_DIR", None)
@@ -352,7 +358,7 @@ class TelemetryTest(unittest.TestCase):
         self.assertEqual(entry["agg"]["toolTokens"]["Read"]["input"], 225)
         self.assertEqual(entry["agg"]["toolTokens"]["Read"]["estCalls"], 0)
         w = usage.token_weights("claude", "claude-sonnet-5-5")
-        session, tools = usage.window_cost(entry["agg"], "claude", 0)
+        session, tools = spent(entry["agg"], "claude")
         self.assertAlmostEqual(tools, 100 * w["output"] + 300 * w["cacheWrite"])
         self.assertGreater(session, tools)
 
@@ -364,7 +370,7 @@ class TelemetryTest(unittest.TestCase):
         usage.parse_claude(self.path, entry, {})
         w = usage.token_weights("claude", "claude-sonnet-5-5")
         self.assertGreater(w["cacheWrite1h"], w["cacheWrite"])
-        session, tools = usage.window_cost(entry["agg"], "claude", 0)
+        session, tools = spent(entry["agg"], "claude")
         self.assertAlmostEqual(tools, 100 * w["output"] + 300 * w["cacheWrite1h"])
         first = 10 * w["input"] + 800 * w["cacheRead"] + 190 * w["cacheWrite"] + 100 * w["output"]
         self.assertAlmostEqual(session, first + 1400 * w["cacheWrite1h"] + 7 * w["output"])
@@ -376,7 +382,7 @@ class TelemetryTest(unittest.TestCase):
         entry = usage.fresh_entry()
         usage.parse_claude(self.path, entry, {})
         w = usage.token_weights("claude", "claude-sonnet-5-5")
-        self.assertAlmostEqual(usage.window_cost(entry["agg"], "claude", 0)[0], 600 * w["cacheWrite"] + 400 * w["cacheWrite1h"])
+        self.assertAlmostEqual(spent(entry["agg"], "claude")[0], 600 * w["cacheWrite"] + 400 * w["cacheWrite1h"])
 
     def test_a_context_that_shrinks_falls_back_to_the_estimate(self):
         # A compaction: the next context is smaller than the last one.
@@ -439,60 +445,6 @@ class TelemetryTest(unittest.TestCase):
         self.assertLess(usage.token_weights("codex", "gpt-5-mini")["input"], usage.token_weights("codex", "gpt-5")["input"])
         self.assertEqual(usage.weigh("codex", "gpt-5", 10, 1, 100, 0), 10 * 1 + 1 * 8 + 100 * 0.1)
 
-    def test_quota_share_math(self):
-        self.assertEqual(usage.quota_share(40.0, 25.0, 100.0), {"share": 0.25, "percent": 10.0})
-        # Unknown window percent: only the raw share of local usage.
-        self.assertEqual(usage.quota_share(None, 25.0, 100.0), {"share": 0.25, "percent": None})
-        # Nothing local to divide by: no share and no percent, never a division error.
-        self.assertEqual(usage.quota_share(40.0, 0.0, 0.0), {"share": None, "percent": None})
-        self.assertEqual(usage.quota_share(40.0, 5.0, 0.0), {"share": None, "percent": None})
-        # Rounding noise cannot push a share past the whole.
-        self.assertEqual(usage.quota_share(50.0, 100.0000001, 100.0), {"share": 1.0, "percent": 50.0})
-
-    def test_window_cost_ignores_buckets_before_the_window_start(self):
-        agg = usage.empty_agg()
-        bucket = usage.BUCKET_MS
-        usage.add_cost(agg, "claude", 10 * bucket, 100.0, 40.0)
-        usage.add_cost(agg, "claude", 20 * bucket, 10.0, 1.0)
-        usage.add_cost(agg, "codex", 20 * bucket, 7.0, 0.0)
-        self.assertEqual(usage.window_cost(agg, "claude", 0), (110.0, 41.0))
-        self.assertEqual(usage.window_cost(agg, "claude", 15 * bucket), (10.0, 1.0))
-        self.assertEqual(usage.window_cost(agg, "claude", 20 * bucket + 1), (10.0, 1.0))
-        self.assertEqual(usage.window_cost(agg, "claude", 21 * bucket), (0.0, 0.0))
-        self.assertEqual(usage.window_cost(agg, "codex", 0), (7.0, 0.0))
-
-    def test_a_window_that_has_reset_gives_no_percent(self):
-        now = 1_000_000_000
-        ended = usage.window_candidate("usage cache", 100, now - 1, usage.WEEK_MS, now - 5000)
-        live = usage.window_candidate("this session", 30, now + 86_400_000, usage.WEEK_MS, now - 9000)
-        self.assertIsNone(usage.pick_window([ended], now))
-        self.assertEqual(usage.pick_window([ended, live], now)["percent"], 30.0)
-        window = usage.provider_window([ended], "Max 5x", now)
-        self.assertEqual((window["percentUsed"], window["reset"], window["stale"], window["windowStartKnown"]), (None, True, False, False))
-        self.assertEqual(window["windowStart"], now - usage.WEEK_MS)
-        window = usage.provider_window([live], "", now)
-        self.assertEqual(window["windowStart"], now + 86_400_000 - usage.WEEK_MS)
-        self.assertEqual((window["reset"], window["stale"]), (False, False))
-        self.assertEqual((usage.provider_window([], "", now)["reset"], usage.provider_window([], "", now)["stale"]), (False, False))
-        # A window reported without a usable percent is no reading, not a reset one.
-        invalid = usage.window_candidate("this session", None, now + 86_400_000, usage.WEEK_MS, now)
-        self.assertEqual((usage.provider_window([invalid], "", now)["reset"], usage.provider_window([invalid], "", now)["percentUsed"]), (False, None))
-        self.assertEqual(usage.provider_window([invalid, ended], "", now)["reset"], True)
-
-    def test_the_freshest_reading_wins_and_one_older_than_half_an_hour_is_stale(self):
-        now = 10_000_000_000
-        resets = now + 86_400_000
-        old = usage.window_candidate("usage cache", 10, resets, usage.WEEK_MS, now - 4 * 86_400_000)
-        recent = usage.window_candidate("codex log", 50, resets, usage.WEEK_MS, now - 60_000)
-        window = usage.provider_window([old, recent], "", now)
-        self.assertEqual((window["percentUsed"], window["source"], window["readAt"], window["stale"]), (50.0, "codex log", now - 60_000, False))
-        window = usage.provider_window([old], "", now)
-        self.assertEqual((window["percentUsed"], window["source"], window["stale"]), (10.0, "usage cache", True))
-        self.assertTrue(usage.provider_window([usage.window_candidate("x", 1, resets, usage.WEEK_MS, now - usage.STALE_MS - 1)], "", now)["stale"])
-        self.assertFalse(usage.provider_window([usage.window_candidate("x", 1, resets, usage.WEEK_MS, now - usage.STALE_MS)], "", now)["stale"])
-        unknown = usage.provider_window([usage.window_candidate("usage cache", 1, resets, usage.WEEK_MS, None)], "", now)
-        self.assertEqual((unknown["readAt"], unknown["stale"]), (None, True))
-
     def test_messages_copied_into_a_resumed_or_forked_transcript_count_once(self):
         root = Path(self.tmp.name)
         fm = root / "fm"
@@ -526,65 +478,8 @@ class TelemetryTest(unittest.TestCase):
             self.assertEqual((member["requests"], member["input"], member["toolCalls"], member["sessions"]), (2, 150, 2, 2))
             self.assertEqual(member["toolTokens"]["Read"]["calls"], 2)
             w = usage.token_weights("claude", "claude-sonnet-5-5")
-            self.assertAlmostEqual(report["quota"]["providers"]["claude"]["localCost"], 350 * w["input"])
-            self.assertAlmostEqual(member["quota"]["claude"]["session"]["share"], 150 / 350)
-
-    def test_report_estimates_the_weekly_share_from_the_window_percent_and_local_usage(self):
-        root = Path(self.tmp.name)
-        fm = root / "fm"
-        (fm / "state").mkdir(parents=True)
-        mine, other = str(root / "mine"), str(root / "other")
-        now = int(usage.time.time())
-        (fm / "state" / "a.meta").write_text(f"harness=claude\nworktree={mine}\nspawn_gen=s{now - 600}.1.2\n")
-        projects = Path(usage.CLAUDE_PROJECTS)
-        stamp = lambda seconds: datetime.fromtimestamp(now - seconds, timezone.utc).isoformat()
-        row = lambda at, tokens: json.dumps({"type": "assistant", "timestamp": at, "message": {
-            "id": "m" + at, "model": "claude-sonnet-5-5", "usage": {"input_tokens": tokens}, "content": []}}) + "\n"
-        (projects / Path(usage.claude_project_dir(mine)).name).mkdir(parents=True)
-        Path(usage.claude_project_dir(mine), "s.jsonl").write_text(row(stamp(60), 100))
-        # Another local session: one row inside the window and one 5 days old, still inside it.
-        Path(usage.claude_project_dir(other)).mkdir(parents=True)
-        Path(usage.claude_project_dir(other), "pane.jsonl").write_text(row(stamp(5 * 86400), 9000) + row(stamp(120), 300))
-        limits = json.dumps([{"kind": "five_hour", "percentUsed": 1, "resetsAt": stamp(-60)},
-                             {"kind": "seven_day", "percentUsed": 40, "resetsAt": stamp(-86400)}])
-        with redirect_stdout(io.StringIO()) as output, patch.object(usage, "CACHE_PATH", str(root / "cache.json")), patch.object(
-                usage.sys, "argv", ["crew_usage.py", "--home", str(fm), "--claude-limits", limits, "--claude-session", "pane"]):
-            usage.main()
-        report = json.loads(output.getvalue())
-        claude = report["quota"]["providers"]["claude"]
-        self.assertEqual((claude["percentUsed"], claude["windowStartKnown"], claude["indexed"]), (40.0, True, True))
-        # The limits are dated by the pane session's newest response, two minutes ago.
-        self.assertEqual((claude["source"], claude["readAt"], claude["stale"]), ("this session", ts_of(stamp(120)), False))
-        # The window began about 6 days ago: the 5-day-old row counts, the others too; 100 of 9400 input tokens are the crewmate's.
-        member = report["crew"][0]["quota"]["claude"]
-        self.assertAlmostEqual(member["session"]["share"], 100 / 9400)
-        self.assertAlmostEqual(member["session"]["percent"], 40 * 100 / 9400)
-        self.assertEqual(member["tools"]["share"], 0.0)
-        self.assertEqual(report["quota"]["fleet"]["claude"]["session"]["share"], member["session"]["share"])
-        self.assertNotIn("codex", report["crew"][0]["quota"])
-        # Without a current percent the raw share stays and the percent is unknown.
-        with redirect_stdout(io.StringIO()) as output, patch.object(usage, "CACHE_PATH", str(root / "cache.json")), patch.object(
-                usage.sys, "argv", ["crew_usage.py", "--home", str(fm)]):
-            usage.main()
-        member = json.loads(output.getvalue())["crew"][0]["quota"]["claude"]
-        self.assertIsNone(member["session"]["percent"])
-        self.assertIsNotNone(member["session"]["share"])
-
-    def test_limits_of_a_session_without_a_transcript_are_of_unknown_age(self):
-        root = Path(self.tmp.name)
-        fm = root / "fm"
-        (fm / "state").mkdir(parents=True)
-        (fm / "state" / "a.meta").write_text(f"harness=claude\nworktree={root / 'mine'}\n")
-        recent = datetime.fromtimestamp(usage.time.time() - 60, timezone.utc).isoformat()
-        self.claude_turn(Path(usage.claude_project_dir(str(root / "mine"))) / "s.jsonl", "m", "claude-sonnet-5-5", recent)
-        tomorrow = datetime.fromtimestamp(usage.time.time() + 86400, timezone.utc).isoformat()
-        limits = json.dumps([{"kind": "seven_day", "percentUsed": 40, "resetsAt": tomorrow}])
-        for session in ("missing", "../s"):
-            with redirect_stdout(io.StringIO()) as output, patch.object(usage, "CACHE_PATH", str(root / "cache.json")), patch.object(
-                    usage.sys, "argv", ["crew_usage.py", "--home", str(fm), "--claude-limits", limits, "--claude-session", session]):
-                usage.main()
-            claude = json.loads(output.getvalue())["quota"]["providers"]["claude"]
-            self.assertEqual((claude["percentUsed"], claude["readAt"], claude["stale"]), (40.0, None, True))
+            self.assertAlmostEqual(report["quota"]["readings"]["claude|unknown|seven_day"]["localCost"], 350 * w["input"])
+            self.assertAlmostEqual(member["quota"]["claude|unknown|seven_day"]["session"]["share"], 150 / 350)
 
     def test_the_scan_budget_counts_from_the_start_of_the_run(self):
         root = Path(self.tmp.name)
@@ -602,14 +497,14 @@ class TelemetryTest(unittest.TestCase):
                 usage, "CACHE_PATH", str(root / "cache.json")), redirect_stdout(io.StringIO()) as output, patch.object(
                 usage.sys, "argv", ["crew_usage.py", "--home", str(fm)]):
             usage.main()
-        self.assertFalse(json.loads(output.getvalue())["quota"]["providers"]["claude"]["indexed"])
+        self.assertFalse(json.loads(output.getvalue())["quota"]["readings"]["claude|unknown|seven_day"]["indexed"])
 
     def test_a_scan_over_its_time_budget_reports_indexing_instead_of_a_partial_share(self):
         root = Path(self.tmp.name)
         fm = root / "fm"
         (fm / "state").mkdir(parents=True)
         mine = str(root / "mine")
-        (fm / "state" / "a.meta").write_text(f"harness=claude\nworktree={mine}\n")
+        (fm / "state" / "a.meta").write_text(f"harness=claude\nworktree={mine}\nspawn_gen=s{int(usage.time.time()) - 600}.1.2\n")
         project = Path(usage.claude_project_dir(mine))
         recent = datetime.fromtimestamp(usage.time.time() - 60, timezone.utc).isoformat()
         self.claude_turn(project / "s.jsonl", "m", "claude-sonnet-5-5", recent)
@@ -621,45 +516,9 @@ class TelemetryTest(unittest.TestCase):
                     usage.sys, "argv", ["crew_usage.py", "--home", str(fm), "--claude-limits", limits]):
                 usage.main()
         report = json.loads(output.getvalue())
-        self.assertFalse(report["quota"]["providers"]["claude"]["indexed"])
-        self.assertEqual(report["crew"][0]["quota"]["claude"]["session"], {"share": None, "percent": None})
-
-    def test_codex_window_and_plan_come_from_the_newest_rollout_event(self):
-        resets = int(usage.time.time()) + 86400
-        limits = lambda percent, at: {"type": "event_msg", "timestamp": at, "payload": {"type": "token_count", "info": None, "rate_limits": {
-            "plan_type": "plus", "primary": {"used_percent": 3.0, "window_minutes": 300, "resets_at": resets},
-            "secondary": {"used_percent": percent, "window_minutes": 10080, "resets_at": resets}}}}
-        old, new = usage.fresh_entry(), usage.fresh_entry()
-        for path, entry, percent, at in ((self.path, old, 11.0, "2026-10-21T17:00:00Z"),
-                                         (Path(self.tmp.name) / "new.jsonl", new, 25.0, "2026-10-21T18:00:00Z")):
-            path.write_text(json.dumps(limits(percent, at)) + "\n")
-            usage.parse_codex(path, entry)
-        candidates, plan = usage.codex_candidates([old, new])
-        self.assertEqual(plan, "plus")
-        window = usage.provider_window(candidates, plan.title(), int(usage.time.time() * 1000))
-        self.assertEqual((window["percentUsed"], window["plan"], window["source"]), (25.0, "Plus", "codex log"))
-        self.assertTrue(window["windowStartKnown"])
-
-    def test_claude_plan_and_cached_window_come_from_local_files_only(self):
-        home = Path(usage.HOME)
-        home.mkdir(parents=True)
-        (home / ".claude.json").write_text(json.dumps({
-            "oauthAccount": {"userRateLimitTier": "default_claude_max_5x", "organizationType": "claude_team"},
-            "cachedUsageUtilization": {"fetchedAtMs": 5, "utilization": {"seven_day": {"utilization": 12, "resets_at": "2999-01-01T00:00:00+00:00"}}}}))
-        self.assertEqual(usage.claude_plan(), "Max 5x · Team")
-        candidates = usage.claude_candidates([{"kind": "seven_day", "percentUsed": 50, "resetsAt": "2999-01-02T00:00:00Z"}], 10)
-        self.assertEqual(sorted((c["source"], c["percent"]) for c in candidates), [("this session", 50.0), ("usage cache", 12.0)])
-        self.assertEqual(usage.pick_window(candidates, 10)["source"], "this session")
-        cached = usage.provider_window(usage.claude_candidates([], 10), "", 5 + usage.STALE_MS + 1)
-        self.assertEqual((cached["percentUsed"], cached["source"], cached["readAt"], cached["stale"]), (12.0, "usage cache", 5, True))
-        # Undated session limits are never fresh: the dated cache wins, and alone they are stale.
-        undated = usage.claude_candidates([{"kind": "seven_day", "percentUsed": 50, "resetsAt": "2999-01-02T00:00:00Z"}], None)
-        self.assertEqual(usage.pick_window(undated, 10)["source"], "usage cache")
-        window = usage.provider_window(undated[:1], "", 10)
-        self.assertEqual((window["source"], window["readAt"], window["stale"]), ("this session", None, True))
-        (home / ".claude").mkdir()
-        (home / ".claude" / ".credentials.json").write_text(json.dumps({"claudeAiOauth": {"subscriptionType": "max", "rateLimitTier": "default_claude_max_20x", "accessToken": "secret"}}))
-        self.assertEqual(usage.claude_plan(), "Max 20x · Team")
+        self.assertFalse(report["quota"]["readings"]["claude|unknown|seven_day"]["indexed"])
+        self.assertEqual(report["crew"][0]["quota"]["claude|unknown|seven_day"]["session"],
+                         {"share": None, "percent": None, "settled": None, "open": None, "since": None, "basis": "raw"})
 
     def test_report_carries_the_login_the_pane_passes_and_a_window_for_known_models(self):
         # The pane's child process cannot see CLAUDE_CODE_OAUTH_TOKEN, so the mod passes the login kind.
@@ -674,12 +533,12 @@ class TelemetryTest(unittest.TestCase):
                 patch.object(usage.sys, "argv", ["crew_usage.py", "--home", str(fm), "--claude-login", "token"]):
             usage.main()
         report = json.loads(output.getvalue())
-        self.assertEqual(report["quota"]["providers"]["claude"]["login"], "token")
-        self.assertEqual(report["quota"]["providers"]["claude"]["plan"], "")
+        self.assertEqual(report["quota"]["readings"]["claude|unknown|seven_day"]["login"], "token")
+        self.assertEqual(report["quota"]["readings"]["claude|unknown|seven_day"]["plan"], "")
         member = report["crew"][0]
         self.assertEqual((member["contextWindow"], member["contextModel"], member["windowSource"]), (1_000_000, "claude-sonnet-5-5", "claude model table"))
         with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "", "ANTHROPIC_API_KEY": ""}):
-            self.assertEqual(self.report(fm)["quota"]["providers"]["claude"]["login"], "")
+            self.assertEqual(self.report(fm)["quota"]["readings"]["claude|unknown|seven_day"]["login"], "")
 
     def test_token_login_has_no_plan_and_says_so(self):
         # ai-acct signs in with CLAUDE_CODE_OAUTH_TOKEN: no credentials file, no account record.

@@ -20,37 +20,71 @@ export type CrewEvent = {
 /** Tokens charged to one tool's calls; `estimated` of `input` was guessed from result size. */
 export type ToolTokens = { calls: number; output: number; input: number; estimated: number; estCalls: number }
 
-/** A share of local usage (0 to 1) and, when the weekly percent is known, of the weekly limit (0 to 100). */
-export type QuotaShare = { share: number | null; percent: number | null }
+/**
+ * One quota figure of a crewmate (or the fleet) against one account's weekly limit. `share` is its
+ * fraction of that account's local usage in the window (0 to 1). `percent` is points of the week:
+ * the points settled by past rises of the vendor percent (`settled`) plus, while the reading is
+ * current, the open interval priced by an uncalibrated slope (`open`). `since` is the weighted
+ * tokens it spent after the reading; null when the reading's time is unknown.
+ * `basis`: estimated (settled + open), settled (a stale reading: nothing extrapolated), raw (no
+ * usable reading: only `share` is meaningful).
+ */
+export type QuotaFigure = {
+  share: number | null
+  percent: number | null
+  settled: number | null
+  open: number | null
+  since: number | null
+  basis: 'estimated' | 'settled' | 'raw'
+}
 
 /** `tools` is the direct cost of the calls: later cache re-reads of their results count to `session` only. */
-export type MemberQuota = { session: QuotaShare; tools: QuotaShare }
+export type MemberQuota = { session: QuotaFigure; tools: QuotaFigure }
 
-/** One provider's weekly window as local sources report it. */
-export type QuotaProvider = {
+/** How far the forecast can be trusted: the evidence is the residuals recorded when a reading met its forecast. */
+export type Confidence = { label: 'uncalibrated' | 'low' | 'calibrated'; samples: number }
+
+/**
+ * One account's weekly window for one provider and scope, keyed `provider|account|scope`. The account
+ * is the ai-acct name (Claude), a hash of the rollout's creator id (Codex) or `unknown`.
+ */
+export type QuotaReading = {
+  provider: string
+  account: string
+  /** False for `unknown`: no percent is ever attached to it. */
+  accountKnown: boolean
+  scope: string
   /** Plan label from local metadata, empty when none is recorded. */
   plan: string
-  /** How the account signs in: token (CLAUDE_CODE_OAUTH_TOKEN, no local plan record), api-key, account, rollout (Codex), or empty. */
+  /** How the pane signs in (Claude only): token, api-key, account; rollout for Codex; else empty. */
   login: string
-  /** Null when no current reading exists. */
-  percentUsed: number | null
+  /** The vendor's percent at `observedAt`; null when no reading is in force. */
+  percent: number | null
+  /** When the response that carried the reading was logged; null when that is not known. */
+  observedAt: number | null
+  /** session, history, account cache or codex log; empty without a reading. */
+  source: string
   resetsAt: number | null
+  windowMs: number
   windowStart: number
   windowStartKnown: boolean
-  /** Where the reading came from, and when; readAt is null when the source does not say. */
-  source: string
-  readAt: number | null
-  /** The reading is older than half an hour, or its age is unknown. */
+  /** Older than half an hour, or of unknown age: kept with its time, never called current. */
   stale: boolean
   /** Readings exist but the window they describe has reset. */
   reset: boolean
   /** False while local logs are still being indexed. */
   indexed: boolean
+  /** The account's weighted tokens since the window started. */
   localCost: number
+  /** The account's weighted tokens since the reading; null when its time is unknown. */
+  sinceCost: number | null
+  /** The reading plus what those tokens cost at the period's own rate; null without a slope, and when stale unless the forecast is calibrated and the reading under 2 hours old. */
+  forecast: number | null
+  confidence: Confidence
 }
 
 export type QuotaReport = {
-  providers: Record<string, QuotaProvider>
+  readings: Record<string, QuotaReading>
   fleet: Record<string, MemberQuota>
 }
 
@@ -101,7 +135,7 @@ export type CrewMember = {
   toolCalls: number
   toolTokens: Record<string, ToolTokens>
   topTools: ToolCount[]
-  /** Estimated weekly-limit share by provider; absent for a provider the crewmate never used. */
+  /** Weekly-limit figures by `provider|account|scope`; absent for an account the crewmate never used. */
   quota: Record<string, MemberQuota>
   lastTool: string
   lastText: string
