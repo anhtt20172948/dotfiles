@@ -588,5 +588,80 @@ class ReadingHistoryTest(QuotaTestCase):
         self.assertAlmostEqual(reading["observedAt"] / 1000, self.now - 60, delta=1)
 
 
+class FiveHourWindowTest(QuotaTestCase):
+    """The 5-hour window rides beside each account's weekly reading: the vendor percent only, never estimated."""
+
+    def codex_rollout(self, creator, five=None, week=30.0):
+        worktree = str(self.root / "codex-slot")
+        (self.fm / "state" / "c.meta").write_text(f"harness=codex\nworktree={worktree}\nspawn_gen=s{self.now - 3600}.1.2\n")
+        windows = {"secondary": {"used_percent": week, "window_minutes": 10080, "resets_at": self.now + DAY}}
+        if five is not None:
+            windows["primary"] = {"used_percent": five, "window_minutes": 300, "resets_at": self.now + 600}
+        count = {"type": "event_msg", "timestamp": iso(self.now - 120), "payload": {"type": "token_count", "info": {
+            "total_token_usage": {"input_tokens": 100, "total_tokens": 100}, "last_token_usage": {"input_tokens": 100}},
+            "rate_limits": {"limit_id": "codex", "plan_type": "plus", **windows}}}
+        path = Path(usage.CODEX_SESSIONS) / f"rollout-{creator}.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(json.dumps(row) + "\n" for row in [{"type": "session_meta", "payload": {"cwd": worktree, "creator_account_id": creator}}, count]))
+
+    def test_the_pane_sessions_five_hour_window_is_its_accounts_measured_reading(self):
+        worktree = str(self.root / "slot")
+        self.task("a", worktree)
+        self.turn(self.project(worktree) / "sess-a.jsonl", "a1", 600, 10)
+        self.register("sess-a", "acct-a")
+        self.turn(self.root / "home" / ".claude" / "projects" / "elsewhere" / "pane.jsonl", "p1", 60)
+        limits = json.dumps([{"kind": "five_hour", "percentUsed": 12.5, "resetsAt": iso(self.now + 3600)},
+                             {"kind": "seven_day", "percentUsed": 40, "resetsAt": iso(self.now + DAY)}])
+        report = self.run_report("--claude-session", "pane", "--claude-account", "acct-a", "--claude-limits", limits)
+        reading = report["quota"]["readings"]["claude|acct-a|seven_day"]
+        self.assertEqual(reading["percent"], 40.0)
+        five = reading["fiveHour"]
+        self.assertEqual((five["percent"], five["resetsAt"], five["source"], five["stale"], five["reset"]),
+                         (12.5, (self.now + 3600) * 1000, "session", False, False))
+        self.assertAlmostEqual(five["observedAt"] / 1000, self.now - 60, delta=1)
+        # The history keeps the weekly window only.
+        self.assertEqual([r["scope"] for r in self.records()], ["seven_day"])
+
+    def test_an_account_cache_without_a_five_hour_window_has_none(self):
+        cache = Path(usage.ai_acct_cache_dir())
+        cache.mkdir(parents=True)
+        (cache / "claude-acct-a.limits.json").write_text(json.dumps({
+            "fingerprint": FINGERPRINT, "time": self.now,
+            "windows": {"five_hour": {"used": 3, "resets_at": self.now + 300}, "seven_day": {"used": 41, "resets_at": self.now + DAY}}}))
+        (cache / "claude-acct-b.limits.json").write_text(json.dumps({
+            "fingerprint": FINGERPRINT, "time": self.now, "windows": {"seven_day": {"used": 9, "resets_at": self.now + DAY}}}))
+        report = self.run_report()
+        readings = report["quota"]["readings"]
+        five = readings["claude|acct-a|seven_day"]["fiveHour"]
+        # Of unknown age like the weekly window beside it, so it is stale.
+        self.assertEqual((five["percent"], five["resetsAt"], five["observedAt"], five["source"], five["stale"]),
+                         (3.0, (self.now + 300) * 1000, None, "account cache", True))
+        self.assertIsNone(readings["claude|acct-b|seven_day"]["fiveHour"])
+        self.assertNotIn(FINGERPRINT, json.dumps(report))
+
+    def test_a_five_hour_window_that_has_reset_says_so_instead_of_a_percent(self):
+        cache = Path(usage.ai_acct_cache_dir())
+        cache.mkdir(parents=True)
+        (cache / "claude-acct-a.limits.json").write_text(json.dumps({
+            "windows": {"five_hour": {"used": 88, "resets_at": self.now - 60}, "seven_day": {"used": 41, "resets_at": self.now + DAY}}}))
+        five = self.run_report()["quota"]["readings"]["claude|acct-a|seven_day"]["fiveHour"]
+        self.assertEqual((five["percent"], five["reset"]), (None, True))
+
+    def test_a_codex_rollouts_300_minute_window_is_its_five_hour_reading(self):
+        self.codex_rollout("creator-one", five=4.0)
+        self.codex_rollout("creator-two")
+        readings = self.run_report()["quota"]["readings"]
+        by_week = {r["percent"]: r for k, r in readings.items() if k.startswith("codex|") and r["accountKnown"]}
+        self.assertEqual(len(by_week), 1)
+        five = by_week[30.0]["fiveHour"]
+        self.assertEqual((five["percent"], five["source"], five["stale"]), (4.0, "codex log", False))
+        self.assertAlmostEqual(five["observedAt"] / 1000, self.now - 120, delta=1)
+
+    def test_codex_accounts_without_a_five_hour_window_or_identity_have_none(self):
+        self.codex_rollout("creator-two")
+        readings = self.run_report()["quota"]["readings"]
+        self.assertEqual([r["fiveHour"] for k, r in readings.items() if k.startswith("codex|")], [None])
+
+
 if __name__ == "__main__":
     unittest.main()

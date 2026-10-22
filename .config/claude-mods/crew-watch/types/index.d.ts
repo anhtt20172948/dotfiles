@@ -45,6 +45,20 @@ export type MemberQuota = { session: QuotaFigure; tools: QuotaFigure }
 export type Confidence = { label: 'uncalibrated' | 'low' | 'calibrated'; samples: number }
 
 /**
+ * An account's 5-hour window as the vendor last reported it: shown beside the weekly one, never
+ * estimated. `reset` marks a reading whose window has passed, so its percent says nothing now.
+ */
+export type FiveHourReading = {
+  percent: number | null
+  resetsAt: number | null
+  observedAt: number | null
+  /** session, account cache or codex log; empty once the window has reset. */
+  source: string
+  stale: boolean
+  reset: boolean
+}
+
+/**
  * One account's weekly window for one provider and scope, keyed `provider|account|scope`. The account
  * is the ai-acct name (Claude), a hash of the rollout's creator id (Codex) or `unknown`.
  */
@@ -81,6 +95,8 @@ export type QuotaReading = {
   /** The reading plus what those tokens cost at the period's own rate; null without a slope, and when stale unless the forecast is calibrated and the reading under 2 hours old. */
   forecast: number | null
   confidence: Confidence
+  /** The same account's 5-hour window; null when no source has one for it. */
+  fiveHour: FiveHourReading | null
 }
 
 export type QuotaReport = {

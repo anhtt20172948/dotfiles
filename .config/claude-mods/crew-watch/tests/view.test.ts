@@ -5,8 +5,8 @@ import { cacheHit, cells, clip, pad, roundTokens, shortPaths, tildeHome, totalTo
 import {
   KPI_DEFINITIONS, NONE, STALE_READING_MS, accountsOf, barParts, cardBorder, cardStats, contextExact, contextFigure, contextLine, crewCounts, effectiveFilter,
   filterLabel, filterLogs, fitSegments, headingParts, isActive, kpiText, layoutFor, logEntries, logKey, logPreview, nextFilter, overviewTiles, quotaBrief,
-  quotaEntries, quotaLine, quotaNames, quotaSource, sectionParts, sourceState, statusMessage, statusOf, tilesPerRow, tokenBar, tokenFormulas, tokenParts, toolTag,
-  totalsText, untilText,
+  fiveHourLine, fiveHourSource, quotaEntries, quotaLine, quotaNames, quotaSource, sectionParts, sourceState, statusMessage, statusOf, tilesPerRow, tokenBar, tokenFormulas, tokenParts, toolTag,
+  logTokens, totalsText, untilText, wrapSegments,
 } from '../hooks/view'
 
 const NOW = 1_800_000_000_000
@@ -15,7 +15,7 @@ const reading = (over: Partial<QuotaReading> = {}): QuotaReading => ({
   provider: 'claude', account: 'andang', accountKnown: true, scope: 'seven_day', plan: 'Max 5x', login: 'token', percent: 35,
   observedAt: NOW - 240_000, source: 'session', resetsAt: NOW + 2 * 86_400_000 + 4 * 3_600_000, windowMs: 7 * 86_400_000,
   windowStart: NOW - 5 * 86_400_000, windowStartKnown: true, stale: false, reset: false, indexed: true, localCost: 1e6, sinceCost: null,
-  forecast: null, confidence: { label: 'uncalibrated', samples: 0 }, ...over,
+  forecast: null, confidence: { label: 'uncalibrated', samples: 0 }, fiveHour: null, ...over,
 })
 
 const figure = { share: 0.5, percent: null, settled: null, open: null, since: null, basis: 'raw' as const }
@@ -192,6 +192,24 @@ test('a default quota row is the measured percent, the time to reset and a stale
   expect([2 * 86_400_000 + 4 * 3_600_000 + 59_000, 3 * 3_600_000 + 12 * 60_000, 59.9 * 60_000, 30_000].map(untilText)).toEqual(['2d 4h', '3h 12m', '59m', '<1m'])
 })
 
+test('a 5h row reads like the weekly row from the vendor 5-hour window, or a dash and why', () => {
+  const five = (over = {}) => reading({ fiveHour: { percent: 53, resetsAt: NOW + 72 * 60_000, observedAt: NOW - 120_000, source: 'session', stale: false, reset: false, ...over } })
+  expect(fiveHourLine(five(), NOW)).toEqual({ percent: 53, figure: '53%', reset: 'resets 1h 12m', note: '', tone: 'text' })
+  expect(fiveHourLine(five({ observedAt: null, stale: true, source: 'account cache' }), NOW)).toMatchObject({ figure: '53%', note: '◷ stale', tone: 'warning' })
+  expect(fiveHourLine(five({ percent: null, resetsAt: null, observedAt: null, source: '', reset: true }), NOW)).toEqual({ percent: null, figure: NONE, reset: '', note: 'window reset', tone: 'subtle' })
+  // The weekly reading's own state never leaks into the 5h row.
+  expect(fiveHourLine(five(), NOW)).toEqual(fiveHourLine({ ...five(), percent: null, stale: true, indexed: false }, NOW))
+  expect(fiveHourLine(reading(), NOW)).toEqual({ percent: null, figure: NONE, reset: '', note: 'no 5h reading', tone: 'subtle' })
+  expect(fiveHourLine(reading({ account: 'unknown', accountKnown: false, percent: null }), NOW).note).toBe('account unknown')
+  // A passed reset time is not shown as a future one.
+  expect(fiveHourLine(five({ resetsAt: NOW - 1 }), NOW).reset).toBe('')
+  expect(fiveHourSource(five(), NOW)).toEqual({ text: '5h 53% measured 2m ago · source this session', tone: 'subtle' })
+  expect(fiveHourSource(five({ observedAt: null, stale: true, source: 'account cache' }), NOW)).toEqual({ text: '5h 53% stale, age unknown · source ai-acct cache', tone: 'warning' })
+  expect(fiveHourSource(reading(), NOW).text).toBe(`5h % ${NONE}: no source has a 5-hour window for this account`)
+  expect(fiveHourSource(five({ percent: null, reset: true }), NOW).text).toBe(`5h % ${NONE}: the window reset since the last reading`)
+  expect(fiveHourSource(reading({ account: 'unknown', accountKnown: false }), NOW).text).toBe(`5h % ${NONE}: no account could be tied to this usage`)
+})
+
 test('every account stays its own quota entry: two Claude accounts and one Codex account, never summed', () => {
   const report = {
     crew: [{ quota: { 'claude|unknown|seven_day': quotaOf } }],
@@ -302,6 +320,13 @@ test('the token bar fills its width in proportion and keeps a cell for every par
   expect(tokenBar(tokenParts({ input: 0, output: 10, cacheRead: 30, cacheWrite: 0 }), 8).map(s => s.text)).toEqual(['██████', '▒▒'])
   expect(tokenBar(tokenParts({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }), 20)).toEqual([])
   expect(tokenBar(tokenParts(SCOUT), 2).reduce((n, s) => n + s.text.length, 0)).toBe(2)
+  // A gap parts each two neighbours and the bar still spans its width; too narrow for gaps, none.
+  const parted = tokenBar(tokenParts(SCOUT), 60, 1)
+  expect(parted.map(s => s.text)).toEqual(['█'.repeat(50), ' ', '▓'.repeat(4), ' ', '▒▒', ' ', '░'])
+  expect(parted.reduce((n, s) => n + s.text.length, 0)).toBe(60)
+  expect(tokenBar(tokenParts(SCOUT), 5, 1).map(s => s.text).join('')).toBe('██▓▒░')
+  // Every part has its own colour, so neighbours never read as one.
+  expect(new Set(tokenParts(SCOUT).map(p => p.tone)).size).toBe(4)
 })
 
 test('each account has its own row name: Claude by account, Codex by plan unless two would match', () => {
@@ -372,4 +397,37 @@ test('segments fill one line and cut where the width ends, padding kept', () => 
   expect(fitSegments(parts, 20).map(s => s.text)).toEqual(['12:45:51  ', 'BASH    ', 'wc'])
   expect(fitSegments(parts, 13).map(s => s.text)).toEqual(['12:45:51  ', 'BA…'])
   expect(fitSegments(parts, 0)).toEqual([])
+})
+
+test('wrapped segments break between words, split a word longer than a row and keep each tone', () => {
+  const rows = (segments: Parameters<typeof wrapSegments>[0], width: number) => wrapSegments(segments, width).map(r => r.map(s => s.text).join(''))
+  expect(rows([{ text: 'measured is the vendor percent at its own time', tone: 'subtle' }], 16)).toEqual(['measured is the', 'vendor percent', 'at its own time'])
+  // A run with no space is cut at the edge instead of running past it.
+  expect(rows([{ text: `▸ Bash: ${'x'.repeat(30)} (source truncated)`, tone: 'text' }], 12)).toEqual(['▸ Bash:', 'x'.repeat(12), 'x'.repeat(12), 'x'.repeat(6), '(source', 'truncated)'])
+  expect(rows([{ text: 'branch a\nworktree b', tone: 'subtle' }], 40)).toEqual(['branch a', 'worktree b'])
+  // Wide characters count two cells and never straddle the edge.
+  expect(wrapSegments([{ text: '漢字漢字漢', tone: 'text' }], 4).map(r => r.map(s => cells(s.text)))).toEqual([[4], [4], [2]])
+  const toned = wrapSegments([{ text: 'dispatched ', tone: 'text' }, { text: 'codex', tone: 'permission' }, { text: ' gpt-6/high · effort high', tone: 'text' }], 20)
+  expect(toned).toEqual([
+    [{ text: 'dispatched ', tone: 'text' }, { text: 'codex', tone: 'permission' }],
+    [{ text: 'gpt-6/high · effort', tone: 'text' }],
+    [{ text: 'high', tone: 'text' }],
+  ])
+  // A wide character wider than the row takes a row of its own instead of never fitting.
+  expect(rows([{ text: '中a', tone: 'text' }], 1)).toEqual(['中', 'a'])
+  // Spaces at the edge leave no empty row behind; a newline at the end still breaks.
+  expect(rows([{ text: 'abc def ', tone: 'text' }], 4)).toEqual(['abc', 'def'])
+  expect(rows([{ text: 'trail   ', tone: 'text' }], 8)).toEqual(['trail'])
+  for (const width of [1, 7, 33]) expect(wrapSegments([{ text: 'a b '.repeat(40), tone: 'text' }], width).every(r => cells(r.map(s => s.text).join('')) <= width)).toBe(true)
+})
+
+test('a log row counts the tokens a call took like its recent-call line, and a dash where none measured them', () => {
+  expect(logTokens({ outTokens: 1_000, inTokens: 974, estimated: true })).toEqual({ input: '~974', output: '1.0k' })
+  expect(logTokens({ outTokens: 62_000, inTokens: 1_930_000, estimated: false })).toEqual({ input: '1.93M', output: '62k' })
+  expect(logTokens({})).toEqual({ input: NONE, output: NONE })
+  expect(logTokens({ outTokens: 5 })).toEqual({ input: NONE, output: '5' })
+  const [tool, status] = logEntries([{ home: '/fm', id: 'a', harness: 'claude', events: [
+    { at: 1, kind: 'status', text: 'working' }, { at: 2, kind: 'tool', text: 'Bash: ls', outTokens: 9, inTokens: 30, estimated: true },
+  ] }])
+  expect([tool && logTokens(tool), status && logTokens(status)]).toEqual([{ input: '~30', output: '9' }, { input: NONE, output: NONE }])
 })
