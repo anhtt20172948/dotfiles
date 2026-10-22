@@ -1,5 +1,5 @@
+import functools
 import json
-import re
 import subprocess
 import tomllib
 import unittest
@@ -57,20 +57,18 @@ def parse_yazi_prepend_dirs(theme):
     return [(entry["name"], entry["text"]) for entry in theme["icon"]["prepend_dirs"]]
 
 
-def parse_neo_tree_directory_entries(source):
-    match = re.search(r"directory\s*=\s*\{(?P<body>.*?)\n\s*\},\n\s*},", source, re.DOTALL)
-    if not match:
-        raise AssertionError("mini.icons directory table not found")
-    entries = []
-    line_pattern = re.compile(
-        r'^\s*(?:\["(?P<bracket>[^"]+)"\]|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))\s*='
-        r'\s*\{\s*glyph\s*=\s*"(?P<glyph>.*?)"\s*,\s*hl\s*='
+@functools.cache
+def inspect_neo_tree():
+    result = subprocess.run(
+        ["nvim", "--headless", "-u", "NONE", "-i", "NONE", "-n", "-l", str(HELPER), str(NEO_TREE)],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
     )
-    for line in match.group("body").splitlines():
-        parsed = line_pattern.match(line)
-        if parsed:
-            entries.append((parsed.group("bracket") or parsed.group("bare"), parsed.group("glyph")))
-    return entries
+    # Neovim 0.11 emits :print output on stderr in headless `-l` mode.
+    output = (result.stdout + "\n" + result.stderr).strip()
+    return json.loads(output.splitlines()[-1])
 
 
 class MaterialFolderIconsTest(unittest.TestCase):
@@ -80,30 +78,15 @@ class MaterialFolderIconsTest(unittest.TestCase):
 
         yazi_theme = tomllib.loads(YAZI.read_text(encoding="utf-8"))
         yazi_entries = parse_yazi_prepend_dirs(yazi_theme)
-        neo_tree_entries = parse_neo_tree_directory_entries(NEO_TREE.read_text(encoding="utf-8"))
 
         self.assertEqual(140, len(yazi_entries))
         self.assertEqual(140, len({name for name, _ in yazi_entries}))
-        self.assertEqual(140, len(neo_tree_entries))
-        self.assertEqual(140, len({name for name, _ in neo_tree_entries}))
 
-        yazi_icons = dict(yazi_entries)
-        neo_tree_icons = dict(neo_tree_entries)
-
-        self.assertEqual(expected, yazi_icons)
-        self.assertEqual(expected, neo_tree_icons)
+        self.assertEqual(expected, dict(yazi_entries))
+        self.assertEqual(expected, inspect_neo_tree()["directory_glyphs"])
 
     def test_neo_tree_runtime_configuration_is_single_and_preserves_options(self):
-        result = subprocess.run(
-            ["nvim", "--headless", "-u", "NONE", "-i", "NONE", "-n", "-l", str(HELPER), str(NEO_TREE)],
-            cwd=ROOT,
-            check=True,
-            text=True,
-            capture_output=True,
-        )
-        # Neovim 0.11 emits :print output on stderr in headless `-l` mode.
-        output = (result.stdout + "\n" + result.stderr).strip()
-        config = json.loads(output.splitlines()[-1])
+        config = inspect_neo_tree()
         self.assertEqual(1, config["setup_count"])
         self.assertEqual("preserved", config["sentinel"])
         self.assertEqual(1, config["incoming_handler_count"])
@@ -117,8 +100,7 @@ class MaterialFolderIconsTest(unittest.TestCase):
         self.assertEqual({"error": "", "warn": "", "info": "", "hint": "󰌵"}, config["diagnostics"])
 
     def test_neo_tree_does_not_globally_configure_diagnostics_and_is_valid_lua(self):
-        source = NEO_TREE.read_text(encoding="utf-8")
-        self.assertNotIn("vim.diagnostic.config(", source)
+        self.assertEqual(0, inspect_neo_tree()["diagnostic_config_calls"])
         subprocess.run(["luac", "-p", str(NEO_TREE)], cwd=ROOT, check=True, capture_output=True, text=True)
 
 

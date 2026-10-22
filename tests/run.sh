@@ -64,7 +64,8 @@ with_timeout() {
 	fi
 }
 
-# Chạy một case trong HOME/XDG riêng; log giữ ở $LOG_DIR/<tên>.log, in ra khi fail.
+# Chạy một case trong HOME/XDG riêng; log giữ ở $LOG_DIR/<tên>.log, in ra khi fail
+# (khi pass chỉ in các dòng `skip:`).
 #   run_case <tên> <lệnh...>
 run_case() {
 	local name=$1
@@ -75,6 +76,7 @@ run_case() {
 		XDG_DATA_HOME="$case_dir/data" XDG_STATE_HOME="$case_dir/state" CODEX_HOME="$case_dir/home/.codex" \
 		TMUX='' with_timeout 120 "$@" >"$log" 2>&1; then
 		echo "ok   $name"
+		sed -n 's/^skip:/     | skip:/p' "$log"
 	else
 		echo "FAIL $name (rerun: TMUX= $*)"
 		sed 's/^/     | /' "$log"
@@ -120,7 +122,6 @@ run_test() {
 	else
 		run_case "${t##*/}" python3 "$t"
 	fi
-	[[ -n ${TEST_LOG_DIR:-} ]] || rm -rf "$LOG_DIR"
 	rm -rf "$CFG"
 	return "$FAILED"
 }
