@@ -46,6 +46,8 @@ let themeName: string = DEFAULT_THEME
 let home = ''
 let paint: Paint = themePainter(DEFAULT_THEME, { isNoColor: false, isTruecolor: true })
 let pulseTimer: Timer | null = null
+/** Counts the timer's stops, so a start that began before a stop (the pane closing meanwhile) does not go through. */
+let pulseStops = 0
 
 /** Builds the painter from the Theme option and what the terminal says (NO_COLOR, COLORTERM). */
 async function loadPaint($: Dollar): Promise<void> {
@@ -84,19 +86,33 @@ async function isPaneShown($: Dollar): Promise<boolean> {
  * step; otherwise the timer is stopped and the frame cleared, so every border stands still.
  */
 async function syncPulse($: Dollar): Promise<void> {
+  const stops = pulseStops
   const report = await read($, reportAtom)
   const now = await $.clock.now()
   const isRunning = report?.crew.some(m => isActive(m, now)) ?? false
   const shouldRun = isRunning && await isPaneShown($) && !(await isMotionReduced($))
   if (!shouldRun) return stopPulse($)
-  if (pulseTimer !== null) return
-  await update($, pulseAtom, value => value ?? 0)
-  pulseTimer = $.clock.every(PULSE_MS, () => {
-    void update($, pulseAtom, value => (value ?? 0) + 1)
+  // Set before any await, so a poll and an open that both get here start one timer, not two.
+  if (pulseTimer !== null || stops !== pulseStops) return
+  // A tick or this first frame landing after a stop finds the frame cleared and leaves it so.
+  const timer = $.clock.every(PULSE_MS, () => {
+    void update($, pulseAtom, value => value === null ? null : value + 1)
   })
+  pulseTimer = timer
+  await update($, pulseAtom, value => pulseTimer === timer ? value ?? 0 : value)
+}
+
+/** syncPulse for a caller with other work: a failure is logged to the debug log and never fails a read or an open. */
+async function checkPulse($: Dollar): Promise<void> {
+  try {
+    await syncPulse($)
+  } catch (err) {
+    $.ui.log(`crew-watch: border timer: ${err instanceof Error ? err.message : String(err)}`, { to: 'debug' })
+  }
 }
 
 async function stopPulse($: Dollar): Promise<void> {
+  pulseStops += 1
   pulseTimer?.cancel()
   pulseTimer = null
   await update($, pulseAtom, () => null)
@@ -187,13 +203,14 @@ async function readCrew($: Dollar): Promise<void> {
   await update($, errorAtom, () => report.errors.join('; '))
   await settle($, false)
   $.ui.status(statusLine(report.crew, report.totals, report.generatedAt))
-  await syncPulse($)
 }
 
 /** Records when the read ended and whether it failed: each one redraws the pane, so its freshness moves on. */
 async function settle($: Dollar, failed: boolean): Promise<void> {
   const at = await $.clock.now()
   await update($, pollAtom, () => ({ at, failed }))
+  // Every read, failed or not, decides again whether the border timer runs.
+  await checkPulse($)
 }
 
 export const register: Register = (on, options) => {
@@ -237,7 +254,7 @@ export const register: Register = (on, options) => {
     }
     void poll($)
     await $.ui.open({ id: PANE, title: TITLE })
-    await syncPulse($)
+    await checkPulse($)
 
     return { text: 'Crew pane opened.' }
   })

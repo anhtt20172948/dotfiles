@@ -143,15 +143,21 @@ const PANE = {
 const sized = (columns: number, rows: number, over: Record<string, unknown> = {}) =>
   ({ ...PANE, surface: 'terminal' as const, props: { ...PANE.props, bodyColumns: columns, scroll: { offset: 0, bodyRows: rows }, ...over } })
 
-/** `isShown` is the pane as the engine keeps it, `isReduced` the person's Reduce motion setting: what the border timer asks about. */
-type World = { report: CrewReport; fail: string; now: number; env: Record<string, string>; argv: readonly string[]; isShown: boolean; isReduced: boolean }
+/**
+ * `isShown` is the pane as the engine keeps it, `isReduced` the person's Reduce motion setting: what the
+ * border timer asks about; while `settingsHeld` is set, a settings read waits for it.
+ */
+type World = {
+  report: CrewReport; fail: string; now: number; env: Record<string, string>; argv: readonly string[]
+  isShown: boolean; isReduced: boolean; settingsHeld: Promise<void> | null
+}
 
 /**
  * Answers every engine call the mod makes from a mutable world the test steers. With `clock: false` the
  * test answers the clock itself (`mock.clock`), so timers wait until it moves the time.
  */
 const stub = (on: On, world: Partial<World> = {}, { clock = true } = {}): World => {
-  const w: World = { report: REPORT, fail: '', now: NOW + 4_000, env: {}, argv: [], isShown: false, isReduced: false, ...world }
+  const w: World = { report: REPORT, fail: '', now: NOW + 4_000, env: {}, argv: [], isShown: false, isReduced: false, settingsHeld: null, ...world }
   on('command.register', () => ({ value: { command: 'crew' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.root', () => ({ value: '/fm' }))
@@ -172,7 +178,10 @@ const stub = (on: On, world: Partial<World> = {}, { clock = true } = {}): World 
     w.isShown = false
     return { value: undefined }
   })
-  on('settings.read', () => ({ value: w.isReduced ? { prefersReducedMotion: true } : {} }))
+  on('settings.read', async () => {
+    await w.settingsHeld
+    return { value: w.isReduced ? { prefersReducedMotion: true } : {} }
+  })
   on('env.get', (_, e) => ({ value: w.env[e.name] }))
   on('process.run', (_, e) => {
     w.argv = e.argv
@@ -1267,6 +1276,66 @@ test('the border timer stops once nothing runs and starts again with a running c
   await ui.unmount()
 })
 
+test('opening the pane while a read is under way starts one border timer, not two', { timeoutMs: 20_000 }, async ($, on) => {
+  const world = stub(on, { report: REFERENCE }, { clock: false })
+  const clock = mock.clock(on, { now: NOW + 4_000 })
+  await start($)
+  // The open and the read each ask for the timer, and their last check before it is held until both wait there.
+  world.settingsHeld = clock.sleep(10)
+  const opening = Promise.all([toggle($), refresh($)])
+  await clock.advance(10)
+  await opening
+  world.settingsHeld = null
+  const ui = await $.ui.mount(sized(120, 40))
+  const lefts: number[] = []
+  for (let i = 0; i < 3; i++) {
+    await clock.advance(1_000)
+    lefts.push((await runAt(ui, '/fm:crew-watch-transparent'))?.top.left ?? -1)
+  }
+  // One step a second; a second timer would move it two.
+  expect(lefts).toEqual([5, 9, 13])
+  await ui.unmount()
+})
+
+test('a pane closed while a read is deciding to start the border timer stays still', { timeoutMs: 20_000 }, async ($, on) => {
+  const world = stub(on, { report: { ...REFERENCE, crew: [DONE_SCOUT] } }, { clock: false })
+  const clock = mock.clock(on, { now: NOW + 4_000 })
+  await start($)
+  await toggle($)
+  const ui = await $.ui.mount(sized(120, 40))
+  // A crewmate starts running: the read sees the pane open and is held at its last check while the pane closes.
+  world.report = REFERENCE
+  world.settingsHeld = clock.sleep(10)
+  const reading = refresh($)
+  await clock.settle()
+  expect((await toggle($)).text).toBe('Crew pane closed.')
+  await clock.advance(10)
+  await reading
+  world.settingsHeld = null
+  await clock.advance(3_000)
+  expect(await runAt(ui, '/fm:crew-watch-transparent')).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a failed read decides again whether the border timer runs', { timeoutMs: 20_000 }, async ($, on) => {
+  const world = stub(on, { report: REFERENCE }, { clock: false })
+  const clock = mock.clock(on, { now: NOW + 4_000 })
+  await start($)
+  await toggle($)
+  const ui = await $.ui.mount(sized(120, 40))
+  const running = '/fm:crew-watch-transparent'
+  await clock.advance(1_000)
+  expect((await runAt(ui, running))?.top.left).toBe(5)
+  // Reduce motion is turned on and the next read fails: that read still stops the timer.
+  world.isReduced = true
+  world.fail = 'read unavailable'
+  await refresh($)
+  expect(await runAt(ui, running)).toBeUndefined()
+  await clock.advance(3_000)
+  expect(await runAt(ui, running)).toBeUndefined()
+  await ui.unmount()
+})
+
 test('Reduce motion keeps every border still: the timer never starts', { timeoutMs: 20_000 }, async ($, on) => {
   stub(on, { report: REFERENCE, isReduced: true }, { clock: false })
   const clock = mock.clock(on, { now: NOW + 4_000 })
@@ -1323,7 +1392,7 @@ for (const theme of THEME_NAMES) {
       await ui.press({ key: `card-/fm:${id}` })
       const row = async (key: string) => segments(segments(await ui.find({ key }))[0])
       expect(named((await row('d-dispatch'))[1])).toEqual([text, color])
-      expect(named((await row(`d-model-${model}`))[0])).toEqual([model, color])
+      expect(named((await row(`d-model-${model}`))[0])).toEqual([`${text[0]} ${model}`, color])
       expect(named((await row('d-quota-0'))[0])).toEqual([text.split(' ').slice(0, 2).join(' '), color])
       const where = segments(await ui.find({ key: 'd-where' })).flatMap(segments).find(t => /^[✻◆▪] /.test(textOf(t)))
       expect(named(where)).toEqual([text.split(' ').slice(0, 2).join(' '), color])

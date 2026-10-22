@@ -205,8 +205,10 @@ each second, left to right along the top edge and right to left along the
 bottom one, in the running colour. Every other border stands still. The run
 needs a timer, which runs only while the pane is open and in front, some
 crewmate runs and Claude Code's Reduce motion setting (`/config`, or
-`"prefersReducedMotion": true` in settings) is off; otherwise it is stopped
-and the borders keep their colours without the run.
+`"prefersReducedMotion": true` in settings) is off. Each refresh (every 5 s by
+default, failed reads included) checks those again, and closing the pane stops
+the timer at once; a stopped timer leaves the borders their colours without
+the run.
 
 One rule colours every harness, provider and model name, through
 `harnessStyle()` in `hooks/theme.ts`: a card's harness, model and effort, the

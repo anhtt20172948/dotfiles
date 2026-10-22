@@ -569,7 +569,7 @@ const drawDetails = (kit: Kit, view: ViewState, m: CrewMember, at: number, home:
       {section('MODEL', [
         block([{ text: 'dispatched ', tone: 'text' }, dispatchName(m), { text: ` · ${effortText(m.effort)}`, tone: 'text' }], 'd-dispatch'),
         Object.entries(m.models).length === 0 ? text('no model requests yet', 'subtle', 'd-no-models') : null,
-        ...Object.entries(m.models).map(([model, n]) => block([{ text: model, tone: harness.tone }, { text: ` ×${n}`, tone: 'subtle' }], `d-model-${model}`)),
+        ...Object.entries(m.models).map(([model, n]) => block([harnessName(model), { text: ` ×${n}`, tone: 'subtle' }], `d-model-${model}`)),
       ])}
       {section('CONTEXT & TOKENS', [
         text(`context ${contextExact(m)}`, 'text', 'd-context'),
