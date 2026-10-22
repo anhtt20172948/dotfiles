@@ -483,3 +483,35 @@ test('a theme changes colours only, never the text or layout', () => {
     expect(drawings.get(label)?.layout).toEqual(base?.layout)
   }
 })
+
+/** Whether any element in a drawn tree sets a background colour. */
+const paintsBackground = (node: unknown): boolean => {
+  if (typeof node !== 'object' || node === null) return false
+  const { props = {}, children = [] } = node as Drawn
+  return 'backgroundColor' in props || children.some(paintsBackground)
+}
+
+// The engine fills a docked pane itself and has no transparent colour, so the
+// only way to stay clear of that fill is to never paint a background of our own
+// (see README, "Pane background"). Any theme, size or placement must keep it so.
+for (const theme of ['default', 'nord', 'catppuccin-latte']) {
+  test(`the ${theme} theme never sets a background colour in any layout`, { options: { theme } }, async ($, on) => {
+    on('env.get', (_, e) => ({ value: e.name === 'COLORTERM' ? 'truecolor' : undefined }))
+    on('command.register', () => ({ value: { command: 'crew' } }))
+    on('session.start', (_, e) => ({ cwd: e.cwd }))
+    on('session.root', () => ({ value: '/fm' }))
+    on('session.id', () => ({ value: 'pane-session' }))
+    on('clock.every', () => ({ value: undefined }))
+    on('ui.status', () => ({ value: undefined }))
+    on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(REPORT), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+    await $.session.start({ cwd: '/fm', surface: 'terminal', isInteractive: true })
+    await $.command.run({ command: 'crew', args: 'refresh', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } })
+    for (const placement of ['dock', 'inline'] as const) {
+      for (const columns of [40, 130]) {
+        const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns: columns, placement } })
+        expect(paintsBackground(await ui.drawn())).toBe(false)
+        await ui.unmount()
+      }
+    }
+  })
+}

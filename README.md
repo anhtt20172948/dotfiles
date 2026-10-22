@@ -209,6 +209,18 @@ first started (worktree slots are reused; a relaunch keeps earlier usage),
 follows secondmate homes, and shows a summary in the status line. The layout takes inspiration from
 [claude-flightdeck](https://github.com/scasella/claude-flightdeck).
 
+Pane background. The pane is not transparent, and a mod cannot make it so.
+When docked, the engine fills the whole pane column (and its divider) with its
+own background colour, behind whatever the mod draws, and the mod API has no
+transparent or terminal-default colour: `Color` is a theme key or a raw colour,
+`Pane` has no background prop, and values such as `transparent` or `default` are
+ignored. A mod can only cover that fill with an explicit colour, never remove
+it, so a transparent terminal does not show through the docked pane. crew-watch
+therefore sets no `backgroundColor` anywhere, the palette backgrounds in
+`hooks/theme.ts` exist only to check text contrast, and a test keeps it so; it
+adds no background option, since an explicit colour would only paint a patchwork
+over the engine's fill.
+
 Tokens per tool call. The API bills requests, not calls, so each call is
 charged with the output tokens of the request that emitted it (split evenly
 when one request emits several calls) plus the input its result added to the
