@@ -37,13 +37,15 @@ Weekly quota share. Vendors publish no weekly caps in tokens, so the share is
 cost of its tool calls, since the window started) / (weighted tokens of every
 local session of that provider since then). Tokens are weighted by PRICE_RATIO
 and FAMILY_PRICE below. The percent, reset time and plan come from local
-sources only: the engine's rate limits (--claude-limits), Claude Code's cached
-usage in ~/.claude.json, Codex rollout rate-limit events and Claude's local plan
-metadata. The freshest reading whose window has not reset wins, reported with
-its source and read time; one older than STALE_MS is flagged stale. Without a
-reading only the raw share of local usage is reported. Usage from other
-machines or the web is invisible here, so the share is an upper bound for local
-work.
+sources only: the rate limits of the pane session's last API response
+(--claude-limits, read at the newest response in its own transcript, found by
+--claude-session), Claude Code's cached usage in ~/.claude.json, Codex rollout
+rate-limit events and Claude's local plan metadata. The freshest reading whose
+window has not reset wins, reported with its source and read time; one older
+than STALE_MS, or of unknown age, is flagged stale. Without a reading only the
+raw share of local usage is reported. Usage from other machines or the web is
+invisible here, so with a current reading the share is an upper bound for local
+work; a stale reading can understate it.
 """
 
 import argparse
@@ -56,7 +58,7 @@ import sys
 import time
 from datetime import datetime
 
-CACHE_VERSION = 8
+CACHE_VERSION = 9
 HOME = os.path.expanduser("~")
 CLAUDE_PROJECTS = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR", os.path.join(HOME, ".claude")), "projects")
 CODEX_SESSIONS = os.path.join(os.environ.get("CODEX_HOME", os.path.join(HOME, ".codex")), "sessions")
@@ -73,10 +75,11 @@ STALE_MS = 30 * 60000
 
 # Relative price of a token by type, per provider (input = 1). Only ratios
 # matter for a share: a cache read costs a tenth of an input token, a Claude
-# cache write a quarter more, an output token several times more.
+# cache write a quarter more (twice as much when kept for an hour), an output
+# token several times more.
 PRICE_RATIO = {
-    "claude": {"input": 1.0, "output": 5.0, "cacheRead": 0.1, "cacheWrite": 1.25},
-    "codex": {"input": 1.0, "output": 8.0, "cacheRead": 0.1, "cacheWrite": 1.0},
+    "claude": {"input": 1.0, "output": 5.0, "cacheRead": 0.1, "cacheWrite": 1.25, "cacheWrite1h": 2.0},
+    "codex": {"input": 1.0, "output": 8.0, "cacheRead": 0.1, "cacheWrite": 1.0, "cacheWrite1h": 1.0},
 }
 # Relative input price by model family: the first key found in the model id wins.
 FAMILY_PRICE = {
@@ -113,9 +116,10 @@ def token_weights(provider, model):
     return {kind: base * ratio for kind, ratio in PRICE_RATIO[provider].items()}
 
 
-def weigh(provider, model, fresh=0, output=0, cache_read=0, cache_write=0):
+def weigh(provider, model, fresh=0, output=0, cache_read=0, cache_write=0, cache_write_1h=0):
     w = token_weights(provider, model)
-    return fresh * w["input"] + output * w["output"] + cache_read * w["cacheRead"] + cache_write * w["cacheWrite"]
+    return (fresh * w["input"] + output * w["output"] + cache_read * w["cacheRead"] + cache_write * w["cacheWrite"]
+            + cache_write_1h * w["cacheWrite1h"])
 
 
 def add_cost(agg, provider, at, session=0.0, tool=0.0):
@@ -238,9 +242,9 @@ def settle_request(agg, provider, rec, nxt):
         price = token_weights(provider, rec["model"])["input"]
     else:
         inputs = split_by(added, sizes)
-        w = token_weights(provider, nxt["model"])
-        new = nxt["fresh"] + nxt["write"]
-        price = (nxt["fresh"] * w["input"] + nxt["write"] * w["cacheWrite"]) / new if new else w["cacheRead"]
+        new = nxt["fresh"] + nxt["write"] + nxt["write1h"]
+        price = (weigh(provider, nxt["model"], nxt["fresh"], cache_write=nxt["write"], cache_write_1h=nxt["write1h"]) / new
+                 if new else token_weights(provider, nxt["model"])["cacheRead"])
     w_out = token_weights(provider, rec["model"])["output"]
     estimated = added is None
     for call, out, tokens_in in zip(calls, split_even(rec["out"], len(calls)), inputs):
@@ -376,6 +380,13 @@ def fresh_entry():
             "flow": {"cur": None, "open": None}, "ids": []}
 
 
+def claude_writes(usage):
+    """Cache writes by lifetime, (5-minute, 1-hour); a log without the split has only 5-minute ones."""
+    total = usage.get("cache_creation_input_tokens") or 0
+    hour = min(total, (usage.get("cache_creation") or {}).get("ephemeral_1h_input_tokens") or 0)
+    return total - hour, hour
+
+
 def apply_claude_usage(agg, usage, sign, model="", at=0):
     agg["input"] += sign * (usage.get("input_tokens") or 0)
     agg["output"] += sign * (usage.get("output_tokens") or 0)
@@ -383,7 +394,7 @@ def apply_claude_usage(agg, usage, sign, model="", at=0):
     agg["cacheWrite"] += sign * (usage.get("cache_creation_input_tokens") or 0)
     add_cost(agg, "claude", at, sign * weigh(
         "claude", model, usage.get("input_tokens") or 0, usage.get("output_tokens") or 0,
-        usage.get("cache_read_input_tokens") or 0, usage.get("cache_creation_input_tokens") or 0))
+        usage.get("cache_read_input_tokens") or 0, *claude_writes(usage)))
     details = usage.get("output_tokens_details") or {}
     agg["reasoning"] += sign * (details.get("thinking_tokens") or 0)
 
@@ -421,8 +432,8 @@ def parse_claude(path, entry, owners, worktree=""):
             + (usage.get("cache_read_input_tokens") or 0)
             + (usage.get("cache_creation_input_tokens") or 0)
         )
-        nxt = {"ctx": ctx, "fresh": usage.get("input_tokens") or 0,
-               "write": usage.get("cache_creation_input_tokens") or 0, "model": model}
+        write, write_1h = claude_writes(usage)
+        nxt = {"ctx": ctx, "fresh": usage.get("input_tokens") or 0, "write": write, "write1h": write_1h, "model": model}
         mid = msg.get("id")
         if mid and owners.setdefault(mid, path) != path:
             if flow["cur"]:
@@ -525,7 +536,8 @@ def parse_codex(path, entry, worktree=""):
                 # The items logged since the previous count belong to this request.
                 flow = entry["flow"]
                 if flow["cur"]:
-                    nxt = {"ctx": last.get("input_tokens") or 0, "fresh": fresh_now, "write": write_now, "model": model}
+                    nxt = {"ctx": last.get("input_tokens") or 0, "fresh": fresh_now, "write": write_now, "write1h": 0,
+                           "model": model}
                     settle_request(agg, "codex", flow["cur"], nxt)
                 flow["cur"] = {**(flow["open"] or new_request(0, "", 0, 0)), "at": at, "model": model,
                                "ctx": last.get("input_tokens") or None, "out": out_now}
@@ -705,13 +717,13 @@ def collect_tasks(home, depth, seen):
     return tasks
 
 
-def scan_local(files, scan, owners, codex_index, touched, now):
+def scan_local(files, scan, owners, codex_index, touched, now, deadline):
     """Every local session of the last week, per provider, for the quota denominator.
 
     Files a crewmate owns reuse that entry; the rest are parsed into a separate
     cache so their tool texts are never abbreviated for the wrong worktree.
-    Parsing stops at a time budget; the next poll resumes, and the provider is
-    flagged as still indexing.
+    Parsing stops at the run's deadline; the next poll resumes, and the provider
+    is flagged as still indexing.
     """
     since = now - WEEK_MS
     todo = []
@@ -723,7 +735,6 @@ def scan_local(files, scan, owners, codex_index, touched, now):
     todo.extend(("codex", path) for path, _cwd, modified in codex_index if modified >= since)
     found = {"claude": [], "codex": []}
     indexed = {"claude": True, "codex": True}
-    deadline = time.monotonic() + SCAN_BUDGET_SECONDS
     for provider, path in todo:
         if path in touched:
             found[provider].append(files[path])
@@ -811,16 +822,29 @@ def window_candidate(source, percent, resets_at, window_ms, read_at):
             "windowMs": window_ms or WEEK_MS, "readAt": read_at or None}
 
 
-def claude_candidates(limits, now):
-    """Engine rate limits (live) and Claude Code's cached /usage reading."""
+def session_transcript(session_id):
+    """The pane session's own transcript: its id is the file's name, in some project directory."""
+    if not re.fullmatch(r"[\w-]+", session_id or ""):
+        return None
+    try:
+        projects = os.listdir(CLAUDE_PROJECTS)
+    except OSError:
+        return None
+    paths = (os.path.join(CLAUDE_PROJECTS, name, session_id + ".jsonl") for name in projects)
+    return next((path for path in paths if os.path.isfile(path)), None)
+
+
+def claude_candidates(limits, limits_at):
+    """The pane session's rate limits, read at its last API response (None when unknown), and Claude Code's cached /usage."""
     out = []
     for limit in limits if isinstance(limits, list) else []:
         if isinstance(limit, dict) and limit.get("kind") == "seven_day":
-            out.append(window_candidate("claude-code", limit.get("percentUsed"), ts_ms(limit.get("resetsAt")), WEEK_MS, now))
+            out.append(window_candidate("this session", limit.get("percentUsed"), ts_ms(limit.get("resetsAt")), WEEK_MS,
+                                        limits_at))
     cached = claude_global_config().get("cachedUsageUtilization")
     week = ((cached or {}).get("utilization") or {}).get("seven_day") if isinstance(cached, dict) else None
     if isinstance(week, dict):
-        out.append(window_candidate("claude-code cache", week.get("utilization"), ts_ms(week.get("resets_at")), WEEK_MS,
+        out.append(window_candidate("usage cache", week.get("utilization"), ts_ms(week.get("resets_at")), WEEK_MS,
                                     cached.get("fetchedAtMs")))
     return out
 
@@ -837,17 +861,18 @@ def codex_candidates(entries):
     if not weekly:
         return [], plan
     week = max(weekly, key=lambda w: w["minutes"])
-    return [window_candidate("codex rollout", week.get("percent"), (week.get("resetsAt") or 0) * 1000,
+    return [window_candidate("codex log", week.get("percent"), (week.get("resetsAt") or 0) * 1000,
                              week["minutes"] * 60000, newest["at"])], plan
 
 
 def pick_window(candidates, now):
     """The freshest weekly reading still in force; a window that has reset says nothing about the new one."""
-    live = [c for c in candidates if c and (c["resetsAt"] is None or c["resetsAt"] > now)]
+    live = [c for c in candidates if c["resetsAt"] is None or c["resetsAt"] > now]
     return max(live, key=lambda c: c["readAt"] or 0) if live else None
 
 
 def provider_window(candidates, plan, now):
+    candidates = [c for c in candidates if c]
     window = pick_window(candidates, now)
     known = bool(window and window["resetsAt"])
     start = window["resetsAt"] - window["windowMs"] if known else now - WEEK_MS
@@ -859,7 +884,7 @@ def provider_window(candidates, plan, now):
         "windowStartKnown": known,
         "source": window["source"] if window else "",
         "readAt": window["readAt"] if window else None,
-        "stale": bool(window) and now - (window["readAt"] or 0) > STALE_MS,
+        "stale": bool(window) and (window["readAt"] is None or now - window["readAt"] > STALE_MS),
         "reset": bool(candidates) and window is None,
     }
 
@@ -867,8 +892,10 @@ def provider_window(candidates, plan, now):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--home", action="append", default=[], help="Firstmate home to read (repeatable)")
-    ap.add_argument("--claude-limits", default="[]", help="JSON rate-limit windows the engine reports for Claude")
+    ap.add_argument("--claude-limits", default="[]", help="JSON rate-limit windows of the pane session's last API response")
+    ap.add_argument("--claude-session", default="", help="the pane session's id, to date those rate limits")
     args = ap.parse_args()
+    deadline = time.monotonic() + SCAN_BUDGET_SECONDS
     homes = args.home or [os.environ.get("FM_HOME") or os.getcwd()]
     now = int(time.time() * 1000)
     errors = []
@@ -924,14 +951,17 @@ def main():
 
     if codex_index is None:
         codex_index = codex_files(cache, now)
-    found, indexed = scan_local(files, cache["scan"], owners, codex_index, touched, now)
+    found, indexed = scan_local(files, cache["scan"], owners, codex_index, touched, now, deadline)
     try:
         limits = json.loads(args.claude_limits)
     except ValueError:
         limits = []
+    own = session_transcript(args.claude_session)
+    own_entry = files.get(own) if own in touched else cache["scan"].get(own)
+    limits_at = own_entry["agg"]["lastAt"] if own_entry else None
     codex_cands, codex_rollout_plan = codex_candidates(found["codex"])
     providers = {
-        "claude": provider_window(claude_candidates(limits, now), claude_plan(), now),
+        "claude": provider_window(claude_candidates(limits, limits_at), claude_plan(), now),
         "codex": provider_window(codex_cands, codex_rollout_plan.title(), now),
     }
     for name, info in providers.items():

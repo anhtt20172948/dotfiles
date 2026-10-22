@@ -38,7 +38,7 @@ export type QuotaProvider = {
   /** Where the reading came from, and when; readAt is null when the source does not say. */
   source: string
   readAt: number | null
-  /** The reading is older than half an hour. */
+  /** The reading is older than half an hour, or its age is unknown. */
   stale: boolean
   /** Readings exist but the window they describe has reset. */
   reset: boolean

@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { CrewMember, CrewReport } from '../types'
+import { dashboardLayout } from '../hooks/dashboard'
 import { callTokensText, quotaRows, toolTokenNote, toolTokenText } from '../hooks/format'
 
 const NOW = 1_800_000_000_000
@@ -61,7 +62,7 @@ const REPORT: CrewReport = {
   totals: { requests: 12, input: 120, output: 15_400, cacheRead: 1_900_000, cacheWrite: 98_000, reasoning: 4_000, toolCalls: 31 },
   quota: {
     providers: {
-      claude: { plan: 'Max 5x', percentUsed: 37, resetsAt: NOW + 86_400_000, windowStart: NOW - 5 * 86_400_000, windowStartKnown: true, source: 'claude-code', readAt: NOW - 120_000, stale: false, reset: false, indexed: true, localCost: 1e6 },
+      claude: { plan: 'Max 5x', percentUsed: 37, resetsAt: NOW + 86_400_000, windowStart: NOW - 5 * 86_400_000, windowStartKnown: true, source: 'this session', readAt: NOW - 120_000, stale: false, reset: false, indexed: true, localCost: 1e6 },
     },
     fleet: { claude: { session: { share: 0.2, percent: 7.4 }, tools: { share: 0.08, percent: 2.96 } } },
   },
@@ -87,6 +88,7 @@ test('the pane shows each crewmate\'s models, tokens, cache and tools, on every 
   on('command.register', () => ({ value: { command: 'crew' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.root', () => ({ value: '/fm' }))
+  on('session.id', () => ({ value: 'pane-session' }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
   on('process.run', (_, e) => {
@@ -98,6 +100,7 @@ test('the pane shows each crewmate\'s models, tokens, cache and tools, on every 
   const ran = await $.command.run({ command: 'crew', args: 'refresh', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } })
   expect(ran.text).toBe('Crew refreshed: 2 live crewmate(s).')
   expect(argv.slice(-2)).toEqual(['--home', '/fm'])
+  expect(argv[argv.indexOf('--claude-session') + 1]).toBe('pane-session')
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
@@ -108,9 +111,12 @@ test('the pane shows each crewmate\'s models, tokens, cache and tools, on every 
     expect((await ui.find({ type: 'Text', text: /cache ▰/ }))?.text).toContain('95%')
     expect(await ui.find({ text: /tools 31 · 47k tok/ })).toBeDefined()
     expect(await ui.find({ text: /Bash ▰.* 20 42k/ })).toBeDefined()
-    expect(await ui.find({ text: /claude Max 5x · week 37% used/ })).toBeDefined()
-    expect(await ui.find({ text: /current · read 2m ago · claude-code/ })).toBeDefined()
-    expect(await ui.find({ text: /of week session 7\.4% · tools direct 3\.0%/ })).toBeDefined()
+    expect(await ui.find({ text: 'claude Max 5x' })).toBeDefined()
+    expect(await ui.find({ text: 'week 37% used · current' })).toBeDefined()
+    expect(await ui.find({ text: 'read 2m ago · this session' })).toBeDefined()
+    expect(await ui.find({ text: 'session 7.4% of week' })).toBeDefined()
+    expect(await ui.find({ text: 'tools direct 3.0% of week' })).toBeDefined()
+    expect(await ui.find({ text: /with a current reading shares are upper bounds/ })).toBeDefined()
     expect(await ui.find({ text: /later cache re-reads count to the session only/ })).toBeDefined()
     expect(await ui.find({ text: /other machines and the web are not seen/ })).toBeDefined()
     expect(await ui.find({ text: /Bash ▰/ })).toBeDefined()
@@ -124,6 +130,7 @@ test('a failed read shows the reason in the pane', async ($, on) => {
   on('command.register', () => ({ value: { command: 'crew' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.root', () => ({ value: '/fm' }))
+  on('session.id', () => ({ value: 'pane-session' }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
   on('process.run', () => ({ value: { exitCode: 1, stdout: '', stderr: 'Traceback\nValueError: boom', isStdoutTruncated: false, isStderrTruncated: false } }))
@@ -142,6 +149,7 @@ test('dashboard matrix draws every fleet size, width, placement and surface', as
   on('command.register', () => ({ value: { command: 'crew' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.root', () => ({ value: '/fm' }))
+  on('session.id', () => ({ value: 'pane-session' }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
   on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(current), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
@@ -186,6 +194,7 @@ test('the ninth hotkey works and a failed refresh keeps the inline summary withi
   on('command.register', () => ({ value: { command: 'crew' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.root', () => ({ value: '/fm' }))
+  on('session.id', () => ({ value: 'pane-session' }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
   on('process.run', () => ({ value: { exitCode: fail ? 1 : 0, stdout: JSON.stringify(report), stderr: fail ? 'read unavailable' : '', isStdoutTruncated: false, isStderrTruncated: false } }))
@@ -210,6 +219,7 @@ test('the expanded crewmate shows tokens per recent call and per-tool totals', a
   on('command.register', () => ({ value: { command: 'crew' } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.root', () => ({ value: '/fm' }))
+  on('session.id', () => ({ value: 'pane-session' }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
   on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(REPORT), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
@@ -224,6 +234,30 @@ test('the expanded crewmate shows tokens per recent call and per-tool totals', a
   await ui.unmount()
 })
 
+test('collapsed cards at 80 to 120 columns show the session and tools-direct shares whole', async ($, on) => {
+  on('command.register', () => ({ value: { command: 'crew' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.root', () => ({ value: '/fm' }))
+  on('session.id', () => ({ value: 'pane-session' }))
+  on('clock.every', () => ({ value: undefined }))
+  on('ui.status', () => ({ value: undefined }))
+  // Card figures differ from the fleet box's, so a find can only match a card row, and only unclipped.
+  const quota = { claude: { session: { share: 0.1, percent: 4.4 }, tools: { share: 0.02, percent: 0.9 } } }
+  let report = REPORT
+  on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(report), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  await $.session.start({ cwd: '/fm', surface: 'terminal', isInteractive: true })
+  for (const [columns, size] of [[80, 2], [111, 3], [120, 3]] as const) {
+    report = { ...REPORT, crew: Array.from({ length: size }, (_, i) => member({ id: `crew-${i}`, quota })) }
+    await $.command.run({ command: 'crew', args: 'refresh', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } })
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns: columns } })
+    expect(dashboardLayout(columns, 'dock', size).mode).toBe('cards')
+    for (const text of ['session 4.4% of week', 'tools direct 0.9% of week', 'read 2m ago · this session', 'week 37% used · current']) {
+      expect(await ui.find({ text })).toBeDefined()
+    }
+    await ui.unmount()
+  }
+})
+
 test('token and quota text states what is unknown instead of inventing numbers', () => {
   expect(callTokensText({ outTokens: 5, inTokens: 7, estimated: true })).toBe('out 5 in ~7')
   expect(callTokensText({})).toBe('tok n/a')
@@ -234,16 +268,24 @@ test('token and quota text states what is unknown instead of inventing numbers',
   const provider = { plan: '', percentUsed: null, resetsAt: null, windowStart: 0, windowStartKnown: false, source: '', readAt: null, stale: false, reset: true, indexed: true, localCost: 5 }
   expect(quotaRows({ codex: share }, { codex: provider }, NOW).map(r => r.text)).toEqual([
     'codex plan unknown',
-    'week session 31% of local · tools direct 0.4% of local',
-    'weekly % unavailable: window reset',
+    'session 31% of local',
+    'tools direct 0.4% of local',
+    'week % unknown: window reset',
   ])
-  expect(quotaRows({ codex: share }, { codex: { ...provider, indexed: false } }, NOW).map(r => r.text)).toEqual(['codex plan unknown · indexing local logs…'])
-  const old = { ...provider, plan: 'Max 5x', percentUsed: 10, source: 'claude-code cache', readAt: NOW - 4 * 86_400_000, stale: true, reset: false }
+  expect(quotaRows({ codex: share }, { codex: { ...provider, indexed: false } }, NOW).map(r => r.text)).toEqual(['codex plan unknown', 'indexing local logs…'])
+  const old = { ...provider, plan: 'Max 20x · Team', percentUsed: 10, source: 'usage cache', readAt: NOW - 4 * 86_400_000, stale: true, reset: false }
   const measured = { session: { share: 0.31, percent: 3.1 }, tools: { share: 0.004, percent: 0.04 } }
   expect(quotaRows({ claude: measured }, { claude: old }, NOW)).toEqual([
-    { text: 'claude Max 5x · week 10% used', tone: 'subtle' },
-    { text: 'stale · read 4d ago · claude-code cache', tone: 'warning' },
-    { text: 'of week session 3.1% · tools direct <0.1%', tone: 'text' },
+    { text: 'claude Max 20x · Team', tone: 'subtle' },
+    { text: 'week 10% used · stale', tone: 'warning' },
+    { text: 'read 4d ago · usage cache', tone: 'subtle' },
+    { text: 'session 3.1% of week', tone: 'text' },
+    { text: 'tools direct <0.1% of week', tone: 'text' },
   ])
-  expect(quotaRows({ claude: measured }, { claude: { ...old, readAt: null } }, NOW)[1].text).toBe('stale · read at an unknown time · claude-code cache')
+  const undated = quotaRows({ claude: measured }, { claude: { ...old, readAt: null } }, NOW)
+  expect(undated[2].text).toBe('read time unknown · usage cache')
+  // A collapsed card's narrowest row is 32 cells: no quota row may be cut there.
+  const rows = [...undated, ...quotaRows({ claude: measured }, { claude: { ...old, source: 'this session', readAt: NOW - 86_340_000 } }, NOW),
+    ...quotaRows({ codex: share }, { codex: provider }, NOW)]
+  expect(rows.filter(r => r.text.length > 32)).toEqual([])
 })

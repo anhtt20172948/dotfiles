@@ -33,7 +33,7 @@ function poll($: Dollar): Promise<void> {
   return inFlight
 }
 
-/** The account's rate-limit windows the engine has seen, as JSON; none is fine, the script has other sources. */
+/** The rate-limit windows of this session's last API response, as JSON; none is fine, the script has other sources. */
 async function claudeLimits($: Dollar): Promise<string> {
   try {
     return JSON.stringify((await $.session.usage()).rateLimits ?? [])
@@ -51,6 +51,8 @@ async function readCrew($: Dollar): Promise<void> {
       `${$.plugin.root}/scripts/crew_usage.py`,
       '--claude-limits',
       await claudeLimits($),
+      '--claude-session',
+      await $.session.id(),
       ...homes.flatMap(home => ['--home', home]),
     ]
     const run = await $.process.run(argv, { timeoutMs: POLL_TIMEOUT_MS })

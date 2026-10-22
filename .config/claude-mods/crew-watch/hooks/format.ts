@@ -100,28 +100,32 @@ export const toolTokenNote = (m: Pick<CrewMember, 'toolCalls' | 'toolTokens'>): 
 }
 
 const shareText = (s: QuotaShare): string =>
-  s.percent !== null ? percentText(s.percent) : s.share !== null ? `${percentText(s.share * 100)} of local` : '-'
+  s.percent !== null ? `${percentText(s.percent)} of week` : s.share !== null ? `${percentText(s.share * 100)} of local` : '-'
 
-/** Where the weekly percent came from and how old it is; stale past half an hour. */
-export const readingText = (info: Pick<QuotaProvider, 'source' | 'readAt' | 'stale'>, now: number): string =>
-  `${info.stale ? 'stale' : 'current'} · read ${info.readAt ? `${ago(now - info.readAt)} ago` : 'at an unknown time'} · ${info.source}`
+/** Where the weekly percent came from and how old it is; stale past half an hour or when its age is unknown. */
+export const readingText = (info: Pick<QuotaProvider, 'source' | 'readAt'>, now: number): string =>
+  `read ${info.readAt ? `${ago(now - info.readAt)} ago` : 'time unknown'} · ${info.source}`
 
-/** The plan and weekly-limit lines for one crewmate or the whole fleet. */
+/**
+ * The plan and weekly-limit lines for one crewmate or the whole fleet. Each
+ * stays within 32 cells, a collapsed card's narrowest row, so no figure is cut.
+ */
 export const quotaRows = (quota: Record<string, MemberQuota>, providers: Record<string, QuotaProvider>, now: number): { text: string; tone: string }[] =>
   Object.entries(quota).flatMap(([name, q]) => {
     const info = providers[name]
-    const head = `${name} ${info?.plan || 'plan unknown'}`
-    if (!info) return [{ text: head, tone: 'subtle' }]
-    if (!info.indexed) return [{ text: `${head} · indexing local logs…`, tone: 'subtle' }]
-    const pair = `session ${shareText(q.session)} · tools direct ${shareText(q.tools)}`
+    const head = { text: `${name} ${info?.plan || 'plan unknown'}`, tone: 'subtle' }
+    if (!info) return [head]
+    if (!info.indexed) return [head, { text: 'indexing local logs…', tone: 'subtle' }]
+    const shares = [{ text: `session ${shareText(q.session)}`, tone: 'text' }, { text: `tools direct ${shareText(q.tools)}`, tone: 'text' }]
     return info.percentUsed === null
-      ? [{ text: head, tone: 'subtle' }, { text: `week ${pair}`, tone: 'text' }, { text: info.reset ? 'weekly % unavailable: window reset' : 'weekly % unavailable', tone: 'warning' }]
+      ? [head, ...shares, { text: info.reset ? 'week % unknown: window reset' : 'week % unknown', tone: 'warning' }]
       : [
-          { text: `${head} · week ${percentText(info.percentUsed)} used`, tone: 'subtle' },
-          { text: readingText(info, now), tone: info.stale ? 'warning' : 'subtle' },
-          { text: `of week ${pair}`, tone: 'text' },
+          head,
+          { text: `week ${percentText(info.percentUsed)} used · ${info.stale ? 'stale' : 'current'}`, tone: info.stale ? 'warning' : 'subtle' },
+          { text: readingText(info, now), tone: 'subtle' },
+          ...shares,
         ]
   })
 
-export const QUOTA_NOTE = 'local logs only: other machines and the web are not seen, so shares are upper bounds'
+export const QUOTA_NOTE = 'local logs only: other machines and the web are not seen, so with a current reading shares are upper bounds; a stale one can understate them'
 export const TOOLS_DIRECT_NOTE = 'tools direct: call output and the first read of its result; later cache re-reads count to the session only'

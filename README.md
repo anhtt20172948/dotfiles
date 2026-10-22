@@ -224,22 +224,25 @@ tokens of every local session of that provider since then`, scanning
 session copies earlier messages into a new transcript, so each message id
 counts once, in the first transcript parsed that logged it. Tokens are
 weighted by relative price per type and model family (a cache read costs a
-tenth of an input token, an output token several times more; the table is
+tenth of an input token, a cache write a quarter more or, kept for an hour,
+twice as much, an output token several times more; the table is
 `PRICE_RATIO`/`FAMILY_PRICE` in `crew_usage.py`). The percent and reset time
 come from local sources only, the freshest reading still in force first: the
-rate limits the Claude Code engine reports (`$.session.usage()`), Claude
-Code's cached usage in `~/.claude.json`, and the rate-limit events in Codex
-rollouts. The plan comes from Claude's local auth metadata (rate-limit tier or
+rate limits of the pane session's last API response (`$.session.usage()`),
+dated by the newest response in that session's own transcript, Claude Code's
+cached usage in `~/.claude.json`, and the rate-limit events in Codex rollouts.
+The plan comes from Claude's local auth metadata (rate-limit tier or
 subscription type) and from the plan type in Codex rollouts. Each card shows
-the plan, where the weekly percent was read and how long ago (`stale` once it
-is more than 30 minutes old), the session's share of the week and the tool
-calls' direct share (`tools direct`), and the fleet box the total. A reading
-whose window has reset is ignored; with no current percent the card shows the
-raw share of local usage and says the weekly percent is unavailable. Usage
-from other machines or the web is not seen locally, so the share is an upper
-bound for local work. The first run indexes
-the last week of local logs within a ten second budget and shows "indexing
-local logs" until it finishes.
+the plan, the weekly percent marked `current` or `stale` (more than 30 minutes
+old, or of unknown age), where and how long ago it was read, the session's
+share of the week and the tool calls' direct share (`tools direct`), each on
+its own row; the fleet box shows the total. A reading whose window has reset is
+ignored; with no current percent the card shows the raw share of local usage
+and says the weekly percent is unknown. Usage from other machines or the web
+is not seen locally, so with a current reading the share is an upper bound for
+local work; a stale reading can understate it. Each refresh stops indexing ten
+seconds after it starts; the first indexes the last week of local logs over
+several refreshes and shows "indexing local logs" until it finishes.
 
 Its two options in `/config` are `homes` (Firstmate homes, comma-separated;
 empty defaults to the session's working directory) and `intervalSeconds`
