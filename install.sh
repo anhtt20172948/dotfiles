@@ -31,6 +31,9 @@ ROOT_IGNORE=(
 	install.sh
 )
 
+# Read these directories directly from the checkout instead of linking into $HOME.
+NEVER_LINK=(.config/claude-mods)
+
 # Thư mục ứng dụng tự ghi vào (~/.local/bin nhận binary của install_*, DB/run
 # log của no-mistakes, gnhf, treehouse): luôn là thư mục thật, không gập thành
 # một symlink vào repo.
@@ -63,6 +66,7 @@ contains() {
 # README/LICENSE/COPYING và ROOT_IGNORE ở root.
 is_ignored() {
 	local rel=$1 name=${1##*/}
+	contains "$rel" "${NEVER_LINK[@]}" && return 0
 	case "$name" in
 	RCS | CVS | .cvsignore | .svn | _darcs | .hg | .git | .gitignore | .gitmodules | *,v | *~ | \#*\# | .\#*)
 		return 0

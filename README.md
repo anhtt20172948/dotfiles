@@ -160,9 +160,10 @@ the status line shows `AI:NAME`.
 
 `.config/claude-mods` holds Claude Code mods (function-hooks plugins) and is a
 local plugin marketplace, `dotfiles-mods`, listed in
-`.config/claude-mods/.claude-plugin/marketplace.json`. `install.sh` links the
-folder to `~/.config/claude-mods`, declares it in `~/.claude/settings.json`
-(`extraKnownMarketplaces`) and enables every mod the marketplace lists
+`.config/claude-mods/.claude-plugin/marketplace.json`. `install.sh` leaves the
+folder in the checkout and calls `install-agent-statusline`, which declares its
+real checkout path in `~/.claude/settings.json` (`extraKnownMarketplaces`)
+and enables every mod the marketplace lists
 (`enabledPlugins`), so every Claude Code session loads them however it was
 started (a shell, Neovim, tmux, the desktop app). A mod turned off in `/plugin`
 stays off when `install.sh` runs again. A mod that draws above the prompt stacks
@@ -172,7 +173,8 @@ bands show together.
 Claude Code reads the mods from the folder itself, not from a copy: after
 editing one, run `/reload-plugins` in a session. For live reload on every save
 while working on a mod, start a session with `claude --plugin-dir
-~/.config/claude-mods/<mod>`. A new mod is a folder with a
+<checkout>/.config/claude-mods/<mod>` (replace `<checkout>` with the actual checkout
+path). A new mod is a folder with a
 `.claude-plugin/plugin.json`, listed in `marketplace.json`, then `./install.sh`.
 
 Check a change to a mod with `claude plugin validate`, `tsc -p` and
