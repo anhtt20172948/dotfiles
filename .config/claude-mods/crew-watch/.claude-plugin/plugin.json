@@ -11,6 +11,13 @@
       "description": "Comma-separated Firstmate home folders to watch; empty means this session's working directory",
       "default": ""
     },
+    "theme": {
+      "type": "string",
+      "title": "Theme",
+      "description": "Dashboard colours: default follows your Claude Code theme; the others are fixed palettes (light ones are for light terminals). NO_COLOR turns colour off",
+      "default": "default",
+      "options": ["default", "tokyo-night", "catppuccin-mocha", "catppuccin-latte", "gruvbox-dark", "gruvbox-light", "nord", "dracula", "solarized-dark", "solarized-light", "one-dark"]
+    },
     "intervalSeconds": {
       "type": "number",
       "title": "Refresh interval (seconds)",

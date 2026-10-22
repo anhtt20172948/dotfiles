@@ -661,6 +661,37 @@ class TelemetryTest(unittest.TestCase):
         (home / ".claude" / ".credentials.json").write_text(json.dumps({"claudeAiOauth": {"subscriptionType": "max", "rateLimitTier": "default_claude_max_20x", "accessToken": "secret"}}))
         self.assertEqual(usage.claude_plan(), "Max 20x · Team")
 
+    def test_token_login_has_no_plan_and_says_so(self):
+        # ai-acct signs in with CLAUDE_CODE_OAUTH_TOKEN: no credentials file, no account record.
+        with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "fabricated", "ANTHROPIC_API_KEY": ""}):
+            self.assertEqual((usage.claude_plan(), usage.claude_login()), ("", "token"))
+        with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "", "ANTHROPIC_API_KEY": "fabricated"}):
+            self.assertEqual(usage.claude_login(), "api-key")
+        with patch.dict(os.environ, {"CLAUDE_CODE_OAUTH_TOKEN": "", "ANTHROPIC_API_KEY": ""}):
+            self.assertEqual(usage.claude_login(), "")
+            home = Path(usage.HOME)
+            home.mkdir(parents=True)
+            (home / ".claude.json").write_text(json.dumps({"oauthAccount": {"userRateLimitTier": "default_claude_max_5x"}}))
+            self.assertEqual(usage.claude_login(), "account")
+
+    def test_claude_window_comes_from_the_model_table_and_codex_from_its_catalog(self):
+        for model, window in (("claude-opus-5-5", 1_000_000), ("claude-sonnet-5-5", 1_000_000), ("claude-haiku-4-5-20251001", 200_000),
+                              ("claude-sonnet-4-5", 200_000), ("claude-sonnet-4-6", 1_000_000), ("claude-opus-4-8[1m]", 1_000_000),
+                              ("claude-test", None), ("", None)):
+            self.assertEqual(usage.claude_model_window(model), window, model)
+        codex = Path(usage.CODEX_SESSIONS).parent
+        codex.mkdir(parents=True)
+        (codex / "models_cache.json").write_text(json.dumps({"models": [{"slug": "fabricated-1", "context_window": 123456}, {"slug": "empty", "context_window": 0}]}))
+        agg = usage.empty_agg()
+        self.assertEqual(usage.resolve_window("codex", agg, "fabricated-1"), (123456, "fabricated-1", "codex model catalog"))
+        self.assertEqual(usage.resolve_window("codex", agg, "empty"), (None, "empty", ""))
+        self.assertEqual(usage.resolve_window("codex", agg, "default"), (None, "", ""))
+        agg["models"] = {"claude-sonnet-5-5": 3, "claude-haiku-5-5": 1}
+        self.assertEqual(usage.resolve_window("claude", agg, ""), (1_000_000, "claude-sonnet-5-5", "claude model table"))
+        agg["contextWindow"] = 95000
+        self.assertEqual(usage.resolve_window("claude", agg, "")[2], "transcript")
+        self.assertEqual(usage.resolve_window("pi", usage.empty_agg(), "x"), (None, "x", ""))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,11 @@
 import { expect, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
+
+import type { On } from 'claude-code'
 
 import type { CrewMember, CrewReport } from '../types'
 import { dashboardLayout } from '../hooks/dashboard'
+import { PALETTES } from '../hooks/theme'
 import { callTokensText, quotaRows, toolTokenNote, toolTokenText } from '../hooks/format'
 
 const NOW = 1_800_000_000_000
@@ -31,6 +35,8 @@ const member = (over: Partial<CrewMember>): CrewMember => ({
   reasoning: 4_000,
   context: 88_000,
   contextWindow: 200_000,
+  contextModel: 'claude-opus-5-5',
+  windowSource: 'transcript',
   events: [{ at: NOW - 30_000, kind: 'tool', text: 'Bash: npm test' }, { at: NOW - 60_000, kind: 'status', text: 'working' }],
   recentTools: [{ at: NOW - 30_000, kind: 'tool', text: 'Bash: npm test', tool: 'Bash', outTokens: 640, inTokens: 2_300, estimated: false }],
   activity: [{ minute: Math.floor(NOW / 60_000), count: 2 }],
@@ -62,7 +68,7 @@ const REPORT: CrewReport = {
   totals: { requests: 12, input: 120, output: 15_400, cacheRead: 1_900_000, cacheWrite: 98_000, reasoning: 4_000, toolCalls: 31 },
   quota: {
     providers: {
-      claude: { plan: 'Max 5x', percentUsed: 37, resetsAt: NOW + 86_400_000, windowStart: NOW - 5 * 86_400_000, windowStartKnown: true, source: 'this session', readAt: NOW - 120_000, stale: false, reset: false, indexed: true, localCost: 1e6 },
+      claude: { plan: 'Max 5x', login: 'account', percentUsed: 37, resetsAt: NOW + 86_400_000, windowStart: NOW - 5 * 86_400_000, windowStartKnown: true, source: 'this session', readAt: NOW - 120_000, stale: false, reset: false, indexed: true, localCost: 1e6 },
     },
     fleet: { claude: { session: { share: 0.2, percent: 7.4 }, tools: { share: 0.08, percent: 2.96 } } },
   },
@@ -265,14 +271,14 @@ test('token and quota text states what is unknown instead of inventing numbers',
   expect(toolTokenNote({ toolCalls: 3, toolTokens: {} })).toBe('per-call tokens unavailable: the transcript has no usage fields')
   expect(toolTokenNote({ toolCalls: 0, toolTokens: {} })).toBe('')
   const share = { session: { share: 0.31, percent: null }, tools: { share: 0.004, percent: null } }
-  const provider = { plan: '', percentUsed: null, resetsAt: null, windowStart: 0, windowStartKnown: false, source: '', readAt: null, stale: false, reset: true, indexed: true, localCost: 5 }
+  const provider = { plan: '', login: '', percentUsed: null, resetsAt: null, windowStart: 0, windowStartKnown: false, source: '', readAt: null, stale: false, reset: true, indexed: true, localCost: 5 }
   expect(quotaRows({ codex: share }, { codex: provider }, NOW).map(r => r.text)).toEqual([
-    'codex plan unknown',
+    'codex plan not recorded locally',
     'session 31% of local',
     'tools direct 0.4% of local',
     'week % unknown: window reset',
   ])
-  expect(quotaRows({ codex: share }, { codex: { ...provider, indexed: false } }, NOW).map(r => r.text)).toEqual(['codex plan unknown', 'indexing local logs…'])
+  expect(quotaRows({ codex: share }, { codex: { ...provider, indexed: false } }, NOW).map(r => r.text)).toEqual(['codex plan not recorded locally', 'indexing local logs…'])
   const old = { ...provider, plan: 'Max 20x · Team', percentUsed: 10, source: 'usage cache', readAt: NOW - 4 * 86_400_000, stale: true, reset: false }
   const measured = { session: { share: 0.31, percent: 3.1 }, tools: { share: 0.004, percent: 0.04 } }
   expect(quotaRows({ claude: measured }, { claude: old }, NOW)).toEqual([
@@ -282,10 +288,92 @@ test('token and quota text states what is unknown instead of inventing numbers',
     { text: 'session 3.1% of week', tone: 'text' },
     { text: 'tools direct <0.1% of week', tone: 'text' },
   ])
+  // A token login (ai-acct) records no plan: say so, within a collapsed card's 32 cells.
+  const token = quotaRows({ claude: share }, { claude: { ...provider, login: 'token', indexed: false } }, NOW).map(r => r.text)
+  expect(token).toEqual(['claude token login', 'plan not exposed by token login', 'indexing local logs…'])
+  expect(quotaRows({ codex: share }, { codex: { ...provider, login: 'rollout', indexed: false } }, NOW)[0]?.text).toBe('codex plan not in rollout')
+  expect(quotaRows({ claude: share }, { claude: { ...provider, login: 'api-key', indexed: false } }, NOW)[0]?.text).toBe('claude API key')
   const undated = quotaRows({ claude: measured }, { claude: { ...old, readAt: null } }, NOW)
-  expect(undated[2].text).toBe('read time unknown · usage cache')
+  expect(undated[2]?.text).toBe('read time unknown · usage cache')
   // A collapsed card's narrowest row is 32 cells: no quota row may be cut there.
   const rows = [...undated, ...quotaRows({ claude: measured }, { claude: { ...old, source: 'this session', readAt: NOW - 86_340_000 } }, NOW),
     ...quotaRows({ codex: share }, { codex: provider }, NOW)]
   expect(rows.filter(r => r.text.length > 32)).toEqual([])
+})
+
+type Drawn = { type?: string; props?: Record<string, unknown>; children?: unknown[] }
+
+/** Every colour prop and a layout signature (text, widths, wrapping) of a drawn tree. */
+const inspect = (node: unknown, out: { colors: string[]; layout: string[] } = { colors: [], layout: [] }) => {
+  if (typeof node === 'string') {
+    out.layout.push(node)
+    return out
+  }
+  const { type, props = {}, children = [] } = (node ?? {}) as Drawn
+  for (const key of ['color', 'borderColor']) if (typeof props[key] === 'string') out.colors.push(props[key] as string)
+  out.layout.push(`${type}:${['width', 'wrap', 'borderStyle', 'paddingX', 'marginTop'].map(k => String(props[k])).join(',')}`)
+  for (const child of children) inspect(child, out)
+  return out
+}
+
+const drawings = new Map<string, ReturnType<typeof inspect>>()
+
+/** Draws the dock pane on a terminal with the given environment and keeps its colours and layout under `label`. */
+const drawThemed = async ($: Engine, on: On, label: string, env: Record<string, string>) => {
+  on('env.get', (_, e) => ({ value: env[e.name] }))
+  on('command.register', () => ({ value: { command: 'crew' } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.root', () => ({ value: '/fm' }))
+  on('session.id', () => ({ value: 'pane-session' }))
+  on('clock.every', () => ({ value: undefined }))
+  on('ui.status', () => ({ value: undefined }))
+  on('process.run', () => ({ value: { exitCode: 0, stdout: JSON.stringify(REPORT), stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
+  await $.session.start({ cwd: '/fm', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'crew', args: 'refresh', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns: 130 } })
+  drawings.set(label, inspect(await ui.drawn()))
+  await ui.unmount()
+}
+
+test('the default theme draws the engine keys', async ($, on) => {
+  await drawThemed($, on, 'default', {})
+  const { colors } = drawings.get('default') ?? { colors: [] }
+  expect(colors.length > 0).toBe(true)
+  expect(colors.filter(color => color.startsWith('#') || color.startsWith('ansi256'))).toEqual([])
+  expect(colors).toContain('claude')
+  expect(colors).toContain('subtle')
+})
+
+test('a palette theme paints hex colours from its palette on a truecolor terminal', { options: { theme: 'nord' } }, async ($, on) => {
+  await drawThemed($, on, 'nord', { COLORTERM: 'truecolor' })
+  const { colors } = drawings.get('nord') ?? { colors: [] }
+  expect(colors.length > 0).toBe(true)
+  const palette = new Set<string>(Object.values(PALETTES.nord.colors))
+  expect(colors.filter(color => !palette.has(color))).toEqual([])
+  expect(colors).toContain(PALETTES.nord.colors.claude)
+})
+
+test('without truecolor a palette theme falls back to 256-colour indexes', { options: { theme: 'nord' } }, async ($, on) => {
+  await drawThemed($, on, 'nord-256', {})
+  const { colors } = drawings.get('nord-256') ?? { colors: [] }
+  expect(colors.length > 0).toBe(true)
+  expect(colors.filter(color => !/^ansi256\(\d+\)$/.test(color))).toEqual([])
+})
+
+test('NO_COLOR draws no colour in a palette theme', { options: { theme: 'dracula' } }, async ($, on) => {
+  await drawThemed($, on, 'dracula-none', { COLORTERM: 'truecolor', NO_COLOR: '1' })
+  expect(drawings.get('dracula-none')?.colors).toEqual([])
+})
+
+test('an unknown theme name draws the default', { options: { theme: 'nope' } }, async ($, on) => {
+  await drawThemed($, on, 'unknown', { COLORTERM: 'truecolor' })
+  expect(drawings.get('unknown')?.colors).toEqual(drawings.get('default')?.colors)
+})
+
+test('a theme changes colours only, never the text or layout', () => {
+  const base = drawings.get('default')
+  expect(base).toBeDefined()
+  for (const label of ['nord', 'nord-256', 'dracula-none', 'unknown']) {
+    expect(drawings.get(label)?.layout).toEqual(base?.layout)
+  }
 })
