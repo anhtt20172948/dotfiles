@@ -186,10 +186,20 @@ lays in `.claude-plugin/types` the first time it loads the mod.
 
 ### crew-watch
 
-`.config/claude-mods/crew-watch` draws a fleet dashboard with rounded crew
-cards, theme colours, token/request/tool totals, per-model counts and cache-hit
-gauges. Each card shows activity and status, models and effort,
-input/output/thinking tokens, context usage, cache reads/writes and top tools.
+`.config/claude-mods/crew-watch` draws the Crew Monitor: a header with the
+crew's live and active counts and how fresh the data is, then five zones in a
+fixed order.
+
+1. **Overview**: the fleet's tokens, requests, tool calls and cache share.
+2. **Agents**: one compact card per crewmate with its status, name, harness,
+   model and effort, task, context gauge, requests, tools, tokens and the
+   account its usage went to. One crewmate's full details open below the cards.
+3. **Quota & Limits**: one line per provider and account with the vendor's
+   weekly percent, how old it is and when the window resets.
+4. **Activity**: a 60-minute lane per crewmate, one cell per minute.
+5. **Recent Logs**: the newest three to five events, newest first, with a
+   filter and an expanded view.
+
 The context gauge needs the model's window: a Codex rollout supplies it, else
 Codex's own catalog (`~/.codex/models_cache.json`), and for Claude models a
 small table in `crew_usage.py` (`CLAUDE_WINDOWS`), because Claude transcripts
@@ -198,12 +208,84 @@ knows shows `window n/a for <model>`, and a crewmate with no request yet shows
 `no request yet`.
 
 `/crew` opens or closes the pane; `/crew refresh` reads the logs immediately.
-Keys `1`–`9` expand a crewmate's details, branch, model/tool counts and recent
-calls. Cards sit side by side when they fit, above activity lanes on a shared
-minute axis; larger fleets get only the lanes. A crew log with local-time
-timestamps follows them.
-Inline above the prompt, the dashboard shrinks to at most eight rows; dock it
-for full details.
+The keys work while the pane has the keyboard (`ctrl+x tab`, or a click); the
+key row under the header names them and says so while the pane is unfocused.
+
+| Key | Action |
+| --- | --- |
+| `1`–`9` | open or close that crewmate's details (one at a time) |
+| `d` | compact or details mode |
+| `l` | more or fewer log entries |
+| `f` | log filter: All, Tools, Status, Errors, and Agent while details are open |
+| `h` | help: keys, status words and what each metric counts |
+| `Tab`, `Shift+Tab`, `Enter` | move between the pane's controls and press one (the engine's keys) |
+| `↑` `↓` `PgUp` `PgDn` `Home` `End` | scroll the pane (the engine's keys) |
+| `Esc` | back to the prompt (the engine's key) |
+
+The engine decides which keys a pane gets, so some keys of the handoff design
+differ. A pane hotkey must be one digit or lowercase letter, so help is `h`,
+not `?`. `Esc` always returns the keyboard to the prompt and never reaches the
+mod, so details close with their own number. The arrows scroll the pane and
+cannot move between crewmates; `Tab` does that. The engine documents only
+`Enter` for pressing the focused control, so nothing is bound to `Space`. No
+letter used here is an engine key inside a focused pane, and `q` and `x` are
+left alone (`ctrl+x x` closes the pane).
+
+What it shows, and what it does not:
+
+- **Freshness.** `● LIVE · updated 4s ago` while reads succeed; `◷ STALE` once
+  two refresh intervals and one read's 20 s timeout pass without a new report
+  (30 s at the default 5 s interval); `× SOURCE ERROR` with the reason and the
+  age of the last good data when a read fails. A report's own warnings show as
+  `!` lines.
+- **Status.** Each crewmate has a glyph and a word, so no colour is needed:
+  `● WORKING` and `● ACTIVE` (activity under 2 minutes), `◐ QUIET` (2 to 15
+  minutes), `○ STALE` (over 15), `✓ DONE`, `× BLOCKED` and `◷ PAUSED` from the
+  task's status line, `? UNKNOWN` with no activity and no status yet. Only
+  working and active count as active. A blocked crewmate's status line shows on
+  its card.
+- **Overview.** `Tokens` is in + out + cache read + cache write, summed over
+  the live crew since each task started; `Cache` is cache read / (in + cache
+  read + cache write), the share of input served from the prompt cache, never
+  called a hit rate. Details mode adds the in/out/thinking split, cache reads and
+  writes and requests per model.
+- **Accounts.** Every quota figure belongs to one provider and account and is
+  never summed across accounts or providers: two Claude accounts and a Codex
+  account are three lines. A card names the account its usage went to (`acct
+  claude <name>`, `acct codex <hash>`), or `account unknown`. Details mode adds,
+  per account, the crew's session and tools-direct shares and the notes on what
+  the figures can and cannot say.
+- **Missing data** shows as `—` or a sentence saying why, never as a zero: a
+  harness whose logs cannot be read, an unknown model window, an account with no
+  reading, no crewmates, no activity in the last hour.
+- **Logs.** The collector keeps the latest ten events per crewmate and cuts long
+  commands itself; the expanded log says `(source truncated)` where it did. An
+  error is a status line whose state is blocked, failed or needs-decision; no
+  severity is guessed from free text.
+
+The layout follows the pane's own size, not the terminal's. From 110 columns
+the cards sit two to a row; below that they stack; below 70 columns, past four
+crewmates (three in one column) or under 24 rows each crewmate is a two-line
+row. Under 24 rows Activity and the log preview fold to one line each; from 36
+rows the log shows five entries. A docked pane is about 90 columns wide until
+it is widened. Inline above the prompt (below 110 terminal columns, or outside
+fullscreen) the pane is a summary of at most eight rows: header, totals, up to
+three crewmates and one quota line per provider.
+
+To preview a change, run Claude Code in fullscreen with the mod loaded from the
+checkout and the installed copy turned off for that session, then type
+`/crew`; the session reloads the mod on every save:
+
+```sh
+CLAUDE_CODE_NO_FLICKER=1 claude \
+  --plugin-dir "$PWD/.config/claude-mods/crew-watch" \
+  --settings '{"enabledPlugins":{"crew-watch@dotfiles-mods":false}}'
+```
+
+The engine writes the mod's types to `.claude-plugin/types`, which git ignores.
+Run it from a Firstmate home (or set `homes`) to see a crew. The tests draw the
+pane at 60, 80 and 120 columns and check that no row runs past it.
+
 It reads the Claude Code transcripts and Codex rollouts each task wrote since it
 first started (worktree slots are reused; a relaunch keeps earlier usage),
 follows secondmate homes, and shows a summary in the status line. The layout takes inspiration from
