@@ -6,7 +6,6 @@ set -eu
 LC_ALL=C
 export LC_ALL
 accounts=$HOME/.config/claude-accounts
-fm_home=${FM_HOME:-$HOME/.local/share/firstmate}
 fail() { printf 'ai-acct: %s\n' "$*" >&2; exit 1; }
 usage() {
     cat <<'HELP'
@@ -18,8 +17,13 @@ Usage: ai-acct [COMMAND]
   edit NAME         Replace an account token, read like add.
   rename OLD NEW    Rename an account, keeping it active if it was.
   remove NAME       Delete an account token; removing the active one clears it.
-  resume            Continue Claude in ${FM_HOME:-~/.local/share/firstmate}.
-  exec CMD [ARG...] Run a command with the active token and shared Claude config.
+  check NAME        Validate an account and prepare Claude without selecting it.
+  resume            Resume the newest Firstmate Claude session, after the
+                    launcher's live-primary guard, with the active account.
+  exec [--account NAME] CMD [ARG...]
+                    Run a command with the active (or the named) token and
+                    shared Claude config. --account reads that token in the
+                    child, so later selector changes cannot alter it.
 Names: lowercase letters, digits, '-' and '_', up to 32 characters.
 Tokens live in ~/.config/claude-accounts/NAME.token with mode 600 and never
 appear in arguments. Running processes keep their account until relaunched.
@@ -219,17 +223,47 @@ case "${1:-status}" in
             printf 'Removed Claude account %s.\n' "$2"
         fi
         ;;
+    check)
+        [ "$#" -eq 2 ] || fail 'Use: ai-acct check NAME'
+        need_account "$2"
+        account=$2
+        load_token
+        ensure_onboarding
+        ;;
     resume|exec)
         action=$1
         shift
+        bound=''
         if [ "$action" = resume ]; then
             [ "$#" -eq 0 ] || fail 'resume takes no arguments.'
-            cd "$fm_home" || fail 'Firstmate home does not exist.'
-            set -- claude --continue
+            # The launcher owns the Firstmate home, its live-primary guard and
+            # the session lookup; it prints the home and the explicit session id.
+            self=$(readlink -f "$0" 2>/dev/null || realpath "$0")
+            launcher=''
+            for candidate in "${self%/*}/../../.config/tmux/scripts/ai-workflow.sh" \
+                "$HOME/.config/tmux/scripts/ai-workflow.sh"; do
+                [ ! -x "$candidate" ] || { launcher=$candidate; break; }
+            done
+            [ -n "$launcher" ] || fail 'Cannot find ai-workflow.sh; run install.sh.'
+            plan=$("$launcher" resume-session) || exit 1
+            { IFS= read -r resume_dir; IFS= read -r resume_id; } <<PLAN
+$plan
+PLAN
+            [ -n "$resume_dir" ] && [ -n "$resume_id" ] || fail 'Launcher returned no session to resume.'
+            cd "$resume_dir" || fail 'Firstmate home does not exist.'
+            set -- claude --resume "$resume_id"
         else
-            [ "$#" -gt 0 ] || fail 'Use: ai-acct exec COMMAND [ARG...]'
+            if [ "${1:-}" = --account ]; then
+                [ "$#" -ge 2 ] || fail 'Use: ai-acct exec --account NAME COMMAND [ARG...]'
+                need_account "$2"
+                account=$2
+                bound=1
+                shift 2
+                [ "${1:-}" != -- ] || shift
+            fi
+            [ "$#" -gt 0 ] || fail 'Use: ai-acct exec [--account NAME] COMMAND [ARG...]'
         fi
-        read_active
+        [ -n "$bound" ] || read_active
         load_token
         ensure_onboarding
         exec "$@"

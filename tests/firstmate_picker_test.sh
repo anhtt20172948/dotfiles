@@ -8,6 +8,7 @@ JQ_BIN=$(command -v jq)
 GREP_BIN=$(command -v grep)
 trap '/bin/rm -rf -- "$TMP"' EXIT
 export HOME="$TMP/home" FIRSTMATE_DIR="$TMP/firstmate" TMUX=mock
+export FIRSTMATE_PHYS; FIRSTMATE_PHYS=$(cd "$TMP" && pwd -P)/firstmate
 export LOG="$TMP/tmux.log" PICKER="$TMP/picker" QUOTA_LOG="$TMP/quota.log"
 mkdir -p "$TMP/bin" "$HOME" "$FIRSTMATE_DIR/.git"
 for tool in bash dirname readlink realpath awk jq cat sleep mktemp stat mv rm sed perl ps; do
@@ -36,7 +37,7 @@ fi
 printf '%s|' "$@" >> "$LOG"
 printf '\n' >> "$LOG"
 case "$1" in
-  list-windows) [[ ${EXISTING:-0} != 1 ]] || printf 'firstmate:1\tfirstmate\n' ;;
+  list-panes) [[ ${EXISTING:-0} != 1 ]] || printf 'firstmate:1\t%s\t0\t%s\tfirstmate\n' "$PANE_PID" "$FIRSTMATE_PHYS" ;;
   has-session) exit 1 ;;
   new-session|switch-client) ;;
   *) exit 90 ;;
@@ -52,6 +53,14 @@ file=$PICKER
 [[ $stage == Agent ]] || file="$PICKER.$stage"
 printf '%s\n' "$@" > "$file.args"
 cat > "$file"
+/bin/cp "$file" "$file.initial"
+# fzf runs the start:reload command once the picker is open; wait for it here.
+for arg in "$@"; do
+  case "$arg" in start:reload:*)
+    [[ ${NO_RELOAD:-0} != 1 ]] || continue
+    bash -c "${arg#start:reload:}" > "$file.reload" && /bin/cp "$file.reload" "$file" ;;
+  esac
+done
 [[ ${CANCEL_STAGE:-} != "$stage" && ${CANCEL:-0} != 1 ]] || exit 130
 case "$stage" in
   Session) choice=new ;;
@@ -121,10 +130,10 @@ run; first codex; started codex
 "$GREP_BIN" -Fxq $'claude\tclaude  20% left' "$PICKER" || fail 'missing claude quota'
 "$GREP_BIN" -Fxq -- '--no-sort' "$PICKER.args" || fail 'picker would reorder default'
 export CHOICE=claude
-run; started 'ai-acct exec claude'
+run; started 'ai-acct exec --account a claude'
 unset CHOICE
 quota 80 20
-run; first claude; started 'ai-acct exec claude'
+run; first claude; started 'ai-acct exec --account a claude'
 quota 50 50
 run; first claude
 quota 0 0
@@ -135,11 +144,15 @@ export CANCEL=1
 run; no_start
 unset CANCEL
 export AI_FIRSTMATE_AGENT=claude
-run; started 'ai-acct exec claude'; [[ ! -s $PICKER && ! -s $QUOTA_LOG && -s $PICKER.Model && -s $PICKER.Effort ]] || fail 'agent override skipped wrong steps'
+run; started 'ai-acct exec --account a claude'; [[ ! -s $PICKER && ! -s $QUOTA_LOG && -s $PICKER.Model && -s $PICKER.Effort ]] || fail 'agent override skipped wrong steps'
 export AI_FIRSTMATE_AGENT=codex
 run; started codex
 unset AI_FIRSTMATE_AGENT
-export EXISTING=1
+# A window only counts when a live harness runs in it, in the firstmate home.
+/bin/mkdir -p "$TMP/live" && /bin/ln -s "$TMP/bin/sleep" "$TMP/live/claude"
+"$TMP/live/claude" 60 & PANE_PID=$!
+trap 'kill "$PANE_PID" 2>/dev/null; /bin/rm -rf -- "$TMP"' EXIT
+export EXISTING=1 PANE_PID
 /bin/rm "$TMP/bin/claude" "$TMP/bin/codex"
 run; no_start; [[ ! -s $PICKER && ! -s $QUOTA_LOG && ! -s $PICKER.Model && ! -s $PICKER.Effort ]] || fail 'existing window prompted'
 unset EXISTING
@@ -147,7 +160,7 @@ agent codex
 run; started codex; [[ ! -s $PICKER && ! -s $QUOTA_LOG && -s $PICKER.Model && -s $PICKER.Effort ]] || fail 'single CLI skipped wrong steps'
 /bin/rm "$TMP/bin/codex"
 agent claude
-run; started 'ai-acct exec claude'
+run; started 'ai-acct exec --account a claude'
 /bin/rm "$TMP/bin/claude"
 if run; then fail 'no installed agents succeeded'; fi
 no_start
@@ -155,7 +168,7 @@ agent claude; /bin/cp "$TMP/codex-mock" "$TMP/bin/codex"
 for QUOTA_MODE in fail invalid empty slow; do
   export QUOTA_MODE
   SECONDS=0
-  run; first claude; started 'ai-acct exec claude'
+  run; first claude; started 'ai-acct exec --account a claude'
   [[ $SECONDS -lt 7 ]] || fail 'quota lookup was not bounded'
   "$GREP_BIN" -Fxq $'claude\tclaude  quota ?' "$PICKER" || fail 'fallback shows a percentage'
 done
@@ -164,6 +177,18 @@ quota 10 90
 run; first codex; started codex
 "$GREP_BIN" -Fxq $'codex\tcodex  90% left' "$PICKER" || fail 'cold quota lost'
 unset QUOTA_MODE
+# Quota stays off the critical path: the first picker paints at once with
+# placeholders and fzf refreshes it afterwards through the reload bind.
+export QUOTA_MODE=slow NO_RELOAD=1
+quota 20 80
+SECONDS=0
+run; started 'ai-acct exec --account a claude'
+[[ $SECONDS -lt 3 && ! -s $QUOTA_LOG ]] || fail 'first picker waited for quota'
+[[ $(/bin/cat "$PICKER.initial") == $'claude\tclaude  quota …\ncodex\tcodex  quota …' ]] \
+  || fail "initial rows: $(/bin/cat "$PICKER.initial")"
+"$GREP_BIN" -Fxq "start:reload:bash $ROOT/.config/tmux/scripts/ai-workflow.sh _agent-entries" "$PICKER.args" \
+  || fail 'quota refresh is not an fzf reload'
+unset QUOTA_MODE NO_RELOAD
 /bin/mv "$TMP/bin/quota-axi" "$TMP/quota-axi"
 run; first claude
 "$GREP_BIN" -Fxq $'codex\tcodex  quota ?' "$PICKER" || fail 'missing tooling hid quota cell'
@@ -187,15 +212,15 @@ run; started codex
 unset AI_FIRSTMATE_AGENT
 /bin/ln -s "$JQ_BIN" "$TMP/bin/jq"
 export AI_FIRSTMATE_AGENT=claude MODEL_CHOICE=opus EFFORT_CHOICE=max
-run; started 'ai-acct exec claude --model opus --effort max'
+run; started 'ai-acct exec --account a claude --model opus --effort max'
 "$GREP_BIN" -Fxq $'default\tdefault (CLI config)' "$PICKER.Model" || fail 'missing model default'
 for model in opus sonnet haiku; do
   export MODEL_CHOICE=$model
   for effort in low medium high xhigh max default; do
     export EFFORT_CHOICE=$effort
     run
-    if [[ $effort == default ]]; then started "ai-acct exec claude --model $model"; else
-      started "ai-acct exec claude --model $model --effort $effort"
+    if [[ $effort == default ]]; then started "ai-acct exec --account a claude --model $model"; else
+      started "ai-acct exec --account a claude --model $model --effort $effort"
     fi
   done
 done
@@ -248,17 +273,18 @@ for AI_FIRSTMATE_AGENT in '' codex; do
   if [[ -s $TMP/err ]]; then fail "menu errored: $(/bin/cat "$TMP/err")"; fi
 done
 unset AI_FIRSTMATE_AGENT CANCEL
-# Account selection switches the shared token file and marks the active entry.
+# The picked account is bound to the pane; the shared selector stays put.
 printf 'a\n' > "$HOME/.config/claude-accounts/active"
 export AI_FIRSTMATE_AGENT=claude ACCOUNT_CHOICE=b
-run; started 'ai-acct exec claude'
-[[ $(/bin/cat "$HOME/.config/claude-accounts/active") == b ]] || fail 'account not switched'
+run; started 'ai-acct exec --account b claude'
+[[ $(/bin/cat "$HOME/.config/claude-accounts/active") == a ]] || fail 'launch switched the shared selector'
 [[ $(/bin/cat "$PICKER.Account") == $'a\tClaude account a (active)\nb\tClaude account b\nwork\tClaude account work' ]] \
   || fail "account entries: $(/bin/cat "$PICKER.Account")"
 # Any named account can be launched; the active one is offered first.
 export ACCOUNT_CHOICE=work
-run; started 'ai-acct exec claude'
-[[ $(/bin/cat "$HOME/.config/claude-accounts/active") == work ]] || fail 'named account not switched'
+run; started 'ai-acct exec --account work claude'
+[[ $(/bin/cat "$HOME/.config/claude-accounts/active") == a ]] || fail 'named launch switched the selector'
+printf 'work\n' > "$HOME/.config/claude-accounts/active"
 export ACCOUNT_CHOICE=b
 run
 IFS= read -r line < "$PICKER.Account"
@@ -279,7 +305,7 @@ export ACCOUNT_CHOICE=b
 if run; then fail 'missing token selection accepted'; fi
 no_start
 unset ACCOUNT_CHOICE
-run; started 'ai-acct exec claude'
+run; started 'ai-acct exec --account a claude'
 if "$GREP_BIN" -Fq 'Claude account b' "$PICKER.Account"; then fail 'offered missing token'; fi
 /bin/rm "$HOME/.config/claude-accounts/a.token" "$HOME/.config/claude-accounts/work.token"
 if run 2>"$TMP/err"; then fail 'no-token launch succeeded'; fi

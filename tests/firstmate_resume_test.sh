@@ -54,8 +54,8 @@ esac
     executable("ai-acct", '''printf 'account:%s\\n' "$*" >> "$LOG"
 case "$1" in
 list) printf 'test\\tactive\\n' ;;
-use) ;;
-exec) shift; exec "$@" ;;
+check|use) ;;
+exec) shift; [[ $1 != --account ]] || shift 2; exec "$@" ;;
 esac
 ''')
     # The args go first: run() returns once the "<agent>:<cwd>:" line shows up.
@@ -98,13 +98,42 @@ exit 0
             time.sleep(.02)
         raise AssertionError("launcher did not finish")
 
+    def wait_dead(session="firstmate", count=1):
+        for _ in range(200):
+            dead = tmux("list-panes", "-t", session, "-F", "#{pane_dead}", check=False).stdout.split()
+            if len(dead) == count and all(d == "1" for d in dead):
+                return
+            time.sleep(.02)
+        raise AssertionError("pane did not exit")
+
+    def pane_pid(target):
+        return int(tmux("list-panes", "-t", target, "-F", "#{pane_pid}").stdout.split()[0])
+
+    def window_names(session="firstmate"):
+        return tmux("list-windows", "-t", session, "-F", "#{window_name}").stdout.split("\n")[:-1]
+
+    def resume_args(agent):
+        if agent == "claude":
+            return f"--resume {session_id['claude']}"
+        return f"resume -C {firstmate} {session_id['codex']}"
+
     slug = "".join(c if c.isascii() and c.isalnum() else "-" for c in str(firstmate))
-    claude = home / ".claude/projects" / slug / "test.jsonl"
+    claude_id = "5b0e7a52-0000-4000-8000-000000000001"
+    codex_id = "019a0000-0000-7000-8000-000000000001"
+    claude = home / ".claude/projects" / slug / f"{claude_id}.jsonl"
     claude.parent.mkdir(parents=True)
-    claude.write_text(json.dumps({"type": "user", "cwd": str(firstmate), "message": {"role": "user", "content": "test"}}) + "\n")
+
+    def claude_line(cwd):
+        return json.dumps({"type": "user", "cwd": str(cwd), "message": {"role": "user", "content": "test"}}) + "\n"
+
+    def codex_line(cwd, session):
+        return json.dumps({"type": "session_meta", "payload": {"cwd": str(cwd), "id": session}}) + "\n"
+
+    claude.write_text(claude_line(firstmate))
     codex = home / ".codex/sessions/2026/10/21/rollout-test.jsonl"
     codex.parent.mkdir(parents=True)
-    codex.write_text(json.dumps({"type": "session_meta", "payload": {"cwd": str(firstmate)}}) + "\n")
+    codex.write_text(codex_line(firstmate, codex_id))
+    session_id = {"claude": claude_id, "codex": codex_id}
     lock = firstmate / "state/.lock"
     try:
         for agent in ("claude", "codex"):
@@ -114,23 +143,28 @@ exit 0
                 if dead_lock:
                     lock.write_text("2147483647\nopaque metadata\n")
                 output, _ = run()
-                expected = "--continue" if agent == "claude" else f"resume -C {firstmate} --last"
-                assert f"{agent}:{firstmate}:{expected}\n" in output, output
+                assert f"{agent}:{firstmate}:{resume_args(agent)}\n" in output, output
                 assert "Model ›" not in output and "Effort ›" not in output, output
                 assert "debug models" not in output, output
                 if agent == "codex":
-                    assert f"arg:resume\narg:-C\narg:{firstmate}\narg:--last\n" in output, output
+                    assert f"arg:resume\narg:-C\narg:{firstmate}\narg:{codex_id}\n" in output, output
+                    assert "--last" not in output, output
                 else:
-                    assert "arg:--continue\n" in output, output
-                if agent == "claude":
-                    assert "account:use test" in output and "account:exec claude --continue" in output, output
+                    assert f"arg:--resume\narg:{claude_id}\n" in output, output
+                    assert "--continue" not in output, output
+                    assert f"account:exec --account test claude --resume {claude_id}" in output, output
+                    # Launching binds the account to the pane; it never switches the selector.
+                    assert "account:use" not in output and "account:check test" in output, output
                 if dead_lock:
                     assert lock.read_text() == "2147483647\nopaque metadata\n"
                     lock.unlink()
-            # Existing window focuses without showing any picker.
+            # An exited agent must not suppress recovery: the dead pane is reused.
+            wait_dead()
             log.write_text("")
-            output, _ = run(expect_launch=False)
-            assert "picker:" not in output and "focus:" in output, output
+            output, _ = run()
+            assert "offer:resume" in output, output
+            assert f"{agent}:{firstmate}:{resume_args(agent)}\n" in output, output
+            assert window_names() == ["firstmate"], window_names()
 
         reset()
         env["PICK"] = "cancel"
@@ -167,7 +201,7 @@ exit 0
         reset()
         tmux("new-session", "-d", "-s", "firstmate", "-n", "busy", "sleep 30")
         output, _ = run()
-        assert f"codex:{firstmate}:resume -C {firstmate} --last" in output, output
+        assert f"codex:{firstmate}:{resume_args('codex')}" in output, output
         assert "busy" in tmux("list-windows", "-t", "firstmate", "-F", "#{window_name}").stdout
 
         # A reused PID belonging to a non-agent must not block recovery.
@@ -175,9 +209,148 @@ exit 0
             reset()
             lock.write_text(f"{other.pid}\n")
             output, _ = run()
-            assert f"codex:{firstmate}:resume -C {firstmate} --last" in output, output
+            assert f"codex:{firstmate}:{resume_args('codex')}" in output, output
             other.terminate()
         lock.unlink()
+
+        # --- window identity -------------------------------------------------
+        env["AI_FIRSTMATE_AGENT"] = "claude"
+        agent_cmd = f"exec {lab}/claude 30"
+
+        def assert_recovered(output, agent="claude"):
+            assert "picker:" in output and f"{agent}:{firstmate}:{resume_args(agent)}" in output, output
+
+        # A live primary holding the lock is focused under any window name.
+        for session, name in (("firstmate", "firstmate"), ("other", "renamed")):
+            reset()
+            tmux("new-session", "-d", "-s", session, "-n", name, "-c", str(firstmate), agent_cmd)
+            lock.write_text(f"{pane_pid(session)}\n")
+            output, _ = run(expect_launch=False)
+            assert "picker:" not in output and f"-t {session}" in output, output
+            lock.unlink()
+        # The lock owner may be a descendant of the pane process.
+        reset()
+        tmux("new-session", "-d", "-s", "firstmate", "-n", "firstmate", "-c", str(firstmate),
+             f"sh -c '{lab}/claude 30 & wait'")
+        time.sleep(.3)
+        child = subprocess.run(["pgrep", "-P", str(pane_pid("firstmate"))], text=True,
+                               capture_output=True).stdout.split()[0]
+        lock.write_text(f"{child}\n")
+        output, _ = run(expect_launch=False)
+        assert "picker:" not in output and "focus:" in output, output
+        lock.unlink()
+        # A primary that has not taken the lock yet is recognised by its process.
+        reset()
+        tmux("new-session", "-d", "-s", "firstmate", "-n", "firstmate", "-c", str(firstmate), agent_cmd)
+        output, _ = run(expect_launch=False)
+        assert "picker:" not in output and "focus:" in output, output
+
+        # Dead pane, stale lock pid, shell-only pane, an unrelated window with
+        # the same name and another home's primary all lead to recovery.
+        reset()
+        tmux("new-session", "-d", "-s", "firstmate", "-n", "firstmate", "-c", str(firstmate), "true")
+        wait_dead()
+        lock.write_text("2147483647\n")
+        output, _ = run()
+        assert_recovered(output)
+        assert window_names() == ["firstmate"], window_names()
+        lock.unlink()
+        reset()
+        tmux("new-session", "-d", "-s", "firstmate", "-n", "firstmate", "-c", str(firstmate))
+        output, _ = run()
+        assert_recovered(output)
+        reset()
+        tmux("new-session", "-d", "-s", "unrelated", "-n", "firstmate", "-c", str(home), "sleep 30")
+        output, _ = run()
+        assert_recovered(output)
+        assert "unrelated" in tmux("list-sessions", "-F", "#{session_name}").stdout.split()
+        assert window_names("unrelated") == ["firstmate"]
+        other_home = home / "other-home"
+        other_home.mkdir()
+        reset()
+        tmux("new-session", "-d", "-s", "elsewhere", "-n", "firstmate", "-c", str(other_home), agent_cmd)
+        output, _ = run()
+        assert_recovered(output)
+
+        # --- lock identity ---------------------------------------------------
+        install = lab / "install/claude/versions"
+        install.mkdir(parents=True)
+        versioned = install / "2.1.220"
+        versioned.symlink_to("/bin/sleep")
+        real_bin = Path(os.environ["HOME"]) / ".local/share/firstmate/bin"
+        lock_libs = {"fallback": None}
+        if (real_bin / "fm-session-lock-lib.sh").exists():
+            lock_libs["firstmate helper"] = real_bin
+        for label, source in lock_libs.items():
+            if source:
+                (firstmate / "bin").mkdir(exist_ok=True)
+                for lib in source.glob("fm-*lib.sh"):
+                    shutil.copy(lib, firstmate / "bin" / lib.name)
+            with subprocess.Popen([str(versioned), "30"]) as holder:
+                reset()
+                lock.write_text(f"{holder.pid}\nunchanged\n")
+                output, _ = run()
+                assert "message:" in output and "lock" in output.lower(), (label, output)
+                assert "picker:" not in output, (label, output)
+                assert lock.read_text() == f"{holder.pid}\nunchanged\n"
+                holder.terminate()
+            lock.unlink()
+            shutil.rmtree(firstmate / "bin", ignore_errors=True)
+        # The firstmate helper, when present, owns the verdict.
+        (firstmate / "bin").mkdir()
+        (firstmate / "bin/fm-session-lock-lib.sh").write_text('''
+fm_harness_pid_alive() { return 0; }
+fm_session_lock_inspect() {
+  FM_LOCK_INSPECT_STATE=held
+  FM_LOCK_INSPECT_PID=$(head -n 1 "$1/.lock")
+}
+''')
+        with subprocess.Popen(["sleep", "30"]) as other:
+            reset()
+            lock.write_text(f"{other.pid}\n")
+            output, _ = run()
+            assert "message:" in output and "picker:" not in output, output
+            other.terminate()
+        lock.unlink()
+        shutil.rmtree(firstmate / "bin")
+
+        # --- explicit session id --------------------------------------------
+        # The newest transcript for this home is resumed by id; a newer session
+        # of another home, an older one of this home and a corrupt file are not.
+        extra = []
+
+        def add(path, text, age):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+            os.utime(path, (time.time() - age, time.time() - age))
+            extra.append(path)
+
+        for agent in ("claude", "codex"):
+            env["AI_FIRSTMATE_AGENT"] = agent
+            reset()
+            if agent == "claude":
+                store = claude.parent
+                add(store / "newest-other-home.jsonl", claude_line(other_home), 10)
+                add(store / "newest-corrupt.jsonl", "not json\n", 20)
+                add(store / "newer-home-session.jsonl", claude_line(firstmate), 30)
+                os.utime(claude, (time.time() - 300, time.time() - 300))
+                wanted = "--resume newer-home-session"
+            else:
+                store = home / ".codex/sessions/2026/10"
+                add(store / "22/rollout-other.jsonl", codex_line(other_home, "other-home-id"), 10)
+                add(store / "22/rollout-corrupt.jsonl", "not json\n", 20)
+                add(store / "21/rollout-newer.jsonl", codex_line(firstmate, "newer-home-id"), 30)
+                add(store / "20/rollout-no-id.jsonl", json.dumps({"type": "session_meta", "payload": {"cwd": str(firstmate)}}) + "\n", 5)
+                os.utime(codex, (time.time() - 300, time.time() - 300))
+                wanted = f"resume -C {firstmate} newer-home-id"
+            output, _ = run()
+            assert f"{agent}:{firstmate}:{wanted}\n" in output, output
+            assert "--continue" not in output and "--last" not in output, output
+            for path in extra:
+                path.unlink()
+            extra.clear()
+            os.utime(claude, None)
+            os.utime(codex, None)
 
         for agent, transcript in (("claude", claude), ("codex", codex)):
             env["AI_FIRSTMATE_AGENT"] = agent
