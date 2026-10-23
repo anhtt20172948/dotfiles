@@ -29,9 +29,14 @@ readonly LIB_DIR
 # shellcheck source=./ai-lib.sh
 source "$LIB_DIR/ai-lib.sh"
 
-FIRSTMATE_DIR=${FIRSTMATE_DIR:-$HOME/.local/share/firstmate}
+# One source of truth for the firstmate home: ai-acct resume asks this script
+# rather than reading its own variable. FM_HOME is what firstmate itself uses.
+FIRSTMATE_DIR=${FIRSTMATE_DIR:-${FM_HOME:-$HOME/.local/share/firstmate}}
 FIRSTMATE_WINDOW=firstmate
 FIRSTMATE_SESSION=firstmate
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=./firstmate-lib.sh
+source "$LIB_DIR/firstmate-lib.sh"
 # gnhf has no iteration cap by default; an unattended loop without one can burn
 # a whole quota window. Override per shell with AI_GNHF_MAX_ITERATIONS.
 GNHF_MAX_ITERATIONS=${AI_GNHF_MAX_ITERATIONS:-20}
@@ -147,12 +152,6 @@ action_gnhf() {
   new_window "gnhf" "$PWD" "$cmd"
 }
 
-# Print "<session>:<index>" of the first-mate window on the main server.
-firstmate_target() {
-  tmux list-windows -a -F '#{session_name}:#{window_index}	#{window_name}' 2>/dev/null \
-    | awk -F '\t' -v w="$FIRSTMATE_WINDOW" '$2 == w { print $1; exit }'
-}
-
 # Reuse only a single idle shell pane, never a crew window. Process inspection
 # fails closed: a foreground command, background child, or unknown PID keeps it.
 firstmate_idle_shell() {
@@ -169,6 +168,14 @@ firstmate_idle_shell() {
   processes=$(ps -t "$tty" -o pid=) || return 1
   awk -v pid="$pid" 'NF { count++; if ($1 != pid) busy=1 }
     END { exit !(count == 1 && !busy) }' <<<"$processes"
+}
+
+# A dead pane (remain-on-exit) holds no process, so its window can be reused.
+firstmate_dead_pane() {
+  local window=$1 name=$2 panes=$3 dead
+  [[ "$name" == "$FIRSTMATE_WINDOW" && "$panes" == 1 ]] || return 1
+  dead=$(tmux list-panes -t "$window" -F '#{pane_dead}') || return 1
+  [[ "$dead" == 1 ]]
 }
 
 # Only use quota-axi's interpreted all-model headroom, not model-specific limits.
@@ -188,39 +195,54 @@ firstmate_quota() {
   ' <<<"$quota" 2>/dev/null
 }
 
+firstmate_installed_agents() {
+  local agent agents=''
+  for agent in claude codex; do
+    have "$agent" && agents="${agents:+${agents} }${agent}"
+  done
+  printf '%s\n' "$agents"
+}
+
+FIRSTMATE_PICK_KEYS='Ctrl-j/k move  •  Enter select  •  Esc cancel'
+
+# fzf action run in the background once the Agent picker is open: show quota
+# in the header and, while the cursor is still on the first row, move it to
+# the better headroom. The rows never change, so the list stays usable while
+# the lookup runs; fzf 0.67 cannot reload rows from a background action.
+firstmate_agent_quota_action() {
+  local quota claude_remaining=unknown codex_remaining=unknown agent percent header='Quota'
+  quota=$(firstmate_quota) || quota=$'unknown\tunknown'
+  IFS=$'\t' read -r claude_remaining codex_remaining <<<"$quota"
+  for agent in claude codex; do
+    case "$agent" in claude) percent=$claude_remaining ;; codex) percent=$codex_remaining ;; esac
+    if [[ "$percent" == unknown ]]; then
+      header="${header}  ${agent} quota ?"
+    else
+      header="${header}  ${agent} ${percent}% left"
+    fi
+  done
+  if [[ "$claude_remaining" != unknown && "$codex_remaining" != unknown ]] \
+    && awk -v c="$claude_remaining" -v x="$codex_remaining" 'BEGIN { exit !(x > c) }'; then
+    printf '%s' "transform~[ {n} = 0 ] && echo 'pos(2)'~+"
+  fi
+  printf 'change-header:%s\n%s\n' "$header" "$FIRSTMATE_PICK_KEYS"
+}
+
 firstmate_choose_agent() {
   if [[ -n "${AI_FIRSTMATE_AGENT:-}" ]]; then
     need "$AI_FIRSTMATE_AGENT"
     printf '%s\n' "$AI_FIRSTMATE_AGENT"
     return
   fi
-  local agent agents='' count=0
-  for agent in claude codex; do
-    have "$agent" || continue
-    agents="${agents:+${agents} }${agent}"
-    count=$((count + 1))
-  done
+  local agent agents count=0 quota_action
+  agents=$(firstmate_installed_agents)
+  for agent in $agents; do count=$((count + 1)); done
   [[ "$count" != 0 ]] || fail 'neither claude nor codex found - run install_agent_workflow'
   if [[ "$count" == 1 ]]; then printf '%s\n' "$agents"; return; fi
   need fzf
-  local quota claude_remaining=unknown codex_remaining=unknown percent entries=''
-  quota=$(firstmate_quota) || quota=$'unknown\tunknown'
-  IFS=$'\t' read -r claude_remaining codex_remaining <<<"$quota"
-  if [[ "$claude_remaining" != unknown && "$codex_remaining" != unknown ]] \
-    && awk -v c="$claude_remaining" -v x="$codex_remaining" 'BEGIN { exit !(x > c) }'; then
-    agents='codex claude'
-  fi
-  for agent in $agents; do
-    case "$agent" in claude) percent=$claude_remaining ;; codex) percent=$codex_remaining ;; esac
-    entries="${entries}${agent}"$'\t'"${agent}"
-    if [[ "$percent" == unknown ]]; then
-      entries="${entries}  quota ?"
-    else
-      entries="${entries}  ${percent}% left"
-    fi
-    entries="${entries}"$'\n'
-  done
-  firstmate_pick Agent "$entries"
+  printf -v quota_action 'start:bg-transform:bash %q _agent-quota' "$LIB_DIR/ai-workflow.sh"
+  firstmate_pick Agent $'claude\tclaude\ncodex\tcodex\n' \
+    --bind "$quota_action" --header=$'Quota …\n'"$FIRSTMATE_PICK_KEYS"
 }
 
 # No per-account config directories: token selection keeps Claude history shared.
@@ -243,16 +265,18 @@ firstmate_choose_account() {
 }
 
 # All launch pickers use the same style and validate selections against the
-# offered values. Cancellation exits before any tmux mutation.
+# offered values. Cancellation exits before any tmux mutation. Extra fzf
+# arguments come last, so they can override the defaults.
 firstmate_pick() {
   local label=$1 entries=$2 selection status value _display offered=''
+  shift 2
   need fzf
   selection=$(printf '%s' "$entries" | fzf --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
     --no-sort --cycle --layout=reverse --margin=1,2 --border=rounded \
     --border-label=" Firstmate $label " --info=hidden \
-    --header='Ctrl-j/k move  •  Enter select  •  Esc cancel' --prompt="$label › " \
+    --header="$FIRSTMATE_PICK_KEYS" --prompt="$label › " \
     --pointer='' --bind='ctrl-j:down,ctrl-k:up' \
-    --color='bg+:#313244,bg:#1e1e2e,fg:#cdd6f4,header:#89b4fa,fg+:#cdd6f4,prompt:#cba6f7,border:#6c7086,label:#cba6f7')
+    --color='bg+:#313244,bg:#1e1e2e,fg:#cdd6f4,header:#89b4fa,fg+:#cdd6f4,prompt:#cba6f7,border:#6c7086,label:#cba6f7' "$@")
   status=$?
   case "$status" in 0) ;; 1|130) return 0 ;; *) return "$status" ;; esac
   while IFS=$'\t' read -r value _display; do
@@ -315,42 +339,40 @@ firstmate_efforts() {
   done <<<"$levels"
 }
 
-# This is only a launch guard; the agent's startup hooks own lock acquisition.
-firstmate_live_primary() {
-  local pid process
-  [[ -r "$FIRSTMATE_DIR/state/.lock" ]] || return 1
-  IFS= read -r pid < "$FIRSTMATE_DIR/state/.lock" || [[ -n "$pid" ]] || return 1
-  [[ "$pid" =~ ^[1-9][0-9]*$ && "$pid" != 1 ]] || return 1
-  kill -0 "$pid" 2>/dev/null || return 1
-  process=$(ps -p "$pid" -o comm=) || return 1
-  process=${process##*/}
-  case "$process" in claude|codex) return 0 ;; *) return 1 ;; esac
+# Print the pane command's agent part once the session is chosen.
+firstmate_launch_command() {
+  local agent=$1 mode=$2 session=$3 model=${4:-default} effort=${5:-default} cmd flag
+  printf -v cmd 'exec %q' "$agent"
+  if [[ "$mode" == resume ]]; then
+    case "$agent" in
+      claude) printf -v cmd '%s --resume %q' "$cmd" "$session" ;;
+      codex) printf -v cmd 'exec codex resume -C %q %q' "$FIRSTMATE_DIR" "$session" ;;
+    esac
+    printf '%s\n' "$cmd"
+    return
+  fi
+  if [[ "$model" != default ]]; then
+    case "$agent" in claude) flag=--model ;; codex) flag=-m ;; esac
+    printf -v cmd '%s %q %q' "$cmd" "$flag" "$model"
+  fi
+  if [[ "$effort" != default ]]; then
+    case "$agent" in
+      claude) printf -v cmd '%s --effort %q' "$cmd" "$effort" ;;
+      codex) printf -v cmd '%s -c %q' "$cmd" "model_reasoning_effort=$effort" ;;
+    esac
+  fi
+  printf '%s\n' "$cmd"
 }
 
-# Read native transcript metadata directly, without the session picker helper.
-# Validate cwd too: different Claude paths can produce the same project slug.
-firstmate_has_transcript() {
-  local agent=$1 cwd store slug file
-  cwd=$(cd "$FIRSTMATE_DIR" && pwd -P) || return 1
-  if [[ "$agent" == claude ]]; then
-    slug=$(printf '%s' "$cwd" | LC_ALL=C sed 's/[^a-zA-Z0-9]/-/g')
-    store="$HOME/.claude/projects/$slug"
-  else
-    store="${CODEX_HOME:-$HOME/.codex}/sessions"
-  fi
-  [[ -d "$store" ]] || return 1
-  while IFS= read -r -d '' file; do
-    if jq -ne --arg cwd "$cwd" --arg agent "$agent" '
-      if $agent == "claude" then
-        first(inputs | select((.type == "user" or .type == "assistant")
-          and (.isSidechain != true))) | .cwd == $cwd
-      else
-        first(inputs | select(.type == "session_meta")) | .payload.cwd == $cwd
-      end' "$file" >/dev/null 2>&1; then
-      return 0
-    fi
-  done < <(find "$store" -type f -name '*.jsonl' -print0 2>/dev/null)
-  return 1
+firstmate_focus() {
+  tmux switch-client -t "${1%%:*}" \; select-window -t "$1"
+}
+
+# Make the account picked for the primary the default for crews and new panes.
+firstmate_commit_account() {
+  [[ -n "$1" ]] || return 0
+  ai-acct use "$1" >&2 && return 0
+  tmux display-message "Firstmate runs as $1, but new panes keep the old account; run ai-acct use $1."
 }
 
 action_firstmate() {
@@ -358,10 +380,10 @@ action_firstmate() {
     || fail "firstmate not found at $FIRSTMATE_DIR - run install_agent_workflow"
   [[ -n "${TMUX:-}" ]] || fail 'firstmate needs tmux (its crewmates are tmux windows)'
 
-  local target cmd windows index window name panes agent account model effort catalog='' entries flag first='' mode
-  target=$(firstmate_target)
+  local target cmd windows index window name panes agent account='' model='' effort='' catalog='' entries first='' mode session=''
+  target=$(firstmate_target) || target=''
   if [[ -n "$target" ]]; then
-    tmux switch-client -t "${target%%:*}" \; select-window -t "$target"
+    firstmate_focus "$target"
     return
   fi
   if firstmate_live_primary; then
@@ -376,8 +398,9 @@ action_firstmate() {
   entries=$'new\tNew Firstmate session\n'
   if ! have jq; then
     info 'Install jq to enable Firstmate resume; New session is available.'
-  elif firstmate_has_transcript "$agent"; then
-    entries+=$'resume\tResume last Firstmate session\n'
+  elif session=$(firstmate_session_id "$agent"); then
+    # Resume comes first: it is what the picker offers by default.
+    entries=$'resume\tResume last Firstmate session\n'"$entries"
   else
     info "No $agent transcript to resume in $FIRSTMATE_DIR. Choose New Firstmate session."
   fi
@@ -398,38 +421,23 @@ action_firstmate() {
     entries=$(firstmate_efforts "$agent" "$model" "$catalog")
     effort=$(firstmate_pick Effort "$entries") || return $?
     [[ -n "$effort" ]] || return 0
-    printf -v cmd 'exec %q' "$agent"
-    if [[ "$model" != default ]]; then
-      case "$agent" in claude) flag=--model ;; codex) flag=-m ;; esac
-      printf -v cmd '%s %q %q' "$cmd" "$flag" "$model"
-    fi
-    if [[ "$effort" != default ]]; then
-      case "$agent" in
-        claude) printf -v cmd '%s --effort %q' "$cmd" "$effort" ;;
-        codex) printf -v cmd '%s -c %q' "$cmd" "model_reasoning_effort=$effort" ;;
-      esac
-    fi
-  else
-    case "$agent" in
-      claude) cmd='exec claude --continue' ;;
-      codex) printf -v cmd 'exec codex resume -C %q --last' "$FIRSTMATE_DIR" ;;
-    esac
   fi
+  cmd=$(firstmate_launch_command "$agent" "$mode" "$session" "${model:-default}" "${effort:-default}")
   # Recheck after the pickers in case another launcher acquired the lock.
-  if firstmate_live_primary; then
+  target=$(firstmate_target) || target=''
+  if [[ -n "$target" ]] || firstmate_live_primary; then
     tmux display-message 'Firstmate lock is held by a live primary; refusing to start another.'
-    target=$(firstmate_target)
-    if [[ -n "$target" ]]; then
-      tmux switch-client -t "${target%%:*}" \; select-window -t "$target"
-    fi
+    [[ -z "$target" ]] || firstmate_focus "$target"
     return 0
   fi
   if [[ "$agent" == claude ]]; then
     need ai-acct
-    # Commit the account only after every picker succeeds. Resolve its token
-    # inside the new pane, even if that pane does not run zsh startup.
-    ai-acct use "$account" >&2 || fail 'could not select Claude account'
-    cmd="exec ai-acct exec ${cmd#exec }"
+    # Bind the picked account to the pane by name: the child reads that token
+    # itself, so a concurrent switch cannot change it. The shared selector and
+    # tmux token follow only once the pane exists, so crews use the same account
+    # and a failed launch leaves every default untouched.
+    ai-acct check "$account" >&2 || fail 'could not load Claude account'
+    printf -v cmd 'exec ai-acct exec --account %q %s' "$account" "${cmd#exec }"
   fi
   target="=$FIRSTMATE_SESSION:1"
   if tmux has-session -t "=$FIRSTMATE_SESSION" 2>/dev/null; then
@@ -439,11 +447,13 @@ action_firstmate() {
     while IFS=$'\t' read -r index window name panes; do
       [[ "$index" == 1 ]] || continue
       first=$window
-      if firstmate_idle_shell "$window" "$name" "$panes"; then
+      if firstmate_idle_shell "$window" "$name" "$panes" \
+        || firstmate_dead_pane "$window" "$name" "$panes"; then
         tmux respawn-window -k -t "$window" -c "$FIRSTMATE_DIR" "$cmd" \
           || fail 'could not reuse firstmate shell window'
         tmux rename-window -t "$window" "$FIRSTMATE_WINDOW" \
           || fail 'could not name firstmate window'
+        firstmate_commit_account "$account"
         tmux switch-client -t "$target"
         return
       fi
@@ -457,7 +467,25 @@ action_firstmate() {
     tmux new-session -d -s "$FIRSTMATE_SESSION" -n "$FIRSTMATE_WINDOW" \
       -c "$FIRSTMATE_DIR" "$cmd" || fail 'could not create firstmate session'
   fi
+  firstmate_commit_account "$account"
   tmux switch-client -t "$target"
+}
+
+# Machine interface for ai-acct resume: apply the launcher's guards and print
+# the physical home and the explicit Claude session id, one per line. Needs no
+# tmux, and never pauses for a key.
+action_resume_session() {
+  local pid session cwd
+  [[ -d "$FIRSTMATE_DIR" ]] || { err "firstmate home not found: $FIRSTMATE_DIR"; exit 1; }
+  have jq || { err 'jq is required to find the Firstmate session'; exit 1; }
+  if pid=$(firstmate_live_primary_pid); then
+    err "Firstmate lock is held by live primary $pid; refusing to start another."
+    exit 1
+  fi
+  session=$(firstmate_session_id claude) \
+    || { err "no Claude transcript to resume in $FIRSTMATE_DIR"; exit 1; }
+  cwd=$(cd "$FIRSTMATE_DIR" && pwd -P) || exit 1
+  printf '%s\n%s\n' "$cwd" "$session"
 }
 
 run_action() {
@@ -470,6 +498,9 @@ run_action() {
     pipelines) action_pipelines ;;
     gnhf)      action_gnhf "$@" ;;
     firstmate) action_firstmate ;;
+    # Internal entry points (fzf quota action, ai-acct resume); not in the menu.
+    _agent-quota) firstmate_agent_quota_action ;;
+    resume-session) action_resume_session ;;
     crew)      "$LIB_DIR/crew-view.sh" ;;
     *)         fail "unknown action: $action (one of: $ACTIONS)" ;;
   esac

@@ -127,11 +127,14 @@ Tunables (environment variables):
 |----------|---------|--------|
 | `AI_GNHF_MAX_ITERATIONS` | `20` | `--max-iterations` passed to gnhf |
 | `AI_FIRSTMATE_AGENT` | unset | Force `claude` or `codex`; skip only the agent picker |
-| `FIRSTMATE_DIR` | `~/.local/share/firstmate` | firstmate checkout |
+| `FIRSTMATE_DIR` | `~/.local/share/firstmate` | firstmate checkout (`FM_HOME` is the fallback; `ai-acct resume` follows the same choice) |
 
-Starting firstmate offers Claude or Codex with remaining quota (or `quota ?`),
-then asks for the Claude account (Claude only), model and effort. Defaults preserve CLI configuration; Esc cancels
-the launch, and existing windows jump directly. The pickers are
+Starting firstmate offers Claude or Codex at once, with remaining quota (or
+`quota ?`) filled into the header in the background, then asks Resume or New (Resume first when
+a session exists), the Claude account (Claude only), and for New the model and
+effort. A window jumps directly only when a live primary for this home runs in
+it; a dead pane or an unrelated window named `firstmate` does not count.
+Defaults preserve CLI configuration; Esc cancels the launch. The pickers are
 described in [`.config/tmux/README.md`](../.config/tmux/README.md#agent-workflow).
 
 A worktree from `<leader>aW` is leased. Return it with

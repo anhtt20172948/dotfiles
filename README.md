@@ -147,8 +147,13 @@ selector, marks Claude onboarding complete and updates tmux's environment for
 future panes. It validates the local token without an authentication request.
 Running processes retain their token, and the parent shell is unchanged.
 Launch with `ai-acct exec claude`, a new zsh shell, or exit the main Claude
-process and run `ai-acct resume` to continue it from
-`${FM_HOME:-$HOME/.local/share/firstmate}`.
+process and run `ai-acct resume`. It asks the tmux launcher for the Firstmate
+home (`FIRSTMATE_DIR`, else `FM_HOME`, else `~/.local/share/firstmate`), applies
+its live-primary guard and resumes the newest session of that home by id with
+the active account. `ai-acct exec --account NAME CMD...` binds a named account
+to the child instead of following the selector, which is how the tmux launcher
+starts Firstmate; once that pane exists the launcher also selects the account so
+crews follow it.
 
 `ai-acct list --quota` adds compact quota bars. Quota readings are cached;
 older readings show their age and missing readings show an explicit unknown or

@@ -66,8 +66,13 @@ export CLAUDE_CODE_OAUTH_TOKEN=stale ANTHROPIC_API_KEY=stale CLAUDE_CONFIG_DIR=/
 jq -e '.existing == 42 and .hasCompletedOnboarding == true' "$HOME/.claude.json" >/dev/null
 [ "$(mode_of "$HOME/.claude.json")" = 600 ] || fail 'onboarding permissions'
 grep -Fqx 'tmux|token updated' "$LOG"
+# resume asks the launcher for the home and an explicit session id.
+fm_physical=$(cd "$FM_HOME" && pwd -P)
+slug=$(printf '%s' "$fm_physical" | sed 's/[^a-zA-Z0-9]/-/g')
+mkdir -p "$HOME/.claude/projects/$slug"
+printf '{"type":"user","cwd":"%s"}\n' "$fm_physical" > "$HOME/.claude/projects/$slug/session-1.jsonl"
 "$ACCT" resume
-grep -Fqx -- "--continue|$FM_HOME" "$LOG"
+grep -Fqx -- "--resume session-1|$fm_physical" "$LOG"
 "$ACCT" exec claude --model opus
 grep -Fqx -- "--model opus|$PWD" "$LOG"
 # Completed onboarding is left in place so concurrent Claude writes are not lost.

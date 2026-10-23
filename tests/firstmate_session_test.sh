@@ -10,7 +10,14 @@ export AI_FIRSTMATE_AGENT=claude
 export TMUX=mock
 export FIRSTMATE_DIR="$TMP/first mate"
 export LOG="$TMP/tmux.log"
-mkdir -p "$TMP/bin" "$HOME" "$FIRSTMATE_DIR/.git"
+mkdir -p "$TMP/bin" "$HOME" "$FIRSTMATE_DIR/.git" "$TMP/live"
+PHYSICAL_DIR=$(cd "$FIRSTMATE_DIR" && pwd -P)
+REAL_PS=$(command -v ps)
+# A live harness-shaped process stands in for the primary in the existing window.
+ln -s "$(command -v sleep)" "$TMP/live/claude"
+"$TMP/live/claude" 60 & LIVE_PID=$!
+trap 'kill "$LIVE_PID" 2>/dev/null || :; rm -rf -- "$TMP"' EXIT
+export PHYSICAL_DIR REAL_PS LIVE_PID
 cat >"$TMP/bin/claude" <<'MOCK'
 #!/usr/bin/env bash
 if [[ ${VERIFY_TOKEN:-0} == 1 ]]; then
@@ -43,15 +50,16 @@ printf '%s|' "$@" >>"$LOG"
 printf '\n' >>"$LOG"
 case "$1" in
 list-windows)
-  if [[ $2 == -a ]]; then
-    [[ $SCENARIO != existing ]] || printf 'dotfiles:4\tfirstmate\n'
-  else
-    case "$SCENARIO" in
-      idle|busy|worker|multi|unknown|command|inspection) printf '1\t@7\t%s\t%s\n' "${WINDOW_NAME:-zsh}" "${PANES:-1}" ;;
-    esac
-  fi ;;
+  case "$SCENARIO" in
+    idle|busy|worker|multi|unknown|command|inspection) printf '1\t@7\t%s\t%s\n' "${WINDOW_NAME:-zsh}" "${PANES:-1}" ;;
+  esac ;;
 has-session) [[ $SCENARIO != new ]] ;;
-list-panes) printf '123\t%s\t/dev/pts/9\n' "${PANE_COMMAND:-zsh}" ;;
+list-panes)
+  if [[ $2 == -a ]]; then
+    [[ $SCENARIO != existing ]] || printf 'dotfiles:4\t%s\t0\t%s\tfirstmate\n' "$LIVE_PID" "$PHYSICAL_DIR"
+  else
+    printf '123\t%s\t/dev/pts/9\n' "${PANE_COMMAND:-zsh}"
+  fi ;;
 new-session|new-window|respawn-window)
   [[ $SCENARIO != failure ]] || exit 1
   [[ ${VERIFY_TOKEN:-0} != 1 ]] || (cd "$FIRSTMATE_DIR" && bash -c "${!#}") ;;
@@ -63,6 +71,8 @@ esac
 MOCK
 cat >"$TMP/bin/ps" <<'MOCK'
 #!/usr/bin/env bash
+# The existing-window scenario inspects a real process.
+[[ $SCENARIO != existing ]] || exec "$REAL_PS" "$@"
 if [[ $1 == -p ]]; then
   [[ $SCENARIO != unknown ]] || exit 1
   printf '%s\n' "${PROCESS_NAME:-zsh}"
@@ -81,31 +91,31 @@ run() {
   : >"$LOG"
   bash "$ROOT/.config/tmux/scripts/ai-workflow.sh" firstmate </dev/null
 }
-# Claude launches require a local token; every scenario selects account B.
+# Claude launches require a local token; every scenario binds account B to the pane.
 ln -s "$ROOT/.local/bin/ai-acct" "$TMP/bin/ai-acct"
 mkdir -p "$HOME/.config/claude-accounts"
 printf 'synthetic-b\n' > "$HOME/.config/claude-accounts/b.token"
 chmod 600 "$HOME/.config/claude-accounts/b.token"
 run new
-has "new-session|-d|-s|firstmate|-n|firstmate|-c|$FIRSTMATE_DIR|exec ai-acct exec claude|"
+has "new-session|-d|-s|firstmate|-n|firstmate|-c|$FIRSTMATE_DIR|exec ai-acct exec --account b claude|"
 has 'switch-client|-t|=firstmate:1|'
 lacks 'new-window|'
 run existing
 has 'switch-client|-t|dotfiles|;|select-window|-t|dotfiles:4|'
 lacks 'has-session|'
 run empty
-has "new-window|-d|-t|=firstmate:1|-n|firstmate|-c|$FIRSTMATE_DIR|exec ai-acct exec claude|"
+has "new-window|-d|-t|=firstmate:1|-n|firstmate|-c|$FIRSTMATE_DIR|exec ai-acct exec --account b claude|"
 run idle
-has "respawn-window|-k|-t|@7|-c|$FIRSTMATE_DIR|exec ai-acct exec claude|"
+has "respawn-window|-k|-t|@7|-c|$FIRSTMATE_DIR|exec ai-acct exec --account b claude|"
 has 'rename-window|-t|@7|firstmate|'
 lacks 'new-window|'
 run busy
-has "new-window|-d|-b|-t|=firstmate:1|-n|firstmate|-c|$FIRSTMATE_DIR|exec ai-acct exec claude|"
+has "new-window|-d|-b|-t|=firstmate:1|-n|firstmate|-c|$FIRSTMATE_DIR|exec ai-acct exec --account b claude|"
 lacks 'respawn-window|'
 export WINDOW_NAME=fm-task
 run worker
 lacks 'respawn-window|'
-has "new-window|-d|-b|-t|=firstmate:1|-n|firstmate|-c|$FIRSTMATE_DIR|exec ai-acct exec claude|"
+has "new-window|-d|-b|-t|=firstmate:1|-n|firstmate|-c|$FIRSTMATE_DIR|exec ai-acct exec --account b claude|"
 unset WINDOW_NAME
 export PANES=2
 run multi
@@ -132,6 +142,7 @@ for scenario in new empty idle; do
   run "$scenario"
   has 'claude token verified'
   [[ $(cat "$HOME/.config/claude-accounts/active") == b ]] || fail 'selector not saved'
+  has 'tmux|stdin'
   jq -e '.hasCompletedOnboarding == true' "$HOME/.claude.json" >/dev/null
   lacks synthetic-b
 done

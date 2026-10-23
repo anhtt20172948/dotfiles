@@ -8,6 +8,7 @@ JQ_BIN=$(command -v jq)
 GREP_BIN=$(command -v grep)
 trap '/bin/rm -rf -- "$TMP"' EXIT
 export HOME="$TMP/home" FIRSTMATE_DIR="$TMP/firstmate" TMUX=mock
+export FIRSTMATE_PHYS; FIRSTMATE_PHYS=$(cd "$TMP" && pwd -P)/firstmate
 export LOG="$TMP/tmux.log" PICKER="$TMP/picker" QUOTA_LOG="$TMP/quota.log"
 mkdir -p "$TMP/bin" "$HOME" "$FIRSTMATE_DIR/.git"
 for tool in bash dirname readlink realpath awk jq cat sleep mktemp stat mv rm sed perl ps; do
@@ -36,7 +37,7 @@ fi
 printf '%s|' "$@" >> "$LOG"
 printf '\n' >> "$LOG"
 case "$1" in
-  list-windows) [[ ${EXISTING:-0} != 1 ]] || printf 'firstmate:1\tfirstmate\n' ;;
+  list-panes) [[ ${EXISTING:-0} != 1 ]] || printf 'firstmate:1\t%s\t0\t%s\tfirstmate\n' "$PANE_PID" "$FIRSTMATE_PHYS" ;;
   has-session) exit 1 ;;
   new-session|switch-client) ;;
   *) exit 90 ;;
@@ -52,6 +53,17 @@ file=$PICKER
 [[ $stage == Agent ]] || file="$PICKER.$stage"
 printf '%s\n' "$@" > "$file.args"
 cat > "$file"
+# fzf runs the start:bg-transform command once the picker is open; wait for it
+# here and apply its actions: an optional move to row 2, then a new header.
+row=1
+for arg in "$@"; do
+  case "$arg" in start:bg-transform:*)
+    [[ ${NO_QUOTA_ACTION:-0} != 1 ]] || continue
+    action=$(bash -c "${arg#start:bg-transform:}")
+    [[ $action != "transform~[ {n} = 0 ] && echo 'pos(2)'~+"* ]] || row=2
+    printf '%s\n' "${action#*change-header:}" > "$file.header" ;;
+  esac
+done
 [[ ${CANCEL_STAGE:-} != "$stage" && ${CANCEL:-0} != 1 ]] || exit 130
 case "$stage" in
   Session) choice=new ;;
@@ -60,10 +72,11 @@ case "$stage" in
   Model) choice=${MODEL_CHOICE:-} ;;
   Effort) choice=${EFFORT_CHOICE:-} ;;
 esac
-if [[ -n $choice ]]; then printf '%s\n' "$choice"; else
-  IFS=$'\t' read -r value rest < "$file"
-  printf '%s\n' "$value"
+if [[ -z $choice ]]; then
+  choice=$(awk -F '\t' -v row="$row" 'NR == row { print $1 }' "$file")
+  printf '%s\n' "$choice" > "$file.default"
 fi
+printf '%s\n' "$choice"
 MOCK
 cat > "$TMP/bin/quota-axi" <<'MOCK'
 #!/usr/bin/env bash
@@ -102,11 +115,12 @@ quota() {
 }
 fail() { printf 'FAIL: %s\n' "$*" >&2; /bin/cat "$LOG" "$PICKER" >&2; exit 1; }
 run() {
-  : > "$LOG"; : > "$QUOTA_LOG"; : > "$PICKER"; : > "$PICKER.args"; : > "$PICKER.Model"; : > "$PICKER.Effort"; : > "$PICKER.Account"
+  : > "$LOG"; : > "$QUOTA_LOG"; : > "$PICKER"; /bin/rm -f "$PICKER.default" "$PICKER.header"; : > "$PICKER.args"; : > "$PICKER.Model"; : > "$PICKER.Effort"; : > "$PICKER.Account"
   bash "$ROOT/.config/tmux/scripts/ai-workflow.sh" firstmate </dev/null
 }
 started() { "$GREP_BIN" -Fq "|exec $1|" "$LOG" || fail "did not start $1"; }
-first() { local line; IFS= read -r line < "$PICKER" || line=; [[ $line == "$1"* ]] || fail "default is not $1"; }
+first() { [[ $(/bin/cat "$PICKER.default" 2>/dev/null) == "$1" ]] || fail "default is not $1"; }
+header() { "$GREP_BIN" -Fxq "$1" "$PICKER.header" || fail "quota header is not '$1'"; }
 no_start() { if "$GREP_BIN" -Fq 'new-session|' "$LOG"; then fail 'unexpected launch'; fi; }
 # Claude launches require a local token; several named accounts exist for the picker.
 /bin/mkdir -p "$HOME/.config/claude-accounts"
@@ -117,14 +131,13 @@ printf 'synthetic-work\n' > "$HOME/.config/claude-accounts/work.token"
 printf 'a\n' > "$HOME/.config/claude-accounts/active"
 quota 20 80
 run; first codex; started codex
-"$GREP_BIN" -Fxq $'codex\tcodex  80% left' "$PICKER" || fail 'missing codex quota'
-"$GREP_BIN" -Fxq $'claude\tclaude  20% left' "$PICKER" || fail 'missing claude quota'
+header 'Quota  claude 20% left  codex 80% left'
 "$GREP_BIN" -Fxq -- '--no-sort' "$PICKER.args" || fail 'picker would reorder default'
 export CHOICE=claude
-run; started 'ai-acct exec claude'
+run; started 'ai-acct exec --account a claude'
 unset CHOICE
 quota 80 20
-run; first claude; started 'ai-acct exec claude'
+run; first claude; started 'ai-acct exec --account a claude'
 quota 50 50
 run; first claude
 quota 0 0
@@ -135,11 +148,15 @@ export CANCEL=1
 run; no_start
 unset CANCEL
 export AI_FIRSTMATE_AGENT=claude
-run; started 'ai-acct exec claude'; [[ ! -s $PICKER && ! -s $QUOTA_LOG && -s $PICKER.Model && -s $PICKER.Effort ]] || fail 'agent override skipped wrong steps'
+run; started 'ai-acct exec --account a claude'; [[ ! -s $PICKER && ! -s $QUOTA_LOG && -s $PICKER.Model && -s $PICKER.Effort ]] || fail 'agent override skipped wrong steps'
 export AI_FIRSTMATE_AGENT=codex
 run; started codex
 unset AI_FIRSTMATE_AGENT
-export EXISTING=1
+# A window only counts when a live harness runs in it, in the firstmate home.
+/bin/mkdir -p "$TMP/live" && /bin/ln -s "$TMP/bin/sleep" "$TMP/live/claude"
+"$TMP/live/claude" 60 & PANE_PID=$!
+trap 'kill "$PANE_PID" 2>/dev/null; /bin/rm -rf -- "$TMP"' EXIT
+export EXISTING=1 PANE_PID
 /bin/rm "$TMP/bin/claude" "$TMP/bin/codex"
 run; no_start; [[ ! -s $PICKER && ! -s $QUOTA_LOG && ! -s $PICKER.Model && ! -s $PICKER.Effort ]] || fail 'existing window prompted'
 unset EXISTING
@@ -147,7 +164,7 @@ agent codex
 run; started codex; [[ ! -s $PICKER && ! -s $QUOTA_LOG && -s $PICKER.Model && -s $PICKER.Effort ]] || fail 'single CLI skipped wrong steps'
 /bin/rm "$TMP/bin/codex"
 agent claude
-run; started 'ai-acct exec claude'
+run; started 'ai-acct exec --account a claude'
 /bin/rm "$TMP/bin/claude"
 if run; then fail 'no installed agents succeeded'; fi
 no_start
@@ -155,18 +172,30 @@ agent claude; /bin/cp "$TMP/codex-mock" "$TMP/bin/codex"
 for QUOTA_MODE in fail invalid empty slow; do
   export QUOTA_MODE
   SECONDS=0
-  run; first claude; started 'ai-acct exec claude'
+  run; first claude; started 'ai-acct exec --account a claude'
   [[ $SECONDS -lt 7 ]] || fail 'quota lookup was not bounded'
-  "$GREP_BIN" -Fxq $'claude\tclaude  quota ?' "$PICKER" || fail 'fallback shows a percentage'
+  header 'Quota  claude quota ?  codex quota ?'
 done
 export QUOTA_MODE=cold
 quota 10 90
 run; first codex; started codex
-"$GREP_BIN" -Fxq $'codex\tcodex  90% left' "$PICKER" || fail 'cold quota lost'
+header 'Quota  claude 10% left  codex 90% left'
 unset QUOTA_MODE
+# Quota stays off the critical path: the first picker opens at once with fixed
+# rows and fzf fills in the quota header afterwards in the background.
+export QUOTA_MODE=slow NO_QUOTA_ACTION=1
+quota 20 80
+SECONDS=0
+run; started 'ai-acct exec --account a claude'
+[[ $SECONDS -lt 3 && ! -s $QUOTA_LOG ]] || fail 'first picker waited for quota'
+[[ $(/bin/cat "$PICKER") == $'claude\tclaude\ncodex\tcodex' ]] \
+  || fail "initial rows: $(/bin/cat "$PICKER")"
+"$GREP_BIN" -Fxq -- $'--header=Quota …\nCtrl-j/k move  •  Enter select  •  Esc cancel' "$PICKER.args" \
+  || fail 'quota placeholder missing'
+unset QUOTA_MODE NO_QUOTA_ACTION
 /bin/mv "$TMP/bin/quota-axi" "$TMP/quota-axi"
 run; first claude
-"$GREP_BIN" -Fxq $'codex\tcodex  quota ?' "$PICKER" || fail 'missing tooling hid quota cell'
+header 'Quota  claude quota ?  codex quota ?'
 /bin/mv "$TMP/quota-axi" "$TMP/bin/quota-axi"
 quota null 90
 run; first claude
@@ -174,7 +203,7 @@ quota 101 90
 run; first claude
 export QUOTA_JSON='{"providers":[{"provider":"claude","windows":[{"percentRemaining":90}],"quotaSemantics":{"effectiveAvailability":[{"scope":"all_models","status":"unknown"}]}},{"provider":"codex","quotaSemantics":{"effectiveAvailability":[{"scope":"all_models","effectivePercentRemaining":10}]}}]}'
 run; first claude
-"$GREP_BIN" -Fxq $'claude\tclaude  quota ?' "$PICKER" || fail 'unknown headroom displayed as raw quota'
+header 'Quota  claude quota ?  codex 10% left'
 export QUOTA_JSON='{"providers":[]}'
 run; first claude
 /bin/rm "$TMP/bin/jq"
@@ -187,15 +216,15 @@ run; started codex
 unset AI_FIRSTMATE_AGENT
 /bin/ln -s "$JQ_BIN" "$TMP/bin/jq"
 export AI_FIRSTMATE_AGENT=claude MODEL_CHOICE=opus EFFORT_CHOICE=max
-run; started 'ai-acct exec claude --model opus --effort max'
+run; started 'ai-acct exec --account a claude --model opus --effort max'
 "$GREP_BIN" -Fxq $'default\tdefault (CLI config)' "$PICKER.Model" || fail 'missing model default'
 for model in opus sonnet haiku; do
   export MODEL_CHOICE=$model
   for effort in low medium high xhigh max default; do
     export EFFORT_CHOICE=$effort
     run
-    if [[ $effort == default ]]; then started "ai-acct exec claude --model $model"; else
-      started "ai-acct exec claude --model $model --effort $effort"
+    if [[ $effort == default ]]; then started "ai-acct exec --account a claude --model $model"; else
+      started "ai-acct exec --account a claude --model $model --effort $effort"
     fi
   done
 done
@@ -248,17 +277,18 @@ for AI_FIRSTMATE_AGENT in '' codex; do
   if [[ -s $TMP/err ]]; then fail "menu errored: $(/bin/cat "$TMP/err")"; fi
 done
 unset AI_FIRSTMATE_AGENT CANCEL
-# Account selection switches the shared token file and marks the active entry.
+# The picked account is bound to the pane, then becomes the shared selector.
 printf 'a\n' > "$HOME/.config/claude-accounts/active"
 export AI_FIRSTMATE_AGENT=claude ACCOUNT_CHOICE=b
-run; started 'ai-acct exec claude'
-[[ $(/bin/cat "$HOME/.config/claude-accounts/active") == b ]] || fail 'account not switched'
+run; started 'ai-acct exec --account b claude'
+[[ $(/bin/cat "$HOME/.config/claude-accounts/active") == b ]] || fail 'launch did not select the picked account'
 [[ $(/bin/cat "$PICKER.Account") == $'a\tClaude account a (active)\nb\tClaude account b\nwork\tClaude account work' ]] \
   || fail "account entries: $(/bin/cat "$PICKER.Account")"
 # Any named account can be launched; the active one is offered first.
 export ACCOUNT_CHOICE=work
-run; started 'ai-acct exec claude'
-[[ $(/bin/cat "$HOME/.config/claude-accounts/active") == work ]] || fail 'named account not switched'
+run; started 'ai-acct exec --account work claude'
+[[ $(/bin/cat "$HOME/.config/claude-accounts/active") == work ]] || fail 'named launch did not select it'
+printf 'work\n' > "$HOME/.config/claude-accounts/active"
 export ACCOUNT_CHOICE=b
 run
 IFS= read -r line < "$PICKER.Account"
@@ -279,7 +309,7 @@ export ACCOUNT_CHOICE=b
 if run; then fail 'missing token selection accepted'; fi
 no_start
 unset ACCOUNT_CHOICE
-run; started 'ai-acct exec claude'
+run; started 'ai-acct exec --account a claude'
 if "$GREP_BIN" -Fq 'Claude account b' "$PICKER.Account"; then fail 'offered missing token'; fi
 /bin/rm "$HOME/.config/claude-accounts/a.token" "$HOME/.config/claude-accounts/work.token"
 if run 2>"$TMP/err"; then fail 'no-token launch succeeded'; fi

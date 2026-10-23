@@ -25,6 +25,7 @@ configuration with `install.sh`.
     ├── persistent-ai.sh        → persistent, per-project AI popup controller
     ├── ai-status.sh            → status-bar segment: live agent count
     ├── ai-workflow.sh          → agent workflow menu (treehouse/no-mistakes/gnhf/firstmate)
+    ├── firstmate-lib.sh        → firstmate launch helpers: live primary, window and session lookup
     ├── ai-account.sh           → Claude account manager (prefix E)
     ├── crew-view.sh            → firstmate fleet overview and worker picker
     ├── monitor-lib.sh          → shared helpers for the two monitor scripts
@@ -200,21 +201,36 @@ Notes:
   skills only - `<tool> setup hooks` is skipped on purpose so they do not add
   SessionStart hooks on top of ECC's.
 - `prefix F` → firstmate switches into the `firstmate` session, placing the
-  orchestrator and its `fm-*` crew windows together in `prefix w`. An existing
-  firstmate window anywhere on the server is focused as before. When the session
-  already exists, an idle single-pane shell at index 1 is reused; occupied windows
-  (including all `fm-*` windows) are shifted to preserve their processes.
+  orchestrator and its `fm-*` crew windows together in `prefix w`. The window that
+  runs this home's live primary (the process holding `state/.lock`, judged by
+  firstmate's own `bin/fm-session-lock-lib.sh`; under any window name) is focused.
+  A name alone is not enough: a dead pane, a shell-only pane or an unrelated
+  window named `firstmate` leads to recovery. When the session already exists, an
+  idle single-pane shell or a dead `firstmate` pane at index 1 is reused;
+  occupied windows (including all `fm-*` windows) are shifted to preserve their
+  processes.
 - When starting a new first mate, an fzf picker offers installed `claude` and
-  `codex` CLIs. Every row shows all-model quota from `quota-axi --json` as
-  `NN% left`, or `quota ?` when missing, unreadable, stale or timed out. Lookup
-  is capped at five seconds. The higher remaining percentage comes first; ties
-  or unknown quota default to Claude. A single installed CLI skips this step.
+  `codex` CLIs. The rows are usable at once; the header shows `Quota …` until
+  the all-model quota from `quota-axi --json` (capped at five seconds) arrives
+  in the background as `NN% left` per agent, or `quota ?` when missing,
+  unreadable, stale or timed out. The default is Claude; if Codex has the higher
+  remaining percentage and the cursor is still on the first row, it moves to
+  Codex. A single installed CLI skips this step.
+- A Session picker follows. When the home has a native session, `Resume last
+  Firstmate session` comes first (the default) and the launch resumes that exact
+  session by id (`claude --resume ID`, `codex resume -C HOME ID`), not whichever
+  `--continue`/`--last` would pick; `New Firstmate session` is always offered.
+  Lookup reads only bounded transcript metadata.
 - For Claude, an account picker follows. It offers every account from
   `ai-acct list` (`~/.config/claude-accounts/NAME.token`), active first;
   when none exist it reports the missing setup instead of launching.
-  Selection updates the selector and tmux environment only after all pickers
-  finish; the pane loads the token at launch without putting it in its command
-  string. All accounts share Claude history/config.
+  The pane runs `ai-acct exec --account NAME claude ...`: it reads that named
+  token itself at launch, so a concurrent `ai-acct use` cannot change it, and
+  no token is in the command string. Only after the Firstmate pane is created
+  does the launcher run `ai-acct use NAME`, so crew windows and new panes follow
+  the picked account; a failed launch leaves the selector and tmux environment
+  untouched. If that update fails after the pane exists, the launcher still
+  switches to Firstmate and shows a warning. All accounts share Claude history/config.
 - Model and effort pickers follow, each with `default` first to preserve CLI
   configuration. Claude offers `opus`, `sonnet`, `haiku` and efforts `low`,
   `medium`, `high`, `xhigh`, `max`. Codex reads visible models and their supported
