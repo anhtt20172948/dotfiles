@@ -1,26 +1,28 @@
 /**
- * The Crew pane's drawing: a header, then the five zones in order (Overview, Agents, Quota & Limits,
- * Activity, Recent Events), each in its own box with its title on its first row, and a key footer.
+ * The Crew pane's drawing: a header, then the six zones in order (Overview, Agents, Quota & Limits,
+ * Usage by Model, Activity, Recent Events), each in its own box with its title on its first row, and a
+ * key footer.
  * Everything here draws from the report and the view state it is handed; the module's only effects
  * are the press handlers the caller passes in.
  */
 import type { Elements, RenderChildren, RenderSurface } from 'claude-code'
 
-import type { CrewMember, CrewReport, LogFilter, PollState, QuotaReading, ViewMode } from '../types'
+import type { CrewMember, CrewReport, LogFilter, PollState, QuotaReading, UsageWindow, ViewMode } from '../types'
 import {
   QUOTA_NOTE, TOOLS_DIRECT_NOTE, ago, callTokensText, cells, clip, clockText, effortText, pad, previewText, quotaRows, tildeHome, tokens,
   toolTokenNote, toolTokenText, toolTokenTotal, totalTokens,
 } from './format'
 import { activityChart, activityCounts, fleetModels, memberKey, sortedTools } from './dashboard'
-import { AGENT_BORDERS, harnessStyle, paneStyles } from './theme'
+import { harnessStyle, paneStyles } from './theme'
 import type { Paint } from './theme'
 import {
   KPI_DEFINITIONS, NONE, TAG_CELLS, TOKEN_SWATCH, accountsOf, barParts, cardBorder, cardStats, contextExact, contextFigure, contextLine, crewCounts, dispatchName,
   effectiveFilter, filterLabel, filterLogs, fitSegments, harnessName, headingParts, wrapSegments, kpiText, layoutFor, logEntries, logKey, logPreview, logTokens,
   TOKEN_COLUMN_CELLS, overviewTiles, quotaBriefParts, quotaEntries, quotaLine, fiveHourLine, fiveHourSource, quotaNames, quotaSource, runnerParts, sectionParts,
-  sourceState, statusMessage, statusOf, tilesPerRow, tokenBar, tokenFormulas, tokenParts, totalsText,
+  sourceState, statusMessage, statusOf, tilesPerRow, tokenBar, tokenFormulas, tokenParts, totalsText, USAGE_CELLS, usageColumns, usageMeta,
+  usageText, usageTotal,
 } from './view'
-import type { Layout, LogEntry, QuotaLine, Segment, SourceState, Tile } from './view'
+import type { CardBorder, Layout, LogEntry, QuotaLine, Segment, SourceState, Tile, UsageFigures } from './view'
 
 type Ui = Elements[RenderSurface]
 
@@ -37,6 +39,7 @@ export type ViewState = {
   openLog: string | null
   /** The running border's frame; null while its timer is stopped, so every border stands still. */
   pulse: number | null
+  usageWindow: UsageWindow
 }
 
 export type Frame = {
@@ -58,6 +61,7 @@ export type Actions = {
   logs: () => Promise<void>
   openLog: (entry: LogEntry) => () => Promise<void>
   filter: () => Promise<void>
+  usage: () => Promise<void>
   help: () => Promise<void>
 }
 
@@ -84,7 +88,7 @@ const STATUS_HELP = [
   'STALE    no activity for 15 min',
   'DONE · BLOCKED · PAUSED  from the task\'s own status line',
   'UNKNOWN  no activity and no status recorded yet',
-  'A running card has a purple border with a heavy ━ run moving around it, a blocked one red; a done card a dim one with a green ✓ DONE.',
+  'A card is bordered in its harness\'s colour: full while it runs, with a heavy ━ run moving around it, or is blocked; dim once it is quiet, paused, stale or done. The glyph and word say which.',
   'The run stands still when nothing runs, the pane is closed or behind another tab, or Reduce motion is on (/config, prefersReducedMotion).',
   'Harness names: ✻ claude in amber, ◆ codex in blue, ▪ any other harness in plain text; a model or account takes its harness\'s colour.',
 ]
@@ -96,6 +100,7 @@ const KEY_HELP = [
   'i              quota notes: each account\'s source, age, estimates and crew shares',
   'l              more or fewer log entries',
   'f              log filter: All, Tools, Status, Errors, Agent',
+  'u              usage by model: this quota week or all time',
   'h              this help',
   'Tab, Shift+Tab move between controls, log rows included',
   'Enter          press the focused control; on a log row, show or hide its full text',
@@ -110,7 +115,8 @@ const METRIC_HELP = [
   'Quota = the vendor\'s weekly percent of one account as last measured, with a bar of it; resets is the time to its reset, ◷ stale a reading over 30 min old. Accounts and providers are never added up.',
   'Activity = the whole crew\'s logged tool calls, messages and status lines per minute, one bar per minute scaled to the busiest (the peak); ▁ is a minute with none.',
   'Details mode adds a bar of what Tokens is made of, in this order and each in its own colour: cache read, cache write, output, uncached input.',
-  'Events: time, tag, crewmate, then in and out (the tokens the call\'s result added and its share of output, — where none was measured) and the command last.',
+  'Usage by model = live and torn-down crewmates recorded by this pane\'s homes, kept for 90 days after last seen: req requests, in uncached input, out output, read and write the cache, total all four, crew the crewmates it served. This week counts requests since each account\'s dated quota-week boundary; without one, usage is unavailable. u switches to all retained history. No old crews are backfilled.',
+  'Events: time, tag (a tool in its crewmate\'s harness colour, STAT green, × ERR red), crewmate, then in and out (the tokens the call\'s result added and its share of output, — where none was measured) and the command last.',
   'Events show paths cut to their last part; the full text (Enter) writes the home folder as ~.',
   'Source: local transcripts and rollouts only; other machines and the web are not seen.',
 ]
@@ -164,9 +170,9 @@ const kitFor = (ui: Ui, c: Paint, width: number): Kit => {
  * top and bottom edges (runnerParts). The run is drawn from a wrapper, since nothing inside the bordered
  * box can reach its border; any other box is returned as it is.
  */
-const withRunner = ({ ui, c }: Kit, key: string, width: number, border: { color: string; dim: boolean }, frame: number | null, box: Node): Node => {
+const withRunner = ({ ui, c }: Kit, key: string, width: number, border: CardBorder, frame: number | null, box: Node): Node => {
   const { Box, Text } = ui
-  const part = frame !== null && border === AGENT_BORDERS.running ? runnerParts(width, frame) : null
+  const part = frame !== null && border.isRunning ? runnerParts(width, frame) : null
   if (!part) return box
   return (
     <Box key={`runner-${key}`} flexDirection="column" width={width}>
@@ -263,6 +269,7 @@ export const drawPane = (ui: Ui, c: Paint, view: ViewState, frame: Frame, act: A
       {zone('overview', 'OVERVIEW', 'fleet · since each task started', drawOverview(kit, view, at))}
       {zone('agents', 'AGENTS', agentMeta, drawAgents(kit, view, layout, at, act, frame.home))}
       {zone('quota', 'QUOTA & LIMITS', `5h + week · ${view.quotaInfo || view.mode === 'details' ? 'notes shown' : 'per account'}`, drawQuota(kit, view, frame.now))}
+      {zone('usage', 'USAGE BY MODEL', usageMeta(report?.history?.[view.usageWindow] ?? null, view.usageWindow), drawUsage(kit, view))}
       {zone('activity', 'ACTIVITY', activityMeta(view, kit.W, at), drawActivity(kit, view, layout, at))}
       {drawLogs(kit, view, layout, zone, act, frame.home)}
       {help}
@@ -283,6 +290,7 @@ const drawFooter = ({ ui, style, W, row }: Kit, view: ViewState, frame: Frame, a
     { key: 'key-quota', hotkey: 'i', label: view.quotaInfo ? 'hide notes' : 'notes', press: act.quotaInfo },
     { key: 'key-logs', hotkey: 'l', label: view.logsOpen ? 'fewer' : 'more', press: act.logs },
     { key: 'key-filter', hotkey: 'f', label: `filter ${filter}`, press: act.filter },
+    { key: 'key-usage', hotkey: 'u', label: view.usageWindow === 'week' ? 'all time' : 'this week', press: act.usage },
     { key: 'key-help', hotkey: 'h', label: view.help ? 'hide help' : 'help', press: act.help },
   ]
   const hint = frame.isFocused ? '↑↓ scroll · Tab, Enter press' : 'ctrl+x tab to use keys'
@@ -680,6 +688,50 @@ const drawQuota = ({ ui, c, style, W, row, wrapped, line, bar }: Kit, view: View
       })}
       {info ? wrapped(QUOTA_NOTE, 'subtle', 'quota-note') : null}
       {info ? wrapped(TOOLS_DIRECT_NOTE, 'subtle', 'tools-note') : null}
+    </Box>
+  )
+}
+
+/**
+ * Every crewmate the crew ledger holds for these homes, live and torn down, summed per model over the
+ * quota week or all time (`u`): a header, one row per model with its harness's icon and colour, then the
+ * total. A narrow pane folds figure columns before the model name gets unreadable (usageColumns). Only
+ * measured sums are shown: `—` before the first report, never an estimate.
+ */
+const drawUsage = ({ ui, style, W, row, line }: Kit, view: ViewState) => {
+  const { Box, Text } = ui
+  const history = view.report?.history?.[view.usageWindow] ?? null
+  if (!history) return row(`${NONE} waiting for the first read`, 'subtle', W, 'usage-empty')
+  const columns = usageColumns(W)
+  const name = Math.max(1, W - columns.length * USAGE_CELLS)
+  const right = (text: string) => ' '.repeat(Math.max(0, USAGE_CELLS - cells(text))) + text
+  const figures = (u: UsageFigures | null): Segment[] => columns.map(col => ({ text: right(usageText(u, col.key)), tone: 'text' }))
+  const unread = history.unreadable > 0
+    ? row(`${history.unreadable} crewmate${history.unreadable === 1 ? '' : 's'} without readable usage`, 'subtle', W, 'usage-unreadable')
+    : null
+  const unwindowed = history.unwindowed > 0
+    ? row(`${NONE} quota week unavailable for ${history.unwindowed} crewmate${history.unwindowed === 1 ? '' : 's'}; u shows all time`, 'subtle', W, 'usage-unwindowed')
+    : null
+  if (history.models.length === 0) {
+    return (
+      <Box key="usage-body" flexDirection="column" width={W}>
+        {unwindowed ?? row(view.usageWindow === 'week' ? 'No model usage this week yet.' : 'No model usage recorded yet.', 'subtle', W, 'usage-none')}
+        {unread}
+      </Box>
+    )
+  }
+  return (
+    <Box key="usage-body" flexDirection="column" width={W}>
+      <Box key="usage-header" width={W}>
+        <Text {...style.meta} wrap="truncate">{clip(`${pad('model', name)}${columns.map(col => right(col.label)).join('')}`, W)}</Text>
+      </Box>
+      {history.models.map(m => {
+        const model = harnessName(m.model, m.provider)
+        return line([{ ...model, text: pad(model.text, name) }, ...figures(m)], `usage-${m.provider}-${m.model}`)
+      })}
+      {line([{ text: pad('total', name), tone: 'text', bold: true }, ...figures(usageTotal(history)).map(s => ({ ...s, bold: true }))], 'usage-total')}
+      {unread}
+      {unwindowed}
     </Box>
   )
 }

@@ -106,6 +106,24 @@ export type QuotaReport = {
 
 export type ActivityBucket = { minute: number; count: number }
 
+/** Tokens one model served: its requests, uncached input, output, cache read and write, and the thinking inside output. */
+export type ModelTokens = { requests: number; input: number; output: number; cacheRead: number; cacheWrite: number; reasoning: number }
+
+/** One model's sums over a window of the crew ledger: `crewmates` is how many tasks it served there. */
+export type ModelUsage = ModelTokens & { model: string; provider: string; crewmates: number }
+
+/**
+ * The crew ledger summed per model over one window: `week` counts requests since each account's dated
+ * quota-week boundary, `all` every record kept (90 days after last seen). `finished` and `live` count
+ * crewmates in the window; `unreadable` have no usage, `unwindowed` lack a dated quota week.
+ */
+export type HistoryWindow = { window: 'week' | 'all'; models: ModelUsage[]; finished: number; live: number; unreadable: number; unwindowed: number; crewmates: number; measured: number }
+
+export type CrewHistory = { week: HistoryWindow; all: HistoryWindow }
+
+/** Which window the Usage by Model zone sums: the quota week or all time (`u`). */
+export type UsageWindow = HistoryWindow['window']
+
 /** One live Firstmate task, as scripts/crew_usage.py reports it. */
 export type CrewMember = {
   id: string
@@ -130,6 +148,8 @@ export type CrewMember = {
   sessions: number
   /** Model id to the number of requests it served. */
   models: Record<string, number>
+  /** Model id to the tokens it served; they add up to the crewmate's totals. */
+  modelTokens: Record<string, ModelTokens>
   requests: number
   input: number
   output: number
@@ -173,6 +193,8 @@ export type CrewReport = {
   crew: CrewMember[]
   totals: CrewTotals
   quota: QuotaReport
+  /** Live and torn-down crewmates of the watched homes, from the crew ledger. */
+  history: CrewHistory
   errors: string[]
 }
 
@@ -206,6 +228,8 @@ declare module 'claude-code' {
       openLog: string | null
       /** The running border's frame while its timer runs; null while it is stopped (no pane, nothing running, reduced motion). */
       pulse: number | null
+      /** The window Usage by Model sums (`u`). */
+      usageWindow: UsageWindow
     }
   }
 }

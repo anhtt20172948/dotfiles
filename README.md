@@ -187,7 +187,7 @@ lays in `.claude-plugin/types` the first time it loads the mod.
 ### crew-watch
 
 `.config/claude-mods/crew-watch` draws the Crew Monitor: a header
-(`▣ CREW / monitor`, then how fresh the data is and the time), five zones in a
+(`▣ CREW / monitor`, then how fresh the data is and the time), six zones in a
 fixed order and a key footer. Each zone sits in its own rounded box, its title
 in small capitals on the first row and a short meta against the right edge, with
 a blank row between boxes, so the blocks are told apart at a glance.
@@ -197,9 +197,10 @@ rounded frames in `border` for every zone, stat tile and help box; bold `text`
 for titles (including card names and detail headings); regular `subtle` for
 metadata; and regular `border` for heading rules, the footer separator and bar
 tracks. Each palette defines those roles; `default` resolves them through the
-engine's theme. Agent cards and their expanded details share one status border
-rule: running uses `merged`, quiet uses dim `merged`, blocked uses `error`, and
-done or inactive uses dim `border`. While a card runs (working or active), a
+engine's theme. Agent cards and their expanded details use their harness colour:
+Claude amber, Codex blue, other harnesses neutral. Running and blocked cards
+use full colour; quiet, paused, stale and done cards are dim. The status glyph
+and word keep the state readable, with blocked status in red. While a card runs (working or active), a
 heavy `━` run moves around its border, and its open details': half its length
 each second, left to right along the top edge and right to left along the
 bottom one, in the running colour. Every other border stands still. The run
@@ -286,6 +287,7 @@ key footer names them and says so while the pane is unfocused.
 | `i` | quota notes: each account's source and age, estimates, crew shares and caveats |
 | `l` | more or fewer log entries |
 | `f` | log filter: All, Tools, Status, Errors, and Agent while details are open |
+| `u` | Usage by Model: this quota week or all retained history |
 | `h` | help: keys, status words and what each metric counts |
 | `Tab`, `Shift+Tab`, `Enter` | move between the pane's controls, log rows included, and press one (the engine's keys); `Enter` on a log row shows or hides its full text |
 | `↑` `↓` `PgUp` `PgDn` `Home` `End` | scroll the pane (the engine's keys) |
@@ -318,8 +320,9 @@ What it shows, and what it does not:
   working and active count as active. Each card ends with the crewmate's latest
   status line (else its last tool call); in the row layout it is the third row,
   left out only under 24 rows (a blocked one's stays). A running (working or
-  active) card has a purple border with a heavy run moving around it, a quiet
-  one a dim purple border and a blocked one a red border; a done card has a dim neutral border and a green
+  active) card has a harness-coloured border with a bold heavy run moving around
+  it; a quiet or done card has a dim harness-coloured border. A blocked card keeps
+  its harness border and red status; a done card has a green
   `✓ DONE`, so it sits back from the running ones.
 - **Overview.** `Tokens` is uncached input + cache read + cache write + output,
   summed over the live crew since each task started. Thinking (reasoning) is
@@ -345,9 +348,19 @@ What it shows, and what it does not:
 - **Missing data** shows as `—` or a sentence saying why, never as a zero: a
   harness whose logs cannot be read, an unknown model window, an account with no
   reading, no crewmates, no activity in the chart's window.
+- **Usage by Model.** After Quota & Limits, this zone sums measured usage per
+  model across live and finished crewmates, including those already cleaned up.
+  Rows show the harness icon and colour, requests, uncached input, output,
+  cache read, cache write, total and number of crewmates, followed by a total
+  row that counts each measured crewmate once. Narrow panes fold numeric columns
+  before the model name becomes unreadable. It opens on `this week`, using each
+  account's quota reset to date that account's week. A missing dated boundary
+  is unavailable data, with `u` offering all retained history instead. `all time`
+  means the records retained by the ledger, which starts with this release and
+  does not backfill crewmates cleaned up before it began.
 - **Events.** A row is the time, a tag drawn as a badge (the tool's name such
-  as `BASH` or `EDIT`, `STAT` for a status line, `× ERR` for an error; a file
-  edit purple, another call cyan, a status line green, an error red), the
+  as `BASH` or `EDIT`, `STAT` for a status line, `× ERR` for an error; tool tags
+  use the crewmate's harness colour, status stays green and errors red), the
   crewmate when more than one is live, the token columns, then the command or
   path in bold and the rest dim: `12:45:51   BASH         ~0    373  wc -l <…/report.md`. A preview writes the home folder as
   `~` (and its dashed form in Claude's transcript folders) and cuts every path
@@ -509,6 +522,16 @@ The dashboard then starts from the live readings again, with no calibration
 evidence. `~/.cache/crew-watch/accounts.json` is a cache of session account
 names and can be deleted too: sessions of that account show as `unknown` until
 they run the mod again.
+
+The collector also keeps `crew-history.jsonl` beside `readings.jsonl`, with the
+same private permissions. Each poll atomically replaces its snapshot under a
+lock, upserting one record per home, task id and first-start time. When a task's
+meta disappears, its last record becomes finished at its last-seen time. Records
+expire 90 days after last seen. The ledger holds dispatch metadata, project name,
+activity times and token counts per provider, account, model and request time;
+it holds no credentials, prompts, tool text or worktree paths. Home paths are
+the same task identities already present in the live report. Deleting the
+state directory above removes both reading history and finished-crew history.
 
 Its three options in `/config` are `homes` (Firstmate homes, comma-separated;
 empty defaults to the session's working directory), `intervalSeconds`

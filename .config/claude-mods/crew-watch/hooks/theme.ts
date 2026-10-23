@@ -122,12 +122,16 @@ export const paneStyles = (paint: Paint) => ({
   rule: { color: paint('border'), weight: 'regular' as const },
 })
 
-/** The sole exception to neutral frames: both an agent's card and its open details. */
+/**
+ * The sole exception to neutral frames: an agent's card and its open details are bordered in the crewmate's
+ * harness colour (harnessStyle), and its state sets only how loud. Running is full colour with the moving
+ * run, blocked full colour standing still (the status word says why, in the error colour), and quiet,
+ * paused, stale or done dim, so a card at rest sits back.
+ */
 export const AGENT_BORDERS = {
-  running: { color: 'merged', dim: false },
-  quiet: { color: 'merged', dim: true },
-  blocked: { color: 'error', dim: false },
-  inactive: { color: 'border', dim: true },
+  running: { dim: false, isRunning: true },
+  blocked: { dim: false, isRunning: false },
+  calm: { dim: true, isRunning: false },
 } as const
 
 /** A harness family as the pane draws its names: the colour role and the icon before the name. */

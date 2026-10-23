@@ -572,5 +572,87 @@ class TelemetryTest(unittest.TestCase):
         self.assertEqual(usage.resolve_window("pi", usage.empty_agg(), "x"), (None, "x", ""))
 
 
+    def per_model_total(self, agg):
+        """The per-model sums of an aggregate, folded under one account, added up field by field."""
+        whole = usage.empty_agg()
+        usage.merge(whole, agg, "acct")
+        sums = usage.model_totals(whole)
+        return {field: sum(row[field] for row in sums.values()) for field in usage.TOKEN_FIELDS}, sums
+
+    def test_claude_per_model_sums_add_up_to_the_totals_across_rows_of_one_message(self):
+        # One message written as two rows (usage so far, then final), then a second model's request an hour later.
+        for usage_so_far in ({"input_tokens": 3, "output_tokens": 1}, {"input_tokens": 3, "output_tokens": 9, "cache_read_input_tokens": 40,
+                                                                          "cache_creation_input_tokens": 5, "output_tokens_details": {"thinking_tokens": 4}}):
+            self.append({"type": "assistant", "timestamp": "2026-10-21T17:00:00Z", "message": {
+                "id": "m1", "model": "claude-opus-5-5", "usage": usage_so_far, "content": [{"type": "text", "text": "x"}]}})
+        self.append({"type": "assistant", "timestamp": "2026-10-21T18:30:00Z", "message": {
+            "id": "m2", "model": "claude-haiku-5-5", "usage": {"input_tokens": 7, "output_tokens": 2}, "content": []}})
+        entry = usage.fresh_entry()
+        usage.parse_claude(self.path, entry, {})
+        agg = entry["agg"]
+        sums, by_model = self.per_model_total(agg)
+        self.assertEqual(sums, {field: agg[field] for field in usage.TOKEN_FIELDS})
+        self.assertEqual(by_model["claude-opus-5-5"], {"requests": 1, "input": 3, "output": 9, "cacheRead": 40, "cacheWrite": 5, "reasoning": 4})
+        self.assertEqual(by_model["claude-haiku-5-5"]["requests"], 1)
+        hours = agg["modelTokens"]["claude"]
+        self.assertEqual(list(hours["claude-haiku-5-5"]), [str(ts_of("2026-10-21T18:30:00+00:00"))])
+
+    def test_codex_per_model_sums_follow_the_model_switch_and_add_up_to_the_totals(self):
+        def count(at, total, last):
+            self.append({"type": "event_msg", "timestamp": at, "payload": {"type": "token_count", "info": {
+                "total_token_usage": total, "last_token_usage": last}}})
+        self.append({"type": "turn_context", "payload": {"model": "gpt-a"}})
+        count("2026-10-21T17:00:00Z", {"input_tokens": 100, "cached_input_tokens": 40, "output_tokens": 10, "reasoning_output_tokens": 3,
+                                       "total_tokens": 110}, {"input_tokens": 100, "output_tokens": 10})
+        self.append({"type": "turn_context", "payload": {"model": "gpt-b"}})
+        count("2026-10-21T17:05:00Z", {"input_tokens": 250, "cached_input_tokens": 140, "output_tokens": 30, "reasoning_output_tokens": 5,
+                                       "total_tokens": 280}, {"input_tokens": 150, "output_tokens": 20})
+        entry = usage.fresh_entry()
+        usage.parse_codex(self.path, entry)
+        saved = json.loads(json.dumps(entry))
+        usage.parse_codex(self.path, entry)
+        self.assertEqual(entry, saved)
+        agg = entry["agg"]
+        sums, by_model = self.per_model_total(agg)
+        self.assertEqual(sums, {field: agg[field] for field in usage.TOKEN_FIELDS})
+        self.assertEqual(by_model["gpt-a"], {"requests": 1, "input": 60, "output": 10, "cacheRead": 40, "cacheWrite": 0, "reasoning": 3})
+        self.assertEqual(by_model["gpt-b"], {"requests": 1, "input": 50, "output": 20, "cacheRead": 100, "cacheWrite": 0, "reasoning": 2})
+
+    def test_a_torn_down_crewmate_stays_in_the_history_with_its_per_model_sums(self):
+        root = Path(self.tmp.name)
+        fm = root / "fm"
+        (fm / "state").mkdir(parents=True)
+        now = int(usage.time.time())
+        claude_slot, codex_slot = str(root / "slot1"), str(root / "slot2")
+        for tid, harness, slot in (("a", "claude", claude_slot), ("b", "codex", codex_slot)):
+            (fm / "state" / f"{tid}.meta").write_text(f"harness={harness}\nworktree={slot}\nmodel=m-{tid}\nspawn_gen=s{now - 60}.1.2\n")
+        stamp = datetime.fromtimestamp(now - 30, timezone.utc).isoformat()
+        self.claude_turn(Path(usage.claude_project_dir(claude_slot)) / "s.jsonl", "one", "claude-opus-5-5", stamp)
+        self.codex_rollout(Path(usage.CODEX_SESSIONS) / "rollout-b.jsonl", codex_slot, 30)
+        first = self.report(fm)
+        crew = {m["id"]: m for m in first["crew"]}
+        self.assertEqual(crew["a"]["modelTokens"]["claude-opus-5-5"]["input"], 10)
+        self.assertEqual(crew["b"]["modelTokens"]["codex"]["input"], 30)
+        self.assertEqual((first["history"]["all"]["live"], first["history"]["all"]["finished"]), (2, 0))
+        (fm / "state" / "a.meta").unlink()
+        after = self.report(fm)
+        self.assertEqual([m["id"] for m in after["crew"]], ["b"])
+        for window in ("all",):
+            h = after["history"][window]
+            self.assertEqual((h["window"], h["live"], h["finished"], h["unreadable"]), (window, 1, 1, 0))
+            rows = {r["model"]: r for r in h["models"]}
+            self.assertEqual((rows["claude-opus-5-5"]["provider"], rows["claude-opus-5-5"]["input"], rows["claude-opus-5-5"]["crewmates"]),
+                             ("claude", 10, 1))
+            self.assertEqual((rows["codex"]["provider"], rows["codex"]["input"]), ("codex", 30))
+        ledger = Path(os.environ["XDG_STATE_HOME"]) / "crew-watch" / "crew-history.jsonl"
+        self.assertEqual(oct(ledger.stat().st_mode & 0o777), "0o600")
+        self.assertNotIn(str(root / "slot1"), ledger.read_text())
+        self.assertEqual(after["errors"], [])
+        # Another home's session never finishes or shows this home's records.
+        other = root / "other"
+        (other / "state").mkdir(parents=True)
+        self.assertEqual(self.report(other)["history"]["all"], {"window": "all", "models": [], "finished": 0, "live": 0, "unreadable": 0, "unwindowed": 0, "crewmates": 0, "measured": 0})
+        self.assertEqual(self.report(fm)["history"]["all"]["live"], 1)
+
 if __name__ == "__main__":
     unittest.main()
