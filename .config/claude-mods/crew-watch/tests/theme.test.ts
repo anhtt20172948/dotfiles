@@ -1,6 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
-import { DEFAULT_THEME, PALETTES, ROLES, THEME_NAMES, contrast, isNoColorSet, isThemeName, isTruecolorTerm, paneStyles, themePainter, toAnsi256 } from '../hooks/theme'
+import {
+  AGENT_BORDERS, DEFAULT_THEME, HARNESS_STYLES, PALETTES, ROLES, THEME_NAMES, contrast, isNoColorSet, isThemeName, isTruecolorTerm, paneStyles, themePainter, toAnsi256,
+} from '../hooks/theme'
 
 const TRUECOLOR = { isNoColor: false, isTruecolor: true }
 const HEX = /^#[0-9a-f]{6}$/
@@ -109,4 +111,20 @@ test('shared pane styles resolve through every theme and terminal colour mode', 
     }
   }
   expect(themePainter('default', TRUECOLOR)('codex')).toBe('permission')
+})
+
+test('agent borders carry no colour of their own: the harness gives it, the state only how loud', () => {
+  expect(AGENT_BORDERS).toEqual({
+    running: { dim: false, isRunning: true },
+    blocked: { dim: false, isRunning: false },
+    calm: { dim: true, isRunning: false },
+  })
+  // Claude and Codex borders, tags and names read apart in every palette, and neither is the error red.
+  for (const name of NAMES) {
+    const { colors } = PALETTES[name as keyof typeof PALETTES]
+    const [claude, codex] = [colors[HARNESS_STYLES.claude.role], colors[HARNESS_STYLES.codex.role]]
+    expect(`${name} ${claude !== codex && claude !== colors.error && codex !== colors.error}`).toBe(`${name} true`)
+  }
+  const paint = themePainter(DEFAULT_THEME, TRUECOLOR)
+  expect([paint(HARNESS_STYLES.claude.role), paint(HARNESS_STYLES.codex.role), paint(HARNESS_STYLES.other.role)]).toEqual(['claude', 'permission', 'text'])
 })

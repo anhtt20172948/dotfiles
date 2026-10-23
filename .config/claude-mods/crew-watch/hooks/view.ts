@@ -3,7 +3,7 @@
  * No engine calls or UI elements. A field the collector does not give is shown as `—` or a stated
  * absence, never as a made-up number.
  */
-import type { CrewEvent, CrewMember, CrewReport, CrewTotals, FiveHourReading, LogFilter, PollState, QuotaReading } from '../types'
+import type { CrewEvent, CrewMember, CrewReport, CrewTotals, FiveHourReading, HistoryWindow, LogFilter, ModelUsage, PollState, QuotaReading } from '../types'
 import { SOURCES, ago, cacheHit, cells, charCells, clip, dispatchText, gauge, measuredText, previewText, roundTokens, tokens, totalTokens } from './format'
 import { crewState, isActive, memberKey } from './dashboard'
 import { AGENT_BORDERS, harnessStyle } from './theme'
@@ -297,17 +297,17 @@ export const statusMessage = (m: Pick<CrewMember, 'lastAt' | 'status' | 'lastToo
   return { text: `${NONE} no status line yet`, tone: 'subtle' }
 }
 
+export type CardBorder = { color: string; dim: boolean; isRunning: boolean }
+
 /**
- * A card's border by state: purple while the crewmate runs (working or active), dim purple while it is
- * quiet (no activity for 2 to 15 minutes, not finished), red while blocked, and a dim neutral one
- * otherwise, so a finished card sits back and only its green check stands out.
+ * A card's border: its harness's colour (Claude amber, Codex blue, any other neutral), full while the
+ * crewmate runs (working or active) or is blocked and dim otherwise; only a running one carries the moving
+ * run. The state itself is read from the status glyph and word, never from the border.
  */
-export const cardBorder = (m: Pick<CrewMember, 'lastAt' | 'status'>, now: number): { color: string; dim: boolean } => {
+export const cardBorder = (m: Pick<CrewMember, 'lastAt' | 'status' | 'harness'>, now: number): CardBorder => {
   const label = statusOf(m, now).label
-  if (label === 'WORKING' || label === 'ACTIVE') return AGENT_BORDERS.running
-  if (label === 'QUIET') return AGENT_BORDERS.quiet
-  if (label === 'BLOCKED') return AGENT_BORDERS.blocked
-  return AGENT_BORDERS.inactive
+  const state = label === 'WORKING' || label === 'ACTIVE' ? AGENT_BORDERS.running : label === 'BLOCKED' ? AGENT_BORDERS.blocked : AGENT_BORDERS.calm
+  return { color: harnessStyle(m.harness).role, ...state }
 }
 
 /** The glyph of a running border's highlight: the heavy line, so it reads without colour too. */
@@ -477,6 +477,8 @@ export type LogEntry = {
   who: string
   key: string
   color: string
+  /** The crewmate's harness: a tool tag takes its colour. */
+  harness: string
   kind: CrewEvent['kind']
   level: 'info' | 'error'
   text: string
@@ -498,6 +500,7 @@ export const logEntries = (crew: readonly Pick<CrewMember, 'home' | 'id' | 'harn
     who: m.id,
     key: memberKey(m),
     color: 'subtle',
+    harness: m.harness,
     kind: event.kind,
     level: levelOf(event),
     text: event.text,
@@ -605,9 +608,6 @@ export const wrapSegments = (segments: readonly Segment[], width: number): Segme
 /** Cells the tag column takes: the longest tag (`SEARCH`, `NBEDIT`) fits. */
 export const TAG_CELLS = 6
 
-/** Tags of calls that change files: their badge takes its own colour, apart from reads and commands. */
-const EDIT_TAGS = new Set(['EDIT', 'WRITE', 'NBEDIT', 'PATCH'])
-
 const TOOL_TAGS: Record<string, string> = {
   todowrite: 'TODO', webfetch: 'FETCH', websearch: 'SEARCH', multiedit: 'EDIT', notebookedit: 'NBEDIT',
   exec_command: 'EXEC', apply_patch: 'PATCH', write_stdin: 'STDIN',
@@ -623,17 +623,17 @@ export const toolTag = (name: string): string => {
 
 /**
  * A log row's preview: a tag (the tool's name, STAT for a status line, `× ERR` for an error, so an
- * error reads without red) and its colour (a file edit purple, another call cyan, a status line
- * green), the command or path as the head and the rest of it. Absolute paths are cut to their last
- * part and the home folder written `~`, so the person's user name never shows in a preview or a
- * screenshot.
+ * error reads without red) and its colour (a tool call its crewmate's harness colour, a status line
+ * green, an error red), the command or path as the head and the rest of it. Absolute paths are cut to
+ * their last part and the home folder written `~`, so the person's user name never shows in a preview
+ * or a screenshot.
  */
-export const logPreview = (entry: Pick<LogEntry, 'kind' | 'level' | 'text'>, home = ''): { tag: string; tone: string; head: string; rest: string } => {
+export const logPreview = (entry: Pick<LogEntry, 'kind' | 'level' | 'text' | 'harness'>, home = ''): { tag: string; tone: string; head: string; rest: string } => {
   const text = entry.text.replace(STAMP, '')
   // A call is `Name: detail`, or the bare name when the call had no argument to show.
   const call = entry.kind === 'tool' ? /^([\w.-]{1,64})(?::\s+([\s\S]*))?$/.exec(text) : null
   const tag = entry.level === 'error' ? '× ERR' : entry.kind === 'status' ? 'STAT' : call?.[1] ? toolTag(call[1]) : 'TOOL'
-  const tone = entry.level === 'error' ? 'error' : entry.kind === 'status' ? 'success' : EDIT_TAGS.has(tag) ? 'merged' : 'suggestion'
+  const tone = entry.level === 'error' ? 'error' : entry.kind === 'status' ? 'success' : harnessStyle(entry.harness).role
   const [head = '', ...rest] = previewText(call ? call[2] ?? '' : text, home).trim().split(' ')
   return { tag, tone, head, rest: rest.join(' ') }
 }
@@ -654,4 +654,49 @@ export const logTokens = (e: Pick<LogEntry, 'inTokens' | 'outTokens' | 'estimate
 export const logKey = (entry: Pick<LogEntry, 'id'>): string => {
   const hash = Array.from(entry.id).reduce((h, char) => Math.imul(h ^ (char.codePointAt(0) ?? 0), 16_777_619) >>> 0, 2_166_136_261)
   return `log-${hash.toString(36)}`
+}
+
+/** A figure column of Usage by Model: the field it shows and its header. `total` is in + out + cache read + write. */
+export type UsageColumn = { key: 'requests' | 'input' | 'output' | 'cacheRead' | 'cacheWrite' | 'total' | 'crewmates'; label: string }
+
+export const USAGE_COLUMNS: readonly UsageColumn[] = [
+  { key: 'requests', label: 'req' }, { key: 'input', label: 'in' }, { key: 'output', label: 'out' }, { key: 'cacheRead', label: 'read' },
+  { key: 'cacheWrite', label: 'write' }, { key: 'total', label: 'total' }, { key: 'crewmates', label: 'crew' },
+]
+
+/** Cells a figure column takes: a gap and six right-aligned cells, so `1.93M` and `999k` line up. */
+export const USAGE_CELLS = 7
+
+/** Cells the model column keeps before a figure column gives way: `✻ claude-opus-5-5` fits. */
+export const MIN_MODEL_CELLS = 18
+
+/** The order a narrowing pane drops the figure columns in; `total` stays to the last. */
+const USAGE_FOLD: readonly UsageColumn['key'][] = ['crewmates', 'cacheWrite', 'cacheRead', 'requests', 'input', 'output']
+
+/** The figure columns a zone `width` cells wide shows, folding them in USAGE_FOLD's order until the model name keeps its cells. */
+export const usageColumns = (width: number): UsageColumn[] => {
+  const dropped = USAGE_FOLD.reduce<UsageColumn['key'][]>((out, key) =>
+    width - (USAGE_COLUMNS.length - out.length) * USAGE_CELLS >= MIN_MODEL_CELLS ? out : [...out, key], [])
+  return USAGE_COLUMNS.filter(c => !dropped.includes(c.key))
+}
+
+/** The sums a Usage by Model row shows; `crewmates` counts tasks, so the total row's is not a sum of the rows'. */
+export type UsageFigures = Pick<ModelUsage, 'requests' | 'input' | 'output' | 'cacheRead' | 'cacheWrite' | 'crewmates'>
+
+export const usageText = (u: UsageFigures | null, key: UsageColumn['key']): string =>
+  u === null ? NONE : key === 'total' ? tokens(totalTokens(u)) : key === 'crewmates' ? String(u.crewmates) : tokens(u[key])
+
+/** The window's total row: every model added up, and the crewmates that had usage in it. */
+export const usageTotal = (h: HistoryWindow): UsageFigures => ({
+  ...h.models.reduce((sum, m) => ({
+    requests: sum.requests + m.requests, input: sum.input + m.input, output: sum.output + m.output,
+    cacheRead: sum.cacheRead + m.cacheRead, cacheWrite: sum.cacheWrite + m.cacheWrite,
+  }), { requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }),
+  crewmates: h.measured,
+})
+
+/** The zone's meta: the window, then how many crewmates it holds; `—` before the first report. */
+export const usageMeta = (h: HistoryWindow | null, window: HistoryWindow['window']): string => {
+  const name = window === 'week' ? 'this week' : 'all time'
+  return h ? `${name} · ${h.finished} finished + ${h.live} live` : `${name} · ${NONE}`
 }

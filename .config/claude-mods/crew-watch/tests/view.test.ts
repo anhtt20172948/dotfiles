@@ -7,7 +7,7 @@ import {
   crewCounts, dispatchName, effectiveFilter, filterLabel, filterLogs, fitSegments, harnessName, headingParts, isActive, kpiText, layoutFor, logEntries, logKey,
   logPreview, nextFilter, overviewTiles, quotaBrief, quotaBriefParts, runnerParts,
   fiveHourLine, fiveHourSource, quotaEntries, quotaLine, quotaNames, quotaSource, sectionParts, sourceState, statusMessage, statusOf, tilesPerRow, tokenBar, tokenFormulas, tokenParts, toolTag,
-  logTokens, totalsText, untilText, wrapSegments,
+  logTokens, totalsText, untilText, wrapSegments, MIN_MODEL_CELLS, USAGE_CELLS, USAGE_COLUMNS, usageColumns, usageMeta, usageText, usageTotal,
 } from '../hooks/view'
 
 const NOW = 1_800_000_000_000
@@ -348,16 +348,15 @@ test('each account has its own row name: Claude by account, Codex by plan unless
 })
 
 test('a log preview is a tag, the command and a short path; the full text keeps it with home as ~', () => {
-  const entry = (text: string, kind: CrewEvent['kind'] = 'tool', level: 'info' | 'error' = 'info') => ({ text, kind, level })
-  expect(logPreview(entry('Bash: wc -l </home/anhtran/.local/share/firstmate/data/crew-demo-scout/report.md'))).toEqual({ tag: 'BASH', tone: 'suggestion', head: 'wc', rest: '-l <…/report.md' })
-  expect(logPreview(entry('Edit: /home/anhtran/repo/hooks/zones.tsx'))).toMatchObject({ tag: 'EDIT', tone: 'merged', head: '…/zones.tsx', rest: '' })
-  expect(['Write: a', 'apply_patch: b', 'Read: c'].map(text => logPreview(entry(text)).tone)).toEqual(['merged', 'merged', 'suggestion'])
+  const entry = (text: string, kind: CrewEvent['kind'] = 'tool', level: 'info' | 'error' = 'info', harness = 'claude') => ({ text, kind, level, harness })
+  expect(logPreview(entry('Bash: wc -l </home/anhtran/.local/share/firstmate/data/crew-demo-scout/report.md'))).toEqual({ tag: 'BASH', tone: 'claude', head: 'wc', rest: '-l <…/report.md' })
+  expect(logPreview(entry('Edit: /home/anhtran/repo/hooks/zones.tsx'))).toMatchObject({ tag: 'EDIT', tone: 'claude', head: '…/zones.tsx', rest: '' })
   expect(logPreview(entry('Read: hooks/zones.tsx'))).toMatchObject({ tag: 'READ', head: 'hooks/zones.tsx' })
   expect(logPreview(entry('done [at=1792648595]: Scout report written', 'status'))).toEqual({ tag: 'STAT', tone: 'success', head: 'done:', rest: 'Scout report written' })
   expect(logPreview(entry('blocked [at=1]: needs a decision', 'status', 'error'))).toMatchObject({ tag: '× ERR', tone: 'error', head: 'blocked:' })
   expect(logPreview(entry('step 3'))).toMatchObject({ tag: 'TOOL', head: 'step', rest: '3' })
   // A call with no argument to show is its bare name: the tag still names the tool.
-  expect(logPreview(entry('TodoWrite'))).toEqual({ tag: 'TODO', tone: 'suggestion', head: '', rest: '' })
+  expect(logPreview(entry('TodoWrite'))).toEqual({ tag: 'TODO', tone: 'claude', head: '', rest: '' })
   expect(['Bash', 'TodoWrite', 'WebSearch', 'mcp__github__search', 'exec_command', 'constructor', '???'].map(toolTag)).toEqual(['BASH', 'TODO', 'SEARCH', 'MCP', 'EXEC', 'CONSTR', 'TOOL'])
   // No preview carries a home folder: every absolute path of two or more parts is cut to its last part.
   expect(shortPaths('cd /tmp/a/b && cat ~/notes/today.md "/srv/a b/c/x"')).toBe('cd …/b && cat …/today.md "/srv/a b/c/x"')
@@ -378,21 +377,42 @@ test('a log preview is a tag, the command and a short path; the full text keeps 
   expect(tildeHome('/x', '/')).toBe('/x')
 })
 
-test('a card says the latest status in a word and only a running or blocked one draws a strong border', () => {
-  const m = (status: string, lastAt = NOW - 10_000, lastTool = '') => ({ status, lastAt, lastTool })
+test('every tool tag takes its crewmate\'s harness colour; a status line stays green and an error red', () => {
+  const entry = (text: string, harness: string, kind: CrewEvent['kind'] = 'tool', level: 'info' | 'error' = 'info') => ({ text, kind, level, harness })
+  const calls = ['Bash: ls', 'Edit: a', 'Write: b', 'Read: c', 'apply_patch: d', 'exec_command: e', 'mcp__x__y: f', 'step 3']
+  expect(calls.map(text => logPreview(entry(text, 'claude')).tone)).toEqual(Array(calls.length).fill('claude'))
+  expect(calls.map(text => logPreview(entry(text, 'codex')).tone)).toEqual(Array(calls.length).fill('codex'))
+  expect(calls.map(text => logPreview(entry(text, 'pi')).tone)).toEqual(Array(calls.length).fill('text'))
+  for (const harness of ['claude', 'codex', 'pi']) {
+    expect(logPreview(entry('working [at=1]: x', harness, 'status'))).toMatchObject({ tag: 'STAT', tone: 'success' })
+    expect(logPreview(entry('failed [at=1]: x', harness, 'status', 'error'))).toMatchObject({ tag: '× ERR', tone: 'error' })
+  }
+  // logEntries carries each crewmate's harness to its rows.
+  const rows = logEntries([
+    { home: '/fm', id: 'a', harness: 'claude', events: [{ at: 1, kind: 'tool', text: 'Bash: x' }] },
+    { home: '/fm', id: 'b', harness: 'codex', events: [{ at: 2, kind: 'tool', text: 'exec: y' }] },
+  ])
+  expect(rows.map(e => [e.who, e.harness, logPreview(e).tone])).toEqual([['b', 'codex', 'codex'], ['a', 'claude', 'claude']])
+})
+
+test('a card says the latest status in a word and its border takes its harness colour, dim at rest', () => {
+  const m = (status: string, lastAt = NOW - 10_000, lastTool = '', harness = 'claude') => ({ status, lastAt, lastTool, harness })
   expect(statusMessage(m('done [at=1]: Scout report written'), NOW)).toEqual({ text: '✓ Scout report written', tone: 'success' })
   expect(statusMessage(m('done [at=1]'), NOW)).toEqual({ text: '✓ done', tone: 'success' })
   expect(statusMessage(m('blocked [at=1]: needs a decision on /home/me/a/b.md'), NOW)).toEqual({ text: '× blocked: needs a decision on …/b.md', tone: 'error' })
   expect(statusMessage(m('working [at=1]: lockfile'), NOW)).toEqual({ text: 'working: lockfile', tone: 'subtle' })
   expect(statusMessage(m('', NOW, 'Bash: npm test'), NOW)).toEqual({ text: '▸ Bash: npm test', tone: 'subtle' })
   expect(statusMessage(m('', 0), NOW)).toEqual({ text: `${NONE} no status line yet`, tone: 'subtle' })
-  expect(cardBorder(m('working [at=1]: x'), NOW)).toEqual({ color: 'merged', dim: false })
-  expect(cardBorder(m(''), NOW)).toEqual({ color: 'merged', dim: false })
-  expect(cardBorder(m('blocked [at=1]: x'), NOW)).toEqual({ color: 'error', dim: false })
-  expect(cardBorder(m('done [at=1]: x'), NOW)).toEqual({ color: 'border', dim: true })
-  expect(cardBorder(m('', NOW - 3_600_000), NOW)).toEqual({ color: 'border', dim: true })
-  // Quiet is not finished: its border stays purple, only dimmer.
-  expect(cardBorder(m('working [at=1]: x', NOW - 300_000), NOW)).toEqual({ color: 'merged', dim: true })
+  expect(cardBorder(m('working [at=1]: x'), NOW)).toEqual({ color: 'claude', dim: false, isRunning: true })
+  expect(cardBorder(m(''), NOW)).toEqual({ color: 'claude', dim: false, isRunning: true })
+  expect(cardBorder(m('working [at=1]: x', NOW - 10_000, '', 'codex'), NOW)).toEqual({ color: 'codex', dim: false, isRunning: true })
+  // Blocked stands still in full colour: the status word says it, in the error colour, not the border.
+  expect(cardBorder(m('blocked [at=1]: x', NOW - 10_000, '', 'codex'), NOW)).toEqual({ color: 'codex', dim: false, isRunning: false })
+  expect(statusOf(m('blocked [at=1]: x'), NOW)).toMatchObject({ label: 'BLOCKED', color: 'error' })
+  expect(cardBorder(m('done [at=1]: x'), NOW)).toEqual({ color: 'claude', dim: true, isRunning: false })
+  expect(cardBorder(m('', NOW - 3_600_000, '', 'pi'), NOW)).toEqual({ color: 'text', dim: true, isRunning: false })
+  expect(cardBorder(m('paused [at=1]: x', NOW - 10_000, '', 'codex'), NOW)).toEqual({ color: 'codex', dim: true, isRunning: false })
+  expect(cardBorder(m('working [at=1]: x', NOW - 300_000), NOW)).toEqual({ color: 'claude', dim: true, isRunning: false })
   expect(statusOf(m('done [at=1]: x'), NOW)).toMatchObject({ mark: '✓', color: 'success' })
   expect(crewCounts([m('done [at=1]: x'), m('working [at=1]: y'), m('', NOW - 3_600_000)], NOW)).toEqual({ live: 3, active: 1, done: 1 })
 })
@@ -484,4 +504,25 @@ test('a token count keeps its unit at a rounding edge: 9,999 reads 10k, never 10
   expect([999, 1_234, 9_949, 9_950, 9_999, 10_000, 12_345, 999_499, 999_600, 1_234_567, 9_994_999, 9_996_000, 12_345_678].map(tokens))
     .toEqual(['999', '1.2k', '9.9k', '10k', '10k', '10k', '12k', '999k', '1.00M', '1.23M', '9.99M', '10.0M', '12.3M'])
   expect([9_999, 999_600].map(roundTokens)).toEqual(['10k', '1M'])
+})
+
+test('usage by model folds its figure columns before the model name gets unreadable', () => {
+  const keys = (width: number) => usageColumns(width).map(c => c.key)
+  expect(keys(116)).toEqual(['requests', 'input', 'output', 'cacheRead', 'cacheWrite', 'total', 'crewmates'])
+  expect(keys(76)).toEqual(['requests', 'input', 'output', 'cacheRead', 'cacheWrite', 'total', 'crewmates'])
+  expect(keys(56)).toEqual(['requests', 'input', 'output', 'cacheRead', 'total'])
+  expect(keys(30)).toEqual(['total'])
+  expect(keys(5)).toEqual(['total'])
+  for (const width of [25, 36, 56, 76, 116]) expect(width - usageColumns(width).length * USAGE_CELLS).toBeGreaterThanOrEqual(MIN_MODEL_CELLS)
+})
+
+test('usage by model shows measured sums, its total and the window, and dashes before any report', () => {
+  const row = (model: string, provider: string, n: number) => ({ model, provider, requests: n, input: n * 10, output: n, cacheRead: n * 1000, cacheWrite: n * 100, reasoning: 0, crewmates: 1 })
+  const week = { window: 'week' as const, models: [row('claude-opus-5-5', 'claude', 3), row('gpt-6.1-sol', 'codex', 2)], finished: 2, live: 1, unreadable: 1, unwindowed: 0, crewmates: 3, measured: 2 }
+  expect(usageTotal(week)).toEqual({ requests: 5, input: 50, output: 5, cacheRead: 5000, cacheWrite: 500, crewmates: 2 })
+  expect(USAGE_COLUMNS.map(c => usageText(usageTotal(week), c.key))).toEqual(['5', '50', '5', '5.0k', '500', '5.6k', '2'])
+  expect(USAGE_COLUMNS.map(c => usageText(null, c.key))).toEqual(Array(USAGE_COLUMNS.length).fill(NONE))
+  expect(usageMeta(week, 'week')).toBe('this week · 2 finished + 1 live')
+  expect(usageMeta({ ...week, window: 'all' }, 'all')).toBe('all time · 2 finished + 1 live')
+  expect(usageMeta(null, 'all')).toBe(`all time · ${NONE}`)
 })

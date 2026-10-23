@@ -31,6 +31,7 @@ const helpAtom = atom({ plugin: 'crew-watch', key: 'help' } as const, false)
 const quotaInfoAtom = atom({ plugin: 'crew-watch', key: 'quotaInfo' } as const, false)
 const openLogAtom = atom({ plugin: 'crew-watch', key: 'openLog' } as const, null)
 const pulseAtom = atom({ plugin: 'crew-watch', key: 'pulse' } as const, null)
+const usageWindowAtom = atom({ plugin: 'crew-watch', key: 'usageWindow' } as const, 'week')
 
 const HELP = [
   '/crew           open or close the Crew pane',
@@ -279,6 +280,7 @@ export const register: Register = (on, options) => {
       quotaInfo: await read($, quotaInfoAtom),
       openLog: await read($, openLogAtom),
       pulse: await read($, pulseAtom),
+      usageWindow: await read($, usageWindowAtom),
     }
     const frame = {
       width: e.props.bodyColumns,
@@ -312,6 +314,9 @@ export const register: Register = (on, options) => {
         const expanded = await read($, expandedAtom)
         const isShown = (await read($, reportAtom))?.crew.some(m => memberKey(m) === expanded) ?? false
         await update($, logFilterAtom, value => nextFilter(value, isShown))
+      },
+      usage: async () => {
+        await update($, usageWindowAtom, value => value === 'week' ? 'all' : 'week')
       },
       help: async () => {
         await update($, helpAtom, value => !value)

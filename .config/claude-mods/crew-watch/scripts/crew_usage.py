@@ -6,7 +6,7 @@ transcripts by its worktree, written since the task first started (pooled
 worktrees are reused; a relaunch keeps earlier usage, even under another
 harness), and prints one JSON document on stdout:
 
-  {"generatedAt": ms, "crew": [...], "totals": {...}, "errors": [...]}
+  {"generatedAt": ms, "crew": [...], "totals": {...}, "quota": {...}, "history": {...}, "errors": [...]}
 
 Every task reads both Claude transcripts from ~/.claude/projects/<encoded
 worktree>/**.jsonl (subagent transcripts included) and Codex rollouts in
@@ -19,6 +19,12 @@ A secondmate's own home is followed recursively for its crew. A resumed or
 forked Claude session copies earlier messages, ids included, into a new
 transcript: each message id counts once, in the first transcript parsed that
 logged it.
+
+Tokens per model. Every request's tokens are also kept per provider, model and
+request time (each Codex count's growth goes to the model then serving), so a crewmate's
+per-model sums add up to its totals. The crew ledger (crew_history.py) keeps them
+per task after the task is torn down; "history" sums the ledger's records of the
+watched homes per model, over the quota week and over all time.
 
 Tokens per tool call. The API bills requests, not tool calls, so a call is
 charged with (a) the output tokens of the request that emitted it, split evenly
@@ -72,9 +78,10 @@ from datetime import datetime
 
 # `python3 -I` leaves the script's own folder off sys.path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import crew_history as ledger  # noqa: E402
 import crew_quota as quota  # noqa: E402
 
-CACHE_VERSION = 10
+CACHE_VERSION = 12
 HOME = os.path.expanduser("~")
 CLAUDE_PROJECTS = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR", os.path.join(HOME, ".claude")), "projects")
 CODEX_SESSIONS = os.path.join(os.environ.get("CODEX_HOME", os.path.join(HOME, ".codex")), "sessions")
@@ -89,6 +96,7 @@ CHARS_PER_TOKEN = 4
 SCAN_BUDGET_SECONDS = 10
 RESIDUAL_LIMIT = 50
 STALE_MS = quota.STALE_MS
+TOKEN_FIELDS = ledger.TOKEN_FIELDS
 
 # Relative price of a token by type, per provider (input = 1). Only ratios
 # matter for a share: a cache read costs a tenth of an input token, a Claude
@@ -175,6 +183,8 @@ def empty_agg():
         "cost": {},
         "acctCost": {},
         "toolTokens": {},
+        "modelTokens": {},
+        "acctTokens": {},
     }
 
 
@@ -197,6 +207,41 @@ def add_cost(agg, provider, at, session=0.0, tool=0.0):
     key = str(at)
     old = slots.get(key, (0.0, 0.0))
     slots[key] = [old[0] + session, old[1] + tool]
+
+
+def add_tokens(agg, provider, model, at, sign=1, **counts):
+    """A request's tokens by provider, model and timestamp, as [requests, input, output, cacheRead, cacheWrite, reasoning].
+
+    Unlike costs these are never cut at a task's start: they add up to the task's own totals.
+    An unknown time goes to timestamp 0, which no week counts.
+    """
+    stamp = str(max(0, at))
+    slot = agg["modelTokens"].setdefault(provider, {}).setdefault(model or provider, {}).setdefault(stamp, [0] * len(TOKEN_FIELDS))
+    for i, field in enumerate(TOKEN_FIELDS):
+        slot[i] += sign * counts.get(field, 0)
+
+
+def fold_tokens(into, provider, account, models):
+    """Add per-model token samples to into's tokens of one account."""
+    mine = into["acctTokens"].setdefault(provider, {}).setdefault(account, {})
+    for model, hours in models.items():
+        for hour, counts in hours.items():
+            slot = mine.setdefault(model, {}).setdefault(hour, [0] * len(TOKEN_FIELDS))
+            for i, n in enumerate(counts):
+                slot[i] += n
+
+
+def model_totals(agg):
+    """Model id -> its summed tokens over every provider, account and request of an aggregate."""
+    out = {}
+    for accounts in agg["acctTokens"].values():
+        for models in accounts.values():
+            for model, hours in models.items():
+                sums = out.setdefault(model, dict.fromkeys(TOKEN_FIELDS, 0))
+                for counts in hours.values():
+                    for field, n in zip(TOKEN_FIELDS, counts):
+                        sums[field] += n
+    return out
 
 
 def fold_cost(into, provider, account, slots, since=0):
@@ -225,6 +270,11 @@ def merge(into, part, account=quota.UNKNOWN, since=0):
     for provider, accounts in part["acctCost"].items():
         for name, slots in accounts.items():
             fold_cost(into, provider, name, slots, since)
+    for provider, models in part["modelTokens"].items():
+        fold_tokens(into, provider, account, models)
+    for provider, accounts in part["acctTokens"].items():
+        for name, models in accounts.items():
+            fold_tokens(into, provider, name, models)
     for minute, count in part["activity"].items():
         into["activity"][minute] = into["activity"].get(minute, 0) + count
     into["activity"] = dict(sorted(into["activity"].items(), key=lambda item: int(item[0]))[-ACTIVITY_MINUTES:])
@@ -463,6 +513,9 @@ def apply_claude_usage(agg, usage, sign, model="", at=0):
         usage.get("cache_read_input_tokens") or 0, *claude_writes(usage)))
     details = usage.get("output_tokens_details") or {}
     agg["reasoning"] += sign * (details.get("thinking_tokens") or 0)
+    add_tokens(agg, "claude", model, at, sign, input=usage.get("input_tokens") or 0, output=usage.get("output_tokens") or 0,
+               cacheRead=usage.get("cache_read_input_tokens") or 0, cacheWrite=usage.get("cache_creation_input_tokens") or 0,
+               reasoning=details.get("thinking_tokens") or 0)
 
 
 def message_owners(*stores):
@@ -517,6 +570,7 @@ def parse_claude(path, entry, owners, worktree=""):
                 flow["cur"]["ctx"] = ctx or flow["cur"]["ctx"]
         else:
             agg["requests"] += 1
+            add_tokens(agg, "claude", model, at, requests=1)
             if model:
                 agg["models"][model] = agg["models"].get(model, 0) + 1
             if mid:
@@ -610,10 +664,16 @@ def parse_codex(path, entry, worktree=""):
             agg["cacheWrite"] = total.get("cache_write_input_tokens") or 0
             agg["output"] = total.get("output_tokens") or 0
             agg["reasoning"] = total.get("reasoning_output_tokens") or 0
+            model = meta.get("model") or "codex"
+            # The totals are running sums: each count's growth goes to the model serving it, so the per-model
+            # sums add up to the totals.
+            sums = {field: agg[field] for field in TOKEN_FIELDS[1:]}
+            before = meta.get("sums") or dict.fromkeys(TOKEN_FIELDS[1:], 0)
+            add_tokens(agg, "codex", model, at, requests=1 if last else 0, **{f: sums[f] - before.get(f, 0) for f in sums})
+            meta["sums"] = sums
             if last:
                 agg["requests"] += 1
                 agg["context"] = last.get("input_tokens") or 0
-                model = meta.get("model") or "codex"
                 agg["models"][model] = agg["models"].get(model, 0) + 1
                 cached_now = last.get("cached_input_tokens") or 0
                 fresh_now = max(0, (last.get("input_tokens") or 0) - cached_now)
@@ -779,7 +839,8 @@ def status_events(path):
     return events
 
 
-def collect_tasks(home, depth, seen):
+def collect_tasks(home, depth, seen, root=None, visited=None):
+    """The live tasks of a home and its secondmates' homes; visited gets each home whose state was read in full."""
     real = os.path.realpath(home)
     if real in seen or depth > 4:
         return []
@@ -790,6 +851,9 @@ def collect_tasks(home, depth, seen):
         names = sorted(os.listdir(state))
     except OSError:
         return tasks
+    if visited is not None:
+        visited.add(real)
+    root = root or real
     for name in names:
         if not name.endswith(".meta") or name.startswith("."):
             continue
@@ -797,10 +861,10 @@ def collect_tasks(home, depth, seen):
         meta = read_meta(os.path.join(state, name))
         status, status_at = last_status(os.path.join(state, tid + ".status"))
         since = task_start(meta, os.path.join(state, name), os.path.join(state, tid + ".status"))
-        tasks.append({"id": tid, "home": home, "depth": depth, "meta": meta, "since": since,
+        tasks.append({"id": tid, "home": home, "root": root, "depth": depth, "meta": meta, "since": since,
                       "status": status, "statusAt": status_at})
         if meta.get("kind") == "secondmate" and meta.get("worktree") and not meta.get("remote_host"):
-            tasks.extend(collect_tasks(meta["worktree"], depth + 1, seen))
+            tasks.extend(collect_tasks(meta["worktree"], depth + 1, seen, root, visited))
     return tasks
 
 
@@ -1193,6 +1257,27 @@ def quota_of(agg, ctx):
     return out
 
 
+def ledger_record(task, agg, now):
+    """A live task and its token samples, without prompts, credentials or workspace paths."""
+    meta = task["meta"]
+    return {
+        "v": ledger.SCHEMA_VERSION,
+        "id": task["id"],
+        "home": os.path.realpath(task["home"]),
+        "root": task["root"],
+        "harness": meta.get("harness") or "?",
+        "model": meta.get("model") or "",
+        "effort": meta.get("effort") or "",
+        "kind": meta.get("kind") or "ship",
+        "project": os.path.basename(meta.get("project") or ""),
+        "since": task["since"],
+        "lastAt": max(agg["lastAt"], task["statusAt"]),
+        "seenAt": now,
+        "finishedAt": None,
+        "usage": agg["acctTokens"],
+    }
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--home", action="append", default=[], help="Firstmate home to read (repeatable)")
@@ -1225,13 +1310,13 @@ def main():
     elif pane_session in known_sessions:
         pane_account = quota.claude_account_name(known_sessions[pane_session]["account"])
 
-    seen = set()
+    seen, visited = set(), set()
     tasks = []
     for home in homes:
         if not os.path.isdir(os.path.join(home, "state")):
             errors.append(f"not a firstmate home: {home}")
             continue
-        tasks.extend(collect_tasks(home, 0, seen))
+        tasks.extend(collect_tasks(home, 0, seen, None, visited))
 
     codex_index = None
     rows = []
@@ -1339,6 +1424,7 @@ def main():
                 "events": events,
                 "recentTools": agg["events"][-5:],
                 "activity": activity,
+                "modelTokens": model_totals(agg),
                 "tools": agg["tools"],
                 "toolCalls": agg["toolCalls"],
                 "toolTokens": agg["toolTokens"],
@@ -1349,6 +1435,11 @@ def main():
                 "lastAt": max(agg["lastAt"], task["statusAt"]),
             }
         )
+
+    records, saved = ledger.save([ledger_record(task, agg, now) for task, agg, _ in rows], visited, now)
+    if not saved and visited:
+        errors.append("crew history not saved")
+    mine = [rec for rec in records.values() if rec["root"] in visited or rec["home"] in visited]
 
     # Other sessions share this cache for other homes: drop only logs that are gone or long idle.
     cutoff = now - LOOKBACK_DAYS * 86400000
@@ -1372,6 +1463,7 @@ def main():
             "crew": crew,
             "totals": {k: totals[k] for k in ("requests", "input", "output", "cacheRead", "cacheWrite", "reasoning", "toolCalls")},
             "quota": {"readings": readings, "fleet": quota_of(totals, ctx)},
+            "history": ledger.summarize(mine, readings, now),
             "errors": errors,
         },
         sys.stdout,
