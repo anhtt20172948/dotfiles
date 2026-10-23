@@ -141,7 +141,8 @@ export CLAUDE_CODE_OAUTH_TOKEN=stale CLAUDE_CONFIG_DIR=/stale ANTHROPIC_API_KEY=
 for scenario in new empty idle; do
   run "$scenario"
   has 'claude token verified'
-  [[ ! -e "$HOME/.config/claude-accounts/active" ]] || fail 'launch wrote the shared selector'
+  [[ $(cat "$HOME/.config/claude-accounts/active") == b ]] || fail 'selector not saved'
+  has 'tmux|stdin'
   jq -e '.hasCompletedOnboarding == true' "$HOME/.claude.json" >/dev/null
   lacks synthetic-b
 done

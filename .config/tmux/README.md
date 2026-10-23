@@ -225,9 +225,11 @@ Notes:
   `ai-acct list` (`~/.config/claude-accounts/NAME.token`), active first;
   when none exist it reports the missing setup instead of launching.
   The pane runs `ai-acct exec --account NAME claude ...`: it reads that named
-  token itself at launch, so a concurrent `ai-acct use` cannot change it, the
-  shared selector is never modified by a launch, and no token is in the command
-  string. All accounts share Claude history/config.
+  token itself at launch, so a concurrent `ai-acct use` cannot change it, and
+  no token is in the command string. Only after the Firstmate pane is created
+  does the launcher run `ai-acct use NAME`, so crew windows and new panes follow
+  the picked account; a failed launch leaves the selector and tmux environment
+  untouched. All accounts share Claude history/config.
 - Model and effort pickers follow, each with `default` first to preserve CLI
   configuration. Claude offers `opus`, `sonnet`, `haiku` and efforts `low`,
   `medium`, `high`, `xhigh`, `max`. Codex reads visible models and their supported

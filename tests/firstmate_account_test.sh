@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
 TMP=$(mktemp -d)
 trap 'rm -rf -- "$TMP"' EXIT
-export HOME="$TMP/home" LOG="$TMP/log" PANE="$TMP/pane" TMUX=mock
+export HOME="$TMP/home" LOG="$TMP/log" PANE="$TMP/pane" TMUX=mock TMUX_ENV="$TMP/tmux-env"
 export CODEX_HOME="$HOME/.codex" AI_FIRSTMATE_AGENT=claude
 export XDG_CONFIG_HOME="$HOME/.config" XDG_CACHE_HOME="$TMP/cache"
 unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY CLAUDE_CONFIG_DIR FM_HOME
@@ -30,6 +30,7 @@ case "$1" in
   list-panes) exit 0 ;;
   has-session) exit 1 ;;
   display-message) printf 'message|%s\n' "$*" >> "$LOG" ;;
+  source-file) cat >> "$TMUX_ENV" ;;
   new-session) for last; do :; done; printf '%s\n' "$last" > "$PANE"; [ -z "${FAIL_NEW:-}" ] || exit 1 ;;
 esac
 exit 0
@@ -63,20 +64,24 @@ touch -d '2 minutes ago' "$HOME/.claude/projects/$slug/old-session.jsonl" 2>/dev
   || touch -t "$(date -v-2M +%Y%m%d%H%M.%S)" "$HOME/.claude/projects/$slug/old-session.jsonl"
 
 # --- the picked account survives a concurrent selector switch ---------------
-: > "$LOG"
+: > "$LOG"; : > "$TMUX_ENV"
 bash "$WORKFLOW" firstmate </dev/null 2>"$TMP/err" || fail "launcher failed: $(cat "$TMP/err")"
 cmd=$(cat "$PANE")
 [ "$cmd" = 'exec ai-acct exec --account alpha claude --resume old-session' ] || fail "pane command: $cmd"
 case "$cmd" in *synthetic-*) fail 'token in the pane command' ;; esac
-[ "$(selector)" = beta ] || fail 'launching changed the shared selector'
+[ "$(selector)" = alpha ] || fail 'launch did not select the picked account'
+grep -Fqx "set-environment -g CLAUDE_CODE_OAUTH_TOKEN 'synthetic-alpha'" "$TMUX_ENV" \
+  || fail "tmux token not the picked account: $(cat "$TMUX_ENV")"
 ai-acct use beta >/dev/null   # another client switches before the pane starts
 (cd "$FM" && sh -c "$cmd")
 grep -Fqx "claude|synthetic-alpha|$FM|--resume old-session" "$LOG" || fail 'child did not keep the picked account'
 
 # A failed pane creation leaves the default untouched.
 printf 'beta\n' > "$HOME/.config/claude-accounts/active"
+: > "$TMUX_ENV"
 if FAIL_NEW=1 bash "$WORKFLOW" firstmate </dev/null 2>/dev/null; then fail 'failed pane creation succeeded'; fi
 [ "$(selector)" = beta ] || fail 'failed launch changed the selector'
+[ ! -s "$TMUX_ENV" ] || fail "failed launch changed the tmux environment: $(cat "$TMUX_ENV")"
 
 # An account that cannot be loaded stops the launch before any pane exists.
 rm "$PANE"

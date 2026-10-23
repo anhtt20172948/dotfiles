@@ -152,7 +152,8 @@ home (`FIRSTMATE_DIR`, else `FM_HOME`, else `~/.local/share/firstmate`), applies
 its live-primary guard and resumes the newest session of that home by id with
 the active account. `ai-acct exec --account NAME CMD...` binds a named account
 to the child instead of following the selector, which is how the tmux launcher
-starts Firstmate.
+starts Firstmate; once that pane exists the launcher also selects the account so
+crews follow it.
 
 `ai-acct list --quota` adds compact quota bars. Quota readings are cached;
 older readings show their age and missing readings show an explicit unknown or

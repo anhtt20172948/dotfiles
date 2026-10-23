@@ -273,17 +273,17 @@ for AI_FIRSTMATE_AGENT in '' codex; do
   if [[ -s $TMP/err ]]; then fail "menu errored: $(/bin/cat "$TMP/err")"; fi
 done
 unset AI_FIRSTMATE_AGENT CANCEL
-# The picked account is bound to the pane; the shared selector stays put.
+# The picked account is bound to the pane, then becomes the shared selector.
 printf 'a\n' > "$HOME/.config/claude-accounts/active"
 export AI_FIRSTMATE_AGENT=claude ACCOUNT_CHOICE=b
 run; started 'ai-acct exec --account b claude'
-[[ $(/bin/cat "$HOME/.config/claude-accounts/active") == a ]] || fail 'launch switched the shared selector'
+[[ $(/bin/cat "$HOME/.config/claude-accounts/active") == b ]] || fail 'launch did not select the picked account'
 [[ $(/bin/cat "$PICKER.Account") == $'a\tClaude account a (active)\nb\tClaude account b\nwork\tClaude account work' ]] \
   || fail "account entries: $(/bin/cat "$PICKER.Account")"
 # Any named account can be launched; the active one is offered first.
 export ACCOUNT_CHOICE=work
 run; started 'ai-acct exec --account work claude'
-[[ $(/bin/cat "$HOME/.config/claude-accounts/active") == a ]] || fail 'named launch switched the selector'
+[[ $(/bin/cat "$HOME/.config/claude-accounts/active") == work ]] || fail 'named launch did not select it'
 printf 'work\n' > "$HOME/.config/claude-accounts/active"
 export ACCOUNT_CHOICE=b
 run

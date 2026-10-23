@@ -178,7 +178,12 @@ firstmate_codex_session_id() {
   [[ -d "$store" ]] || return 1
   needle=$(jq -nr --arg cwd "$cwd" '$cwd | @json') || return 1
   matches=$(find "$store" -type f -name '*.jsonl' -exec awk -v needle="$needle" '
-    FNR == 1 { if (index($0, needle)) print FILENAME; nextfile }' {} + 2>/dev/null) || return 1
+    BEGIN {
+      for (i = 1; i < ARGC; i++) {
+        if ((getline line < ARGV[i]) > 0 && index(line, needle)) print ARGV[i]
+        close(ARGV[i])
+      }
+    }' {} + 2>/dev/null) || :
   [[ -n "$matches" ]] || return 1
   local -a files=()
   while IFS= read -r file; do

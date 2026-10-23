@@ -153,8 +153,8 @@ exit 0
                     assert f"arg:--resume\narg:{claude_id}\n" in output, output
                     assert "--continue" not in output, output
                     assert f"account:exec --account test claude --resume {claude_id}" in output, output
-                    # Launching binds the account to the pane; it never switches the selector.
-                    assert "account:use" not in output and "account:check test" in output, output
+                    # The pane is bound by name; the selector follows once the pane exists.
+                    assert "account:check test" in output and "account:use test" in output, output
                 if dead_lock:
                     assert lock.read_text() == "2147483647\nopaque metadata\n"
                     lock.unlink()
@@ -341,6 +341,9 @@ fm_session_lock_inspect() {
                 add(store / "22/rollout-corrupt.jsonl", "not json\n", 20)
                 add(store / "21/rollout-newer.jsonl", codex_line(firstmate, "newer-home-id"), 30)
                 add(store / "20/rollout-no-id.jsonl", json.dumps({"type": "session_meta", "payload": {"cwd": str(firstmate)}}) + "\n", 5)
+                # One unreadable rollout must not hide the readable matches.
+                add(store / "23/rollout-unreadable.jsonl", codex_line(other_home, "unreadable-id"), 1)
+                extra[-1].chmod(0)
                 os.utime(codex, (time.time() - 300, time.time() - 300))
                 wanted = f"resume -C {firstmate} newer-home-id"
             output, _ = run()

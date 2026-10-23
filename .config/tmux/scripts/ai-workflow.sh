@@ -369,12 +369,18 @@ firstmate_focus() {
   tmux switch-client -t "${1%%:*}" \; select-window -t "$1"
 }
 
+# Make the account picked for the primary the default for crews and new panes.
+firstmate_commit_account() {
+  [[ -n "$1" ]] || return 0
+  ai-acct use "$1" >&2 || fail 'could not select Claude account'
+}
+
 action_firstmate() {
   [[ -d "$FIRSTMATE_DIR/.git" ]] \
     || fail "firstmate not found at $FIRSTMATE_DIR - run install_agent_workflow"
   [[ -n "${TMUX:-}" ]] || fail 'firstmate needs tmux (its crewmates are tmux windows)'
 
-  local target cmd windows index window name panes agent account model='' effort='' catalog='' entries first='' mode session=''
+  local target cmd windows index window name panes agent account='' model='' effort='' catalog='' entries first='' mode session=''
   target=$(firstmate_target) || target=''
   if [[ -n "$target" ]]; then
     firstmate_focus "$target"
@@ -426,9 +432,10 @@ action_firstmate() {
   fi
   if [[ "$agent" == claude ]]; then
     need ai-acct
-    # Bind the picked account to the pane instead of switching the shared
-    # selector: the child reads that token itself, so a concurrent switch cannot
-    # change it and a failed launch leaves every default untouched.
+    # Bind the picked account to the pane by name: the child reads that token
+    # itself, so a concurrent switch cannot change it. The shared selector and
+    # tmux token follow only once the pane exists, so crews use the same account
+    # and a failed launch leaves every default untouched.
     ai-acct check "$account" >&2 || fail 'could not load Claude account'
     printf -v cmd 'exec ai-acct exec --account %q %s' "$account" "${cmd#exec }"
   fi
@@ -446,6 +453,7 @@ action_firstmate() {
           || fail 'could not reuse firstmate shell window'
         tmux rename-window -t "$window" "$FIRSTMATE_WINDOW" \
           || fail 'could not name firstmate window'
+        firstmate_commit_account "$account"
         tmux switch-client -t "$target"
         return
       fi
@@ -459,6 +467,7 @@ action_firstmate() {
     tmux new-session -d -s "$FIRSTMATE_SESSION" -n "$FIRSTMATE_WINDOW" \
       -c "$FIRSTMATE_DIR" "$cmd" || fail 'could not create firstmate session'
   fi
+  firstmate_commit_account "$account"
   tmux switch-client -t "$target"
 }
 
