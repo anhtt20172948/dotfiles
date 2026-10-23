@@ -30,7 +30,8 @@ case "$1" in
   list-panes) exit 0 ;;
   has-session) exit 1 ;;
   display-message) printf 'message|%s\n' "$*" >> "$LOG" ;;
-  source-file) cat >> "$TMUX_ENV" ;;
+  source-file) cat >> "$TMUX_ENV"; [ -z "${FAIL_ENV:-}" ] || exit 1 ;;
+  switch-client) printf 'switch|%s\n' "$*" >> "$LOG" ;;
   new-session) for last; do :; done; printf '%s\n' "$last" > "$PANE"; [ -z "${FAIL_NEW:-}" ] || exit 1 ;;
 esac
 exit 0
@@ -89,6 +90,14 @@ chmod 644 "$HOME/.config/claude-accounts/alpha.token"
 if bash "$WORKFLOW" firstmate </dev/null 2>/dev/null; then fail 'unreadable token launched'; fi
 [ ! -e "$PANE" ] || fail 'pane created for a bad account'
 chmod 600 "$HOME/.config/claude-accounts/alpha.token"
+
+# Once the pane exists, a failed global account update only warns.
+: > "$LOG"
+FAIL_ENV=1 bash "$WORKFLOW" firstmate </dev/null 2>"$TMP/err" || fail "launch failed after pane creation: $(cat "$TMP/err")"
+[ "$(cat "$PANE")" = 'exec ai-acct exec --account alpha claude --resume old-session' ] || fail 'pane not created'
+grep -Fq 'switch|switch-client' "$LOG" || fail 'client not switched to the new primary'
+grep -Fq 'message|display-message Firstmate runs as alpha' "$LOG" || fail 'no warning for the failed account update'
+printf 'beta\n' > "$HOME/.config/claude-accounts/active"
 
 # --- ai-acct exec --account ---------------------------------------------------
 : > "$LOG"

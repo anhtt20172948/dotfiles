@@ -229,7 +229,8 @@ Notes:
   no token is in the command string. Only after the Firstmate pane is created
   does the launcher run `ai-acct use NAME`, so crew windows and new panes follow
   the picked account; a failed launch leaves the selector and tmux environment
-  untouched. All accounts share Claude history/config.
+  untouched. If that update fails after the pane exists, the launcher still
+  switches to Firstmate and shows a warning. All accounts share Claude history/config.
 - Model and effort pickers follow, each with `default` first to preserve CLI
   configuration. Claude offers `opus`, `sonnet`, `haiku` and efforts `low`,
   `medium`, `high`, `xhigh`, `max`. Codex reads visible models and their supported

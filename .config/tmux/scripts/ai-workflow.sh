@@ -372,7 +372,8 @@ firstmate_focus() {
 # Make the account picked for the primary the default for crews and new panes.
 firstmate_commit_account() {
   [[ -n "$1" ]] || return 0
-  ai-acct use "$1" >&2 || fail 'could not select Claude account'
+  ai-acct use "$1" >&2 && return 0
+  tmux display-message "Firstmate runs as $1, but new panes keep the old account; run ai-acct use $1."
 }
 
 action_firstmate() {
