@@ -203,28 +203,29 @@ firstmate_installed_agents() {
   printf '%s\n' "$agents"
 }
 
-# Picker rows, best headroom first. Run by fzf after the picker is open, so a
-# slow quota lookup never delays the first usable list.
-firstmate_agent_entries() {
-  local agent agents quota claude_remaining=unknown codex_remaining=unknown percent entries=''
-  agents=$(firstmate_installed_agents)
+FIRSTMATE_PICK_KEYS='Ctrl-j/k move  •  Enter select  •  Esc cancel'
+
+# fzf action run in the background once the Agent picker is open: show quota
+# in the header and, while the cursor is still on the first row, move it to
+# the better headroom. The rows never change, so the list stays usable while
+# the lookup runs; fzf 0.67 cannot reload rows from a background action.
+firstmate_agent_quota_action() {
+  local quota claude_remaining=unknown codex_remaining=unknown agent percent header='Quota'
   quota=$(firstmate_quota) || quota=$'unknown\tunknown'
   IFS=$'\t' read -r claude_remaining codex_remaining <<<"$quota"
+  for agent in claude codex; do
+    case "$agent" in claude) percent=$claude_remaining ;; codex) percent=$codex_remaining ;; esac
+    if [[ "$percent" == unknown ]]; then
+      header="${header}  ${agent} quota ?"
+    else
+      header="${header}  ${agent} ${percent}% left"
+    fi
+  done
   if [[ "$claude_remaining" != unknown && "$codex_remaining" != unknown ]] \
     && awk -v c="$claude_remaining" -v x="$codex_remaining" 'BEGIN { exit !(x > c) }'; then
-    agents='codex claude'
+    printf '%s' "transform~[ {n} = 0 ] && echo 'pos(2)'~+"
   fi
-  for agent in $agents; do
-    case "$agent" in claude) percent=$claude_remaining ;; codex) percent=$codex_remaining ;; esac
-    entries="${entries}${agent}"$'\t'"${agent}"
-    if [[ "$percent" == unknown ]]; then
-      entries="${entries}  quota ?"
-    else
-      entries="${entries}  ${percent}% left"
-    fi
-    entries="${entries}"$'\n'
-  done
-  printf '%s' "$entries"
+  printf 'change-header:%s\n%s\n' "$header" "$FIRSTMATE_PICK_KEYS"
 }
 
 firstmate_choose_agent() {
@@ -233,17 +234,15 @@ firstmate_choose_agent() {
     printf '%s\n' "$AI_FIRSTMATE_AGENT"
     return
   fi
-  local agent agents count=0 entries='' reload
+  local agent agents count=0 quota_action
   agents=$(firstmate_installed_agents)
   for agent in $agents; do count=$((count + 1)); done
   [[ "$count" != 0 ]] || fail 'neither claude nor codex found - run install_agent_workflow'
   if [[ "$count" == 1 ]]; then printf '%s\n' "$agents"; return; fi
   need fzf
-  for agent in $agents; do
-    entries="${entries}${agent}"$'\t'"${agent}  quota …"$'\n'
-  done
-  printf -v reload 'start:reload:bash %q _agent-entries' "$LIB_DIR/ai-workflow.sh"
-  firstmate_pick Agent "$entries" "$reload"
+  printf -v quota_action 'start:bg-transform:bash %q _agent-quota' "$LIB_DIR/ai-workflow.sh"
+  firstmate_pick Agent $'claude\tclaude\ncodex\tcodex\n' \
+    --bind "$quota_action" --header=$'Quota …\n'"$FIRSTMATE_PICK_KEYS"
 }
 
 # No per-account config directories: token selection keeps Claude history shared.
@@ -266,18 +265,18 @@ firstmate_choose_account() {
 }
 
 # All launch pickers use the same style and validate selections against the
-# offered values. Cancellation exits before any tmux mutation.
+# offered values. Cancellation exits before any tmux mutation. Extra fzf
+# arguments come last, so they can override the defaults.
 firstmate_pick() {
   local label=$1 entries=$2 selection status value _display offered=''
-  local -a extra=()
-  [[ -z "${3:-}" ]] || extra=(--bind "$3")
+  shift 2
   need fzf
-  selection=$(printf '%s' "$entries" | fzf ${extra[@]+"${extra[@]}"} --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
+  selection=$(printf '%s' "$entries" | fzf --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
     --no-sort --cycle --layout=reverse --margin=1,2 --border=rounded \
     --border-label=" Firstmate $label " --info=hidden \
-    --header='Ctrl-j/k move  •  Enter select  •  Esc cancel' --prompt="$label › " \
+    --header="$FIRSTMATE_PICK_KEYS" --prompt="$label › " \
     --pointer='' --bind='ctrl-j:down,ctrl-k:up' \
-    --color='bg+:#313244,bg:#1e1e2e,fg:#cdd6f4,header:#89b4fa,fg+:#cdd6f4,prompt:#cba6f7,border:#6c7086,label:#cba6f7')
+    --color='bg+:#313244,bg:#1e1e2e,fg:#cdd6f4,header:#89b4fa,fg+:#cdd6f4,prompt:#cba6f7,border:#6c7086,label:#cba6f7' "$@")
   status=$?
   case "$status" in 0) ;; 1|130) return 0 ;; *) return "$status" ;; esac
   while IFS=$'\t' read -r value _display; do
@@ -499,8 +498,8 @@ run_action() {
     pipelines) action_pipelines ;;
     gnhf)      action_gnhf "$@" ;;
     firstmate) action_firstmate ;;
-    # Internal entry points (fzf reload, ai-acct resume); not in the menu.
-    _agent-entries) firstmate_agent_entries ;;
+    # Internal entry points (fzf quota action, ai-acct resume); not in the menu.
+    _agent-quota) firstmate_agent_quota_action ;;
     resume-session) action_resume_session ;;
     crew)      "$LIB_DIR/crew-view.sh" ;;
     *)         fail "unknown action: $action (one of: $ACTIONS)" ;;

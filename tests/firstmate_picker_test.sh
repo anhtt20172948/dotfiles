@@ -53,12 +53,15 @@ file=$PICKER
 [[ $stage == Agent ]] || file="$PICKER.$stage"
 printf '%s\n' "$@" > "$file.args"
 cat > "$file"
-/bin/cp "$file" "$file.initial"
-# fzf runs the start:reload command once the picker is open; wait for it here.
+# fzf runs the start:bg-transform command once the picker is open; wait for it
+# here and apply its actions: an optional move to row 2, then a new header.
+row=1
 for arg in "$@"; do
-  case "$arg" in start:reload:*)
-    [[ ${NO_RELOAD:-0} != 1 ]] || continue
-    bash -c "${arg#start:reload:}" > "$file.reload" && /bin/cp "$file.reload" "$file" ;;
+  case "$arg" in start:bg-transform:*)
+    [[ ${NO_QUOTA_ACTION:-0} != 1 ]] || continue
+    action=$(bash -c "${arg#start:bg-transform:}")
+    [[ $action != "transform~[ {n} = 0 ] && echo 'pos(2)'~+"* ]] || row=2
+    printf '%s\n' "${action#*change-header:}" > "$file.header" ;;
   esac
 done
 [[ ${CANCEL_STAGE:-} != "$stage" && ${CANCEL:-0} != 1 ]] || exit 130
@@ -69,10 +72,11 @@ case "$stage" in
   Model) choice=${MODEL_CHOICE:-} ;;
   Effort) choice=${EFFORT_CHOICE:-} ;;
 esac
-if [[ -n $choice ]]; then printf '%s\n' "$choice"; else
-  IFS=$'\t' read -r value rest < "$file"
-  printf '%s\n' "$value"
+if [[ -z $choice ]]; then
+  choice=$(awk -F '\t' -v row="$row" 'NR == row { print $1 }' "$file")
+  printf '%s\n' "$choice" > "$file.default"
 fi
+printf '%s\n' "$choice"
 MOCK
 cat > "$TMP/bin/quota-axi" <<'MOCK'
 #!/usr/bin/env bash
@@ -111,11 +115,12 @@ quota() {
 }
 fail() { printf 'FAIL: %s\n' "$*" >&2; /bin/cat "$LOG" "$PICKER" >&2; exit 1; }
 run() {
-  : > "$LOG"; : > "$QUOTA_LOG"; : > "$PICKER"; : > "$PICKER.args"; : > "$PICKER.Model"; : > "$PICKER.Effort"; : > "$PICKER.Account"
+  : > "$LOG"; : > "$QUOTA_LOG"; : > "$PICKER"; /bin/rm -f "$PICKER.default" "$PICKER.header"; : > "$PICKER.args"; : > "$PICKER.Model"; : > "$PICKER.Effort"; : > "$PICKER.Account"
   bash "$ROOT/.config/tmux/scripts/ai-workflow.sh" firstmate </dev/null
 }
 started() { "$GREP_BIN" -Fq "|exec $1|" "$LOG" || fail "did not start $1"; }
-first() { local line; IFS= read -r line < "$PICKER" || line=; [[ $line == "$1"* ]] || fail "default is not $1"; }
+first() { [[ $(/bin/cat "$PICKER.default" 2>/dev/null) == "$1" ]] || fail "default is not $1"; }
+header() { "$GREP_BIN" -Fxq "$1" "$PICKER.header" || fail "quota header is not '$1'"; }
 no_start() { if "$GREP_BIN" -Fq 'new-session|' "$LOG"; then fail 'unexpected launch'; fi; }
 # Claude launches require a local token; several named accounts exist for the picker.
 /bin/mkdir -p "$HOME/.config/claude-accounts"
@@ -126,8 +131,7 @@ printf 'synthetic-work\n' > "$HOME/.config/claude-accounts/work.token"
 printf 'a\n' > "$HOME/.config/claude-accounts/active"
 quota 20 80
 run; first codex; started codex
-"$GREP_BIN" -Fxq $'codex\tcodex  80% left' "$PICKER" || fail 'missing codex quota'
-"$GREP_BIN" -Fxq $'claude\tclaude  20% left' "$PICKER" || fail 'missing claude quota'
+header 'Quota  claude 20% left  codex 80% left'
 "$GREP_BIN" -Fxq -- '--no-sort' "$PICKER.args" || fail 'picker would reorder default'
 export CHOICE=claude
 run; started 'ai-acct exec --account a claude'
@@ -170,28 +174,28 @@ for QUOTA_MODE in fail invalid empty slow; do
   SECONDS=0
   run; first claude; started 'ai-acct exec --account a claude'
   [[ $SECONDS -lt 7 ]] || fail 'quota lookup was not bounded'
-  "$GREP_BIN" -Fxq $'claude\tclaude  quota ?' "$PICKER" || fail 'fallback shows a percentage'
+  header 'Quota  claude quota ?  codex quota ?'
 done
 export QUOTA_MODE=cold
 quota 10 90
 run; first codex; started codex
-"$GREP_BIN" -Fxq $'codex\tcodex  90% left' "$PICKER" || fail 'cold quota lost'
+header 'Quota  claude 10% left  codex 90% left'
 unset QUOTA_MODE
-# Quota stays off the critical path: the first picker paints at once with
-# placeholders and fzf refreshes it afterwards through the reload bind.
-export QUOTA_MODE=slow NO_RELOAD=1
+# Quota stays off the critical path: the first picker opens at once with fixed
+# rows and fzf fills in the quota header afterwards in the background.
+export QUOTA_MODE=slow NO_QUOTA_ACTION=1
 quota 20 80
 SECONDS=0
 run; started 'ai-acct exec --account a claude'
 [[ $SECONDS -lt 3 && ! -s $QUOTA_LOG ]] || fail 'first picker waited for quota'
-[[ $(/bin/cat "$PICKER.initial") == $'claude\tclaude  quota …\ncodex\tcodex  quota …' ]] \
-  || fail "initial rows: $(/bin/cat "$PICKER.initial")"
-"$GREP_BIN" -Fxq "start:reload:bash $ROOT/.config/tmux/scripts/ai-workflow.sh _agent-entries" "$PICKER.args" \
-  || fail 'quota refresh is not an fzf reload'
-unset QUOTA_MODE NO_RELOAD
+[[ $(/bin/cat "$PICKER") == $'claude\tclaude\ncodex\tcodex' ]] \
+  || fail "initial rows: $(/bin/cat "$PICKER")"
+"$GREP_BIN" -Fxq -- $'--header=Quota …\nCtrl-j/k move  •  Enter select  •  Esc cancel' "$PICKER.args" \
+  || fail 'quota placeholder missing'
+unset QUOTA_MODE NO_QUOTA_ACTION
 /bin/mv "$TMP/bin/quota-axi" "$TMP/quota-axi"
 run; first claude
-"$GREP_BIN" -Fxq $'codex\tcodex  quota ?' "$PICKER" || fail 'missing tooling hid quota cell'
+header 'Quota  claude quota ?  codex quota ?'
 /bin/mv "$TMP/quota-axi" "$TMP/bin/quota-axi"
 quota null 90
 run; first claude
@@ -199,7 +203,7 @@ quota 101 90
 run; first claude
 export QUOTA_JSON='{"providers":[{"provider":"claude","windows":[{"percentRemaining":90}],"quotaSemantics":{"effectiveAvailability":[{"scope":"all_models","status":"unknown"}]}},{"provider":"codex","quotaSemantics":{"effectiveAvailability":[{"scope":"all_models","effectivePercentRemaining":10}]}}]}'
 run; first claude
-"$GREP_BIN" -Fxq $'claude\tclaude  quota ?' "$PICKER" || fail 'unknown headroom displayed as raw quota'
+header 'Quota  claude quota ?  codex 10% left'
 export QUOTA_JSON='{"providers":[]}'
 run; first claude
 /bin/rm "$TMP/bin/jq"

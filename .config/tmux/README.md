@@ -210,12 +210,12 @@ Notes:
   occupied windows (including all `fm-*` windows) are shifted to preserve their
   processes.
 - When starting a new first mate, an fzf picker offers installed `claude` and
-  `codex` CLIs. Every row shows all-model quota from `quota-axi --json` as
-  `NN% left`, or `quota ?` when missing, unreadable, stale or timed out. The
-  picker opens at once with `quota …` and fzf reloads the rows when the lookup
-  (capped at five seconds) finishes, so quota never delays the first usable list.
-  The higher remaining percentage comes first; ties or unknown quota default to
-  Claude. A single installed CLI skips this step.
+  `codex` CLIs. The rows are usable at once; the header shows `Quota …` until
+  the all-model quota from `quota-axi --json` (capped at five seconds) arrives
+  in the background as `NN% left` per agent, or `quota ?` when missing,
+  unreadable, stale or timed out. The default is Claude; if Codex has the higher
+  remaining percentage and the cursor is still on the first row, it moves to
+  Codex. A single installed CLI skips this step.
 - A Session picker follows. When the home has a native session, `Resume last
   Firstmate session` comes first (the default) and the launch resumes that exact
   session by id (`claude --resume ID`, `codex resume -C HOME ID`), not whichever

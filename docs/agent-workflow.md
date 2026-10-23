@@ -129,8 +129,8 @@ Tunables (environment variables):
 | `AI_FIRSTMATE_AGENT` | unset | Force `claude` or `codex`; skip only the agent picker |
 | `FIRSTMATE_DIR` | `~/.local/share/firstmate` | firstmate checkout (`FM_HOME` is the fallback; `ai-acct resume` follows the same choice) |
 
-Starting firstmate offers Claude or Codex with remaining quota (or `quota ?`,
-refreshed after the picker opens), then asks Resume or New (Resume first when
+Starting firstmate offers Claude or Codex at once, with remaining quota (or
+`quota ?`) filled into the header in the background, then asks Resume or New (Resume first when
 a session exists), the Claude account (Claude only), and for New the model and
 effort. A window jumps directly only when a live primary for this home runs in
 it; a dead pane or an unrelated window named `firstmate` does not count.
