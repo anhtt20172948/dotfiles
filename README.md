@@ -489,9 +489,13 @@ ever compared with the local usage of the same account.
   forecast 10 minutes to 2 hours old against a vendor reading that rose by at
   least a point; `calibrated` needs ten of them with the 90th percentile error
   within half the rise. It never means fitted weights. Estimates are shown
-  rounded (`~2%`, `<1%`), because a one-point vendor step and an unfitted rate
-  cannot support a decimal. The Codex aggregate error measured in the audit was
-  about 4 points on 20 samples, so no per-crewmate precision is claimed.
+  rounded and always led by `~` (`~2%`, `~<1%`), because a one-point vendor
+  step and an unfitted rate cannot support a decimal. Every estimated percent
+  is an order-of-magnitude figure, about 2x either way: vendors do not publish
+  their weights for cache reads, which dominate agent usage, so the price
+  ratios are a guess. Only the vendor's own `week 26% measured` carries no
+  `~`. The Codex aggregate error measured in the audit was about 4 points on
+  20 samples, so no per-crewmate precision is claimed.
 
 The plan comes from Claude's local auth metadata and the Codex plan type. A
 named `ai-acct` account signs in with `CLAUDE_CODE_OAUTH_TOKEN`, which leaves no

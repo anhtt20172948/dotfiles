@@ -172,8 +172,8 @@ const shareText = (fraction: number): string => percentText(fraction * 100)
 /** The vendor's own number at its own time, as given (one decimal at most). */
 export const measuredText = (n: number): string => `${Number(n.toFixed(1))}%`
 
-/** An estimate never carries a decimal: it is rounded, and under a point it says so. */
-export const estimateText = (n: number): string => n <= 0 ? '0%' : n < 1 ? '<1%' : `~${Math.min(100, Math.round(n))}%`
+/** An estimate never carries a decimal and always leads with ~: it is rounded, and under a point it says so. */
+export const estimateText = (n: number): string => `~${n <= 0 ? '0' : n < 1 ? '<1' : Math.min(100, Math.round(n))}%`
 
 /** Where a vendor reading was taken, as the pane names it. */
 export const SOURCES: Record<string, string> = {

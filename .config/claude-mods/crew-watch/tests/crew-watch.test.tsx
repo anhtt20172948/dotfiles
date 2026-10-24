@@ -497,7 +497,7 @@ test('keys switch details, quota notes, logs, filters and help, and every hotkey
   expect(await ui.find({ text: '  5h 53% measured 2m ago · source this session' })).toBeDefined()
   expect(await ui.find({ text: /^  5h 4% measured \d+s ago · source codex log$/ })).toBeDefined()
   expect(await ui.find({ text: '  5h % —: no source has a 5-hour window for this account' })).toBeDefined()
-  expect(await ui.find({ text: '  session <1% of week est' })).toBeDefined()
+  expect(await ui.find({ text: '  session ~<1% of week est' })).toBeDefined()
   expect(await ui.find({ text: '  account now est ~38%' })).toBeDefined()
   expect(await ui.find({ text: '  no crew usage in this window' })).toBeDefined()
   expect(await ui.find({ text: /neither exact nor an upper bound/ })).toBeDefined()
@@ -851,7 +851,7 @@ test('token and quota text states what is unknown instead of inventing numbers',
     { text: 'week 10% stale 4d ago', tone: 'warning' },
     { text: 'source reading history', tone: 'subtle' },
     { text: 'session ~3% as of reading', tone: 'text' },
-    { text: 'tools direct <1% as of reading', tone: 'text' },
+    { text: 'tools direct ~<1% as of reading', tone: 'text' },
     { text: 'session since 120k wtok', tone: 'subtle' },
     { text: 'uncalibrated · 0 samples', tone: 'subtle' },
   ])
@@ -863,7 +863,7 @@ test('token and quota text states what is unknown instead of inventing numbers',
   expect(fresh).toContain('low · 1 sample')
   expect(quotaRows({ [KEY]: { session: figure(), tools: figure() } }, { [KEY]: reading() }, NOW).map(r => r.text)).not.toContain('account now est ~38%')
   // Estimates carry no decimal and never read as exact.
-  expect([0, 0.4, 1.4, 99.6, 140].map(estimateText)).toEqual(['0%', '<1%', '~1%', '~100%', '~100%'])
+  expect([0, 0.4, 1.4, 99.6, 140].map(estimateText)).toEqual(['~0%', '~<1%', '~1%', '~100%', '~100%'])
   expect(quotaRows({}, {}, NOW)).toEqual([])
   expect(quotaRows({ missing: share }, {}, NOW)).toEqual([])
   // A narrow card's row is 32 cells: no quota row may be cut there.

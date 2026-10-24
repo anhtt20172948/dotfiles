@@ -190,6 +190,27 @@ class AccountSeparationTest(QuotaTestCase):
                          (41.0, "account cache", True, None, None))
         self.assertNotIn(FINGERPRINT, json.dumps(report))
 
+    def test_a_numeric_resets_at_dates_the_pane_window_like_an_iso_one(self):
+        # $.session.usage().rateLimits may carry resetsAt as an epoch in seconds or milliseconds, or as ISO text.
+        resets = self.now + DAY
+        worktree = str(self.root / "slot")
+        self.task("a", worktree)
+        self.turn(self.project(worktree) / "sess-a.jsonl", "a1", 60, 10)
+        for value in (resets, resets * 1000, float(resets), iso(resets)):
+            limits = json.dumps([{"kind": "seven_day", "percentUsed": 30, "resetsAt": value}])
+            report = self.run_report("--claude-session", "sess-a", "--claude-account", "acct-a", "--claude-limits", limits)
+            reading = report["quota"]["readings"]["claude|acct-a|seven_day"]
+            self.assertEqual(reading["resetsAt"], resets * 1000, value)
+            self.assertEqual(reading["windowStart"], (resets - 7 * DAY) * 1000, value)
+
+    def test_ts_ms_reads_iso_text_and_numeric_epochs_and_rejects_the_rest(self):
+        self.assertEqual(usage.ts_ms("2026-01-02T03:04:05Z"), 1767323045000)
+        self.assertEqual(usage.ts_ms(1767323045), 1767323045000)
+        self.assertEqual(usage.ts_ms(1767323045.5), 1767323045500)
+        self.assertEqual(usage.ts_ms(1767323045000), 1767323045000)
+        for bad in (None, "", 0, -5, True, False, "not a time", float("nan"), float("inf"), [], {}):
+            self.assertEqual(usage.ts_ms(bad), 0, bad)
+
     def test_codex_accounts_are_told_apart_by_a_hash_and_the_id_is_never_kept(self):
         resets = self.now + DAY
         worktree = str(self.root / "codex-slot")
