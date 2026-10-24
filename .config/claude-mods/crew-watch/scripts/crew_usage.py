@@ -62,6 +62,10 @@ uncalibrated prior. A member's share sums settled intervals (each rise of the
 vendor percent split by the member's share of that interval alone), so usage
 after the reading cannot change it. A reading older than STALE_MS, or of unknown
 age, is stale: it keeps its timestamp and only the raw local delta is shown.
+Every estimated percent is only an order-of-magnitude figure (about 2x either
+way) and is shown with a leading ~: vendors do not publish their weights for
+cache reads, which dominate agent usage, so PRICE_RATIO is a guess, not a fit.
+A resetsAt reading is an ISO string or an epoch in seconds or milliseconds.
 Costs are kept per request, so a task start and a window start cut at the
 request's own time, never at a file's mtime or a 15-minute bucket.
 """
@@ -398,9 +402,17 @@ def one_line(text, limit=SNIPPET):
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+EPOCH_MS_FLOOR = 100_000_000_000  # an epoch this large is already milliseconds (seconds reach it in year 5138)
+
+
 def ts_ms(value):
-    if not value:
+    """Epoch milliseconds of an ISO string or a numeric epoch in seconds or milliseconds; 0 when unreadable."""
+    if isinstance(value, bool) or not value:
         return 0
+    if isinstance(value, (int, float)):
+        if value != value or value <= 0 or value == float("inf"):
+            return 0
+        return int(value if value >= EPOCH_MS_FLOOR else value * 1000)
     try:
         return int(datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp() * 1000)
     except ValueError:
