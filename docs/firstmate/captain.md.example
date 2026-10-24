@@ -5,17 +5,28 @@ It is per host and is never committed.
 
 ## Communication language
 
-<Language Firstmate and crew should use when talking to you.>
+- The captain communicates in Vietnamese; Firstmate and crew reply in Vietnamese.
 
 ## Working style
 
-<How you like work to be done: level of autonomy, when to ask first, how much
-detail to report, what to verify before calling something done.>
+- The captain is a senior AI integration engineer working mainly with Python,
+  C++, DeepStream, CUDA and GStreamer, and occasionally on small full-stack
+  tools (backend, frontend and MongoDB).
+- <This host's hardware: NVIDIA GPU or not; which GPU or Jetson device must be
+  used to verify GPU-dependent work.>
+- Each server's Firstmate manages only its own crews; no cross-server crew
+  management.
+- The daily-use dotfiles checkout is `~/dotfiles`, separate from Firstmate's
+  own clone. After a dotfiles merge changes live config or mods, offer to
+  fast-forward that checkout with `ff-only`, preserving uncommitted edits.
+  Proceed only on the captain's word for that specific update.
 
 ## Delivery preferences
 
-<How changes should reach you: pull requests or direct commits, branch naming,
-commit message style, what must pass before you review.>
+- PR descriptions contain no external tool links or attribution: no
+  "Generated with Claude Code" line, "Updates from git push no-mistakes" footer,
+  or local `~/.no-mistakes/...` paths. Do not leave a no-mistakes attestation
+  comment. Workers strip these after the final pipeline push.
 
 ## Credentials rule
 
