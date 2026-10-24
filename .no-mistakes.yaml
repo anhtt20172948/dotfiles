@@ -9,9 +9,6 @@ commands:
   lint: "tests/run.sh lint"
   test: "tests/run.sh test"
 
-# Repo có .github/workflows/ci.yml nhưng pipeline không chờ CI đó: khai báo rõ để gate không chờ/đòi CI.
-no_ci: true
-
 ignore_patterns:
   # Ảnh nền, theme sinh tự động: không đáng để review.
   - "**/*.png"

@@ -10,6 +10,21 @@
       "why": "Honor explicit routing requests and provide an independent perspective."
     },
     {
+      "when": "Building or changing Claude Code mods, plugins, hooks, status lines, or slash commands, for example under .config/claude-mods.",
+      "use": [
+        {
+          "harness": "claude",
+          "model": "sonnet",
+          "effort": "medium",
+          "floor": {
+            "scope": "all_models",
+            "min_percent": 15
+          }
+        }
+      ],
+      "why": "The claude CLI is needed to run claude plugin validate and claude plugin test."
+    },
+    {
       "when": "GPU and real-time video pipeline work that needs deep systems reasoning: writing or optimizing CUDA kernels, GPU memory management (unified/pinned/zero-copy, NvBufSurface), TensorRT engine building or custom plugins, DeepStream pipeline architecture, custom GStreamer elements or DeepStream plugins in C/C++, multi-stream batching, latency or throughput tuning, C++ concurrency and lifetime design, or the architecture and data model of a new full-stack tool.",
       "use": [
         {
