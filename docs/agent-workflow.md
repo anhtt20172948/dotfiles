@@ -133,7 +133,9 @@ Starting firstmate offers Claude or Codex at once, with remaining quota (or
 `quota ?`) filled into the header in the background, then asks Resume or New (Resume first when
 a session exists), the Claude account (Claude only), and for New the model and
 effort. A window jumps directly only when a live primary for this home runs in
-it; a dead pane or an unrelated window named `firstmate` does not count.
+it; a dead pane or an unrelated window named `firstmate` does not count. A
+primary running as a Claude background session is attached in the `firstmate`
+window instead of starting a second one.
 Defaults preserve CLI configuration; Esc cancels the launch. The pickers are
 described in [`.config/tmux/README.md`](../.config/tmux/README.md#agent-workflow).
 

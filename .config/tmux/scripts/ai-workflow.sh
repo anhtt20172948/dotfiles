@@ -368,6 +368,62 @@ firstmate_focus() {
   tmux switch-client -t "${1%%:*}" \; select-window -t "$1"
 }
 
+# Claude Code background sessions (claude --bg, the agent view) run under its
+# daemon, outside tmux, so a primary started or moved there has no pane to focus.
+# Print its id when the lock owner is one.
+firstmate_background_session() {
+  have claude && have jq || return 1
+  ai_run_limited 5 claude agents --json 2>/dev/null | jq -er --argjson pid "$1" '
+    first(.[]? | select(.kind == "background" and .pid == $pid) | .id | strings
+      | select(test("^[A-Za-z0-9][A-Za-z0-9._-]*$")))' 2>/dev/null
+}
+
+# Put <cmd> in the firstmate window at index 1 and switch to it. An idle shell
+# or dead firstmate pane there is reused; anything else is shifted, not killed.
+firstmate_open_window() {
+  local cmd=$1 target="=$FIRSTMATE_SESSION:1" windows index window name panes first=''
+  if tmux has-session -t "=$FIRSTMATE_SESSION" 2>/dev/null; then
+    windows=$(tmux list-windows -t "=$FIRSTMATE_SESSION" \
+      -F $'#{window_index}\t#{window_id}\t#{window_name}\t#{window_panes}') \
+      || fail 'could not inspect firstmate session'
+    while IFS=$'\t' read -r index window name panes; do
+      [[ "$index" == 1 ]] || continue
+      first=$window
+      if firstmate_idle_shell "$window" "$name" "$panes" \
+        || firstmate_dead_pane "$window" "$name" "$panes"; then
+        tmux respawn-window -k -t "$window" -c "$FIRSTMATE_DIR" "$cmd" \
+          || fail 'could not reuse firstmate shell window'
+        tmux rename-window -t "$window" "$FIRSTMATE_WINDOW" \
+          || fail 'could not name firstmate window'
+        return
+      fi
+    done <<<"$windows"
+    # Inserting before index 1 shifts occupied windows without killing processes.
+    local -a args=(new-window -d)
+    [[ -z "$first" ]] || args+=(-b)
+    tmux "${args[@]}" -t "$target" -n "$FIRSTMATE_WINDOW" -c "$FIRSTMATE_DIR" "$cmd" \
+      || fail 'could not create firstmate window'
+  else
+    tmux new-session -d -s "$FIRSTMATE_SESSION" -n "$FIRSTMATE_WINDOW" \
+      -c "$FIRSTMATE_DIR" "$cmd" || fail 'could not create firstmate session'
+  fi
+}
+
+# The lock is held but no pane runs its owner. A Claude background session is
+# attached in the firstmate window, which prefix F then focuses like any primary;
+# any other owner is reported in the popup, which a status-line message is not.
+firstmate_reach_live_primary() {
+  local pid id cmd
+  pid=$(firstmate_live_primary_pid) || return 1
+  if id=$(firstmate_background_session "$pid"); then
+    printf -v cmd 'exec claude attach %q' "$id"
+    firstmate_open_window "$cmd"
+    tmux switch-client -t "=$FIRSTMATE_SESSION:1"
+    return 0
+  fi
+  fail "Firstmate lock is held by live primary PID $pid outside tmux; refusing to start another. Exit it, then retry."
+}
+
 # Make the account picked for the primary the default for crews and new panes.
 firstmate_commit_account() {
   [[ -n "$1" ]] || return 0
@@ -380,16 +436,13 @@ action_firstmate() {
     || fail "firstmate not found at $FIRSTMATE_DIR - run install_agent_workflow"
   [[ -n "${TMUX:-}" ]] || fail 'firstmate needs tmux (its crewmates are tmux windows)'
 
-  local target cmd windows index window name panes agent account='' model='' effort='' catalog='' entries first='' mode session=''
+  local target cmd agent account='' model='' effort='' catalog='' entries mode session=''
   target=$(firstmate_target) || target=''
   if [[ -n "$target" ]]; then
     firstmate_focus "$target"
     return
   fi
-  if firstmate_live_primary; then
-    tmux display-message 'Firstmate lock is held by a live primary; refusing to start another.'
-    return 0
-  fi
+  firstmate_reach_live_primary && return
   agent=$(firstmate_choose_agent) || return $?
   [[ -n "$agent" ]] || return 0
   # fzf emits only the installed agent names offered above.
@@ -425,11 +478,12 @@ action_firstmate() {
   cmd=$(firstmate_launch_command "$agent" "$mode" "$session" "${model:-default}" "${effort:-default}")
   # Recheck after the pickers in case another launcher acquired the lock.
   target=$(firstmate_target) || target=''
-  if [[ -n "$target" ]] || firstmate_live_primary; then
-    tmux display-message 'Firstmate lock is held by a live primary; refusing to start another.'
-    [[ -z "$target" ]] || firstmate_focus "$target"
+  if [[ -n "$target" ]]; then
+    tmux display-message 'Firstmate started meanwhile; focusing it instead.'
+    firstmate_focus "$target"
     return 0
   fi
+  firstmate_reach_live_primary && return
   if [[ "$agent" == claude ]]; then
     need ai-acct
     # Bind the picked account to the pane by name: the child reads that token
@@ -439,36 +493,9 @@ action_firstmate() {
     ai-acct check "$account" >&2 || fail 'could not load Claude account'
     printf -v cmd 'exec ai-acct exec --account %q %s' "$account" "${cmd#exec }"
   fi
-  target="=$FIRSTMATE_SESSION:1"
-  if tmux has-session -t "=$FIRSTMATE_SESSION" 2>/dev/null; then
-    windows=$(tmux list-windows -t "=$FIRSTMATE_SESSION" \
-      -F $'#{window_index}\t#{window_id}\t#{window_name}\t#{window_panes}') \
-      || fail 'could not inspect firstmate session'
-    while IFS=$'\t' read -r index window name panes; do
-      [[ "$index" == 1 ]] || continue
-      first=$window
-      if firstmate_idle_shell "$window" "$name" "$panes" \
-        || firstmate_dead_pane "$window" "$name" "$panes"; then
-        tmux respawn-window -k -t "$window" -c "$FIRSTMATE_DIR" "$cmd" \
-          || fail 'could not reuse firstmate shell window'
-        tmux rename-window -t "$window" "$FIRSTMATE_WINDOW" \
-          || fail 'could not name firstmate window'
-        firstmate_commit_account "$account"
-        tmux switch-client -t "$target"
-        return
-      fi
-    done <<<"$windows"
-    # Inserting before index 1 shifts occupied windows without killing processes.
-    local -a args=(new-window -d)
-    [[ -z "$first" ]] || args+=(-b)
-    tmux "${args[@]}" -t "$target" -n "$FIRSTMATE_WINDOW" -c "$FIRSTMATE_DIR" "$cmd" \
-      || fail 'could not create firstmate window'
-  else
-    tmux new-session -d -s "$FIRSTMATE_SESSION" -n "$FIRSTMATE_WINDOW" \
-      -c "$FIRSTMATE_DIR" "$cmd" || fail 'could not create firstmate session'
-  fi
+  firstmate_open_window "$cmd"
   firstmate_commit_account "$account"
-  tmux switch-client -t "$target"
+  tmux switch-client -t "=$FIRSTMATE_SESSION:1"
 }
 
 # Machine interface for ai-acct resume: apply the launcher's guards and print

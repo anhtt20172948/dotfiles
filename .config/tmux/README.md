@@ -205,10 +205,13 @@ Notes:
   runs this home's live primary (the process holding `state/.lock`, judged by
   firstmate's own `bin/fm-session-lock-lib.sh`; under any window name) is focused.
   A name alone is not enough: a dead pane, a shell-only pane or an unrelated
-  window named `firstmate` leads to recovery. When the session already exists, an
-  idle single-pane shell or a dead `firstmate` pane at index 1 is reused;
-  occupied windows (including all `fm-*` windows) are shifted to preserve their
-  processes.
+  window named `firstmate` leads to recovery. A live primary outside tmux is
+  never doubled: a Claude background session (`claude --bg`, the agent view) is
+  opened with `claude attach ID` in the `firstmate` window, which later launches
+  focus; any other owner is reported in the popup with its PID. When the
+  session already exists, an idle single-pane shell or a dead `firstmate` pane
+  at index 1 is reused; occupied windows (including all `fm-*` windows) are
+  shifted to preserve their processes.
 - When starting a new first mate, an fzf picker offers installed `claude` and
   `codex` CLIs. The rows are usable at once; the header shows `Quota …` until
   the all-model quota from `quota-axi --json` (capped at five seconds) arrives

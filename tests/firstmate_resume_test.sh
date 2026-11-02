@@ -60,7 +60,8 @@ esac
 ''')
     # The args go first: run() returns once the "<agent>:<cwd>:" line shows up.
     for agent in ("claude", "codex"):
-        executable(agent, f'''printf 'arg:%s\\n' "$@" >> "$LOG"
+        executable(agent, f'''[[ "$*" != "agents --json" ]] || {{ printf '%s\\n' "${{AGENTS_JSON:-[]}}"; exit 0; }}
+printf 'arg:%s\\n' "$@" >> "$LOG"
 printf '{agent}:%s:%s\\n' "$PWD" "$*" >> "$LOG"
 [[ ${{1:-}} != debug ]] || {{ printf '{{"models":[]}}\\n'; exit 0; }}
 exit 0
@@ -97,6 +98,16 @@ exit 0
                 return output, result.stderr
             time.sleep(.02)
         raise AssertionError("launcher did not finish")
+
+    # A primary outside tmux is refused in the popup itself, before any picker.
+    def refused():
+        result = subprocess.run(["bash", workflow, "firstmate"], env=env, text=True,
+                                capture_output=True, timeout=10, stdin=subprocess.DEVNULL)
+        assert result.returncode == 1, result.stderr
+        assert "lock is held" in result.stderr and "PID" in result.stderr, result.stderr
+        output = log.read_text()
+        assert "picker:" not in output and "focus:" not in output, output
+        return output
 
     def wait_dead(session="firstmate", count=1):
         for _ in range(200):
@@ -191,9 +202,8 @@ exit 0
             with subprocess.Popen([str(holder_path), "30"]) as holder:
                 reset()
                 lock.write_text(f"{holder.pid}\nunchanged\n")
-                output, _ = run()
-                assert "message:" in output and "lock" in output.lower(), output
-                assert "picker:" not in output and f"codex:{firstmate}:" not in output, output
+                output = refused()
+                assert f"codex:{firstmate}:" not in output, output
                 assert lock.read_text() == f"{holder.pid}\nunchanged\n"
                 holder.terminate()
             lock.unlink()
@@ -211,6 +221,33 @@ exit 0
             output, _ = run()
             assert f"codex:{firstmate}:{resume_args('codex')}" in output, output
             other.terminate()
+        lock.unlink()
+
+        # A Claude background session holding the lock runs outside tmux: it
+        # is attached in the firstmate window, which the next launch focuses.
+        env["AI_FIRSTMATE_AGENT"] = "claude"
+        with subprocess.Popen([str(lab / "claude"), "30"]) as holder:
+            env["AGENTS_JSON"] = json.dumps([
+                {"id": "other", "kind": "interactive", "pid": holder.pid},
+                {"id": "f07b94a9", "kind": "background", "pid": holder.pid}])
+            reset()
+            lock.write_text(f"{holder.pid}\n")
+            output, _ = run()
+            assert f"claude:{firstmate}:attach f07b94a9\n" in output, output
+            assert "picker:" not in output and "focus:switch-client -t =firstmate:1" in output, output
+            assert window_names() == ["firstmate"], window_names()
+            # Later launches attach again, reusing the window once attach exits.
+            wait_dead()
+            log.write_text("")
+            output, _ = run()
+            assert f"claude:{firstmate}:attach f07b94a9\n" in output, output
+            assert window_names() == ["firstmate"], window_names()
+            # A background session of another pid is not this home's primary.
+            env["AGENTS_JSON"] = json.dumps([{"id": "f07b94a9", "kind": "background", "pid": 1}])
+            reset()
+            assert "attach" not in refused()
+            holder.terminate()
+        del env["AGENTS_JSON"]
         lock.unlink()
 
         # --- window identity -------------------------------------------------
@@ -289,9 +326,7 @@ exit 0
             with subprocess.Popen([str(versioned), "30"]) as holder:
                 reset()
                 lock.write_text(f"{holder.pid}\nunchanged\n")
-                output, _ = run()
-                assert "message:" in output and "lock" in output.lower(), (label, output)
-                assert "picker:" not in output, (label, output)
+                refused()
                 assert lock.read_text() == f"{holder.pid}\nunchanged\n"
                 holder.terminate()
             lock.unlink()
@@ -308,8 +343,7 @@ fm_session_lock_inspect() {
         with subprocess.Popen(["sleep", "30"]) as other:
             reset()
             lock.write_text(f"{other.pid}\n")
-            output, _ = run()
-            assert "message:" in output and "picker:" not in output, output
+            refused()
             other.terminate()
         lock.unlink()
         shutil.rmtree(firstmate / "bin")
