@@ -88,7 +88,7 @@ const STATUS_HELP = [
   'STALE    no activity for 15 min',
   'DONE · BLOCKED · PAUSED  from the task\'s own status line',
   'UNKNOWN  no activity and no status recorded yet',
-  'A card is bordered in its harness\'s colour: full while it runs, with a heavy ━ run moving around it, or is blocked; dim once it is quiet, paused, stale or done. The glyph and word say which.',
+  'A card is bordered in its harness\'s colour: full while it runs, with a bold run of half blocks moving around it, or is blocked; dim once it is quiet, paused, stale or done. The glyph and word say which.',
   'The run stands still when nothing runs, the pane is closed or behind another tab, or Reduce motion is on (/config, prefersReducedMotion).',
   'Harness names: ✻ claude in amber, ◆ codex in blue, ▪ any other harness in plain text; a model or account takes its harness\'s colour.',
 ]
@@ -166,7 +166,7 @@ const kitFor = (ui: Ui, c: Paint, width: number): Kit => {
 }
 
 /**
- * An agent's bordered box and, while it runs and the border timer ticks, the heavy run moving over its
+ * An agent's bordered box and, while it runs and the border timer ticks, the run of half blocks moving over its
  * top and bottom edges (runnerParts). The run is drawn from a wrapper, since nothing inside the bordered
  * box can reach its border; any other box is returned as it is.
  */
@@ -177,8 +177,8 @@ const withRunner = ({ ui, c }: Kit, key: string, width: number, border: CardBord
   return (
     <Box key={`runner-${key}`} flexDirection="column" width={width}>
       {box}
-      <Box key={`runner-top-${key}`} position="absolute" top={0} left={1 + part.top.left}><Text color={c(border.color)} weight="bold">{part.top.text}</Text></Box>
-      <Box key={`runner-bottom-${key}`} position="absolute" bottom={0} left={1 + part.bottom.left}><Text color={c(border.color)} weight="bold">{part.bottom.text}</Text></Box>
+      <Box key={`runner-top-${key}`} position="absolute" top={0} left={1 + part.top.left}><Text color={c(border.color)}>{part.top.text}</Text></Box>
+      <Box key={`runner-bottom-${key}`} position="absolute" bottom={0} left={1 + part.bottom.left}><Text color={c(border.color)}>{part.bottom.text}</Text></Box>
     </Box>
   )
 }
