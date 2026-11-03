@@ -1259,7 +1259,7 @@ const runAt = async (ui: Mounted, key: string) => {
 
 const DONE_SCOUT = member({ id: 'crew-demo-scout', model: 'haiku', effort: 'low', kind: 'scout', status: 'done [at=1]: Scout report written', lastAt: NOW - 360_000 })
 
-test('a running card carries a heavy run around its border that moves once a second while the pane is in front, and stops with the pane', { timeoutMs: 30_000 }, async ($, on) => {
+test('a running card carries a heavy run around its border that moves four steps a second while the pane is in front, and stops with the pane', { timeoutMs: 30_000 }, async ($, on) => {
   const pane = stub(on, { report: { ...REFERENCE, crew: [REFERENCE.crew[0] as CrewMember, DONE_SCOUT] } }, { clock: false })
   const clock = mock.clock(on, { now: NOW + 4_000 })
   await start($)
@@ -1278,20 +1278,25 @@ test('a running card carries a heavy run around its border that moves once a sec
     bottom: { left: 49, text: '━'.repeat(8), color: 'claude' },
     box: expect.objectContaining({ borderColor: 'claude', borderDimColor: false, borderStyle: 'round', width: 58 }),
   })
-  // Each second it moves half its length: right along the top, left along the bottom.
+  // Every 250 ms it moves half its length: right along the top, left along the bottom.
   const tops: number[] = []
   const bottoms: number[] = []
   for (let i = 0; i < 4; i++) {
-    await clock.advance(1_000)
+    await clock.advance(250)
     const at = await runAt(ui, running)
     tops.push(at?.top.left ?? -1)
     bottoms.push(at?.bottom.left ?? -1)
   }
   expect(tops).toEqual([5, 9, 13, 17])
   expect(bottoms).toEqual([45, 41, 37, 33])
-  // Half a second moves nothing: the rate is calm, one step a second.
-  await clock.advance(500)
+  // Less than a tick moves nothing: one step per 250 ms.
+  await clock.advance(200)
   expect((await runAt(ui, running))?.top.left).toBe(17)
+  await clock.advance(50)
+  expect((await runAt(ui, running))?.top.left).toBe(21)
+  // A full second is four steps.
+  await clock.advance(1_000)
+  expect((await runAt(ui, running))?.top.left).toBe(37)
   // A done card keeps a still border in its harness colour, dimmed.
   expect(await runAt(ui, '/fm:crew-demo-scout')).toBeUndefined()
   expect((await ui.find({ key: 'panel-/fm:crew-demo-scout' }) as Drawn).props).toMatchObject({ borderColor: 'claude', borderDimColor: true })
@@ -1318,7 +1323,7 @@ test('the border timer stops once nothing runs and starts again with a running c
   await toggle($)
   const ui = await $.ui.mount(sized(120, 40))
   const running = '/fm:crew-watch-transparent'
-  await clock.advance(1_000)
+  await clock.advance(250)
   expect((await runAt(ui, running))?.top.left).toBe(5)
   // The crewmate finishes: the next read stops the timer and every border stands still.
   world.report = { ...REFERENCE, crew: [{ ...(REFERENCE.crew[0] as CrewMember), status: 'done [at=1]: shipped' }, DONE_SCOUT] }
@@ -1331,7 +1336,7 @@ test('the border timer stops once nothing runs and starts again with a running c
   world.report = { ...REFERENCE, crew: [REFERENCE.crew[0] as CrewMember, DONE_SCOUT] }
   await refresh($)
   expect((await runAt(ui, running))?.top.left).toBe(1)
-  await clock.advance(1_000)
+  await clock.advance(250)
   expect((await runAt(ui, running))?.top.left).toBe(5)
   await ui.unmount()
 })
@@ -1349,10 +1354,10 @@ test('opening the pane while a read is under way starts one border timer, not tw
   const ui = await $.ui.mount(sized(120, 40))
   const lefts: number[] = []
   for (let i = 0; i < 3; i++) {
-    await clock.advance(1_000)
+    await clock.advance(250)
     lefts.push((await runAt(ui, '/fm:crew-watch-transparent'))?.top.left ?? -1)
   }
-  // One step a second; a second timer would move it two.
+  // One step per tick; a second timer would move it two.
   expect(lefts).toEqual([5, 9, 13])
   await ui.unmount()
 })
@@ -1384,7 +1389,7 @@ test('a failed read decides again whether the border timer runs', { timeoutMs: 2
   await toggle($)
   const ui = await $.ui.mount(sized(120, 40))
   const running = '/fm:crew-watch-transparent'
-  await clock.advance(1_000)
+  await clock.advance(250)
   expect((await runAt(ui, running))?.top.left).toBe(5)
   // Reduce motion is turned on and the next read fails: that read still stops the timer.
   world.isReduced = true

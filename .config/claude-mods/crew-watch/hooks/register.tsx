@@ -17,8 +17,8 @@ const PANE = 'crew-watch'
 const TITLE = 'Crew'
 const POLL_TIMEOUT_MS = 20_000
 const ACCOUNT_CACHE_MS = 60_000
-/** How often a running card's border highlight moves: once a second, calm enough never to read as flicker. */
-const PULSE_MS = 1000
+/** How often a running card's border highlight moves: four steps a second, brisk enough to read as live work. */
+const PULSE_MS = 250
 
 const reportAtom = atom({ plugin: 'crew-watch', key: 'report' } as const, null)
 const errorAtom = atom({ plugin: 'crew-watch', key: 'error' } as const, '')
