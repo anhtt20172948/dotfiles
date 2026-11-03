@@ -310,15 +310,18 @@ export const cardBorder = (m: Pick<CrewMember, 'lastAt' | 'status' | 'harness'>,
   return { color: harnessStyle(m.harness).role, ...state }
 }
 
-/** The glyph of a running border's highlight: the heavy line, so it reads without colour too. */
-export const RUNNER_GLYPH = '━'
+/**
+ * The glyphs of a running border's highlight, on the top and the bottom edge: half blocks hugging the
+ * box's outer side, so the run is visibly thicker than the thin line around it and reads without colour.
+ */
+export const RUNNER_GLYPHS = { top: '▀', bottom: '▄' } as const
 
 /** Where a running border's highlight sits at one frame: its first cell after the corner and its run of glyphs. */
 export type RunnerPart = { left: number; text: string }
 
 /**
- * The highlight a running card's border carries at `frame`, for a box `width` cells wide: a run of heavy
- * `━` that moves half its length each frame, left to right along the top edge and right to left along
+ * The highlight a running card's border carries at `frame`, for a box `width` cells wide: a run of
+ * half blocks that moves one cell each frame, left to right along the top edge and right to left along
  * the bottom one, so the border reads as turning. A run reaching the corner is cut there and the next
  * frame starts over from the far side. Offsets count from the first cell after the left corner. Null
  * when the box is too narrow for one.
@@ -327,11 +330,12 @@ export const runnerParts = (width: number, frame: number): { top: RunnerPart; bo
   const span = Math.floor(width) - 2
   if (span < 3 || !Number.isFinite(frame)) return null
   const size = Math.max(3, Math.min(8, Math.round(span / 6)))
-  const step = Math.ceil(size / 2)
-  const stops = Math.ceil(span / step)
-  const at = ((Math.floor(frame) % stops) + stops) % stops * step
-  const run = RUNNER_GLYPH.repeat(Math.min(size, span - at))
-  return { top: { left: at, text: run }, bottom: { left: span - at - run.length, text: run } }
+  const at = ((Math.floor(frame) % span) + span) % span
+  const length = Math.min(size, span - at)
+  return {
+    top: { left: at, text: RUNNER_GLYPHS.top.repeat(length) },
+    bottom: { left: span - at - length, text: RUNNER_GLYPHS.bottom.repeat(length) },
+  }
 }
 
 /** A harness, provider or model name after its family's icon and in its family's colour; `family` names it when `name` does not. */
