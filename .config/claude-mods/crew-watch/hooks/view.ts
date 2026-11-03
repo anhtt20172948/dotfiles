@@ -311,31 +311,94 @@ export const cardBorder = (m: Pick<CrewMember, 'lastAt' | 'status' | 'harness'>,
 }
 
 /**
- * The glyphs of a running border's highlight, on the top and the bottom edge: half blocks hugging the
- * box's outer side, so the run is visibly thicker than the thin line around it and reads without colour.
+ * The glyphs of a running border's highlight: heavy box-drawing lines that sit on the same centerline as the
+ * rounded box's thin border and join with it, yet read thicker than it, and heavy corners where a run turns.
  */
-export const RUNNER_GLYPHS = { top: '▀', bottom: '▄' } as const
-
-/** Where a running border's highlight sits at one frame: its first cell after the corner and its run of glyphs. */
-export type RunnerPart = { left: number; text: string }
+export const RUNNER_GLYPHS = { horizontal: '━', vertical: '┃', topLeft: '┏', topRight: '┓', bottomRight: '┛', bottomLeft: '┗' } as const
 
 /**
- * The highlight a running card's border carries at `frame`, for a box `width` cells wide: a run of
- * half blocks that moves one cell each frame, left to right along the top edge and right to left along
- * the bottom one, so the border reads as turning. A run reaching the corner is cut there and the next
- * frame starts over from the far side. Offsets count from the first cell after the left corner. Null
- * when the box is too narrow for one.
+ * One straight piece of a highlight, or a corner: its first cell counted from the box's top-left corner (0, 0),
+ * its glyphs (a column of them when `isVertical`) and, when the box's height is unknown, `isAtBottom`: it
+ * sits on the box's last row, whatever that is, and `y` is 0.
  */
-export const runnerParts = (width: number, frame: number): { top: RunnerPart; bottom: RunnerPart } | null => {
-  const span = Math.floor(width) - 2
-  if (span < 3 || !Number.isFinite(frame)) return null
-  const size = Math.max(3, Math.min(8, Math.round(span / 6)))
-  const at = ((Math.floor(frame) % span) + span) % span
-  const length = Math.min(size, span - at)
-  return {
-    top: { left: at, text: RUNNER_GLYPHS.top.repeat(length) },
-    bottom: { left: span - at - length, text: RUNNER_GLYPHS.bottom.repeat(length) },
+export type RunnerPart = { x: number; y: number; text: string; isVertical: boolean; isAtBottom: boolean }
+
+type RunnerCell = Omit<RunnerPart, 'text'> & { glyph: string }
+
+/**
+ * The cells of the loop a highlight travels, clockwise from the top-left corner: the whole border of a box
+ * `width` by `height`, corners included; or, when the height is not known, only the cells between the
+ * corners of its top edge (left to right) and then of its bottom edge (right to left).
+ */
+const runnerLoop = (width: number, height: number | null): RunnerCell[] => {
+  const right = width - 1
+  const loop: RunnerCell[] = []
+  const add = (x: number, y: number, glyph: string, isAtBottom = false) => {
+    loop.push({ x, y, glyph, isVertical: glyph === RUNNER_GLYPHS.vertical, isAtBottom })
   }
+  if (height === null) {
+    for (let x = 1; x < right; x++) add(x, 0, RUNNER_GLYPHS.horizontal)
+    for (let x = right - 1; x >= 1; x--) add(x, 0, RUNNER_GLYPHS.horizontal, true)
+    return loop
+  }
+  const bottom = height - 1
+  add(0, 0, RUNNER_GLYPHS.topLeft)
+  for (let x = 1; x < right; x++) add(x, 0, RUNNER_GLYPHS.horizontal)
+  add(right, 0, RUNNER_GLYPHS.topRight)
+  for (let y = 1; y < bottom; y++) add(right, y, RUNNER_GLYPHS.vertical)
+  add(right, bottom, RUNNER_GLYPHS.bottomRight)
+  for (let x = right - 1; x >= 1; x--) add(x, bottom, RUNNER_GLYPHS.horizontal)
+  add(0, bottom, RUNNER_GLYPHS.bottomLeft)
+  for (let y = bottom - 1; y >= 1; y--) add(0, y, RUNNER_GLYPHS.vertical)
+  return loop
+}
+
+/** The shortest and longest a run is, in cells. */
+const RUNNER_MIN = 3
+const RUNNER_MAX = 8
+
+/** Whether `next` is the cell right after `prev` along one straight edge. */
+const isNextOnEdge = (prev: RunnerCell, next: RunnerCell): boolean =>
+  prev.glyph === next.glyph && prev.isAtBottom === next.isAtBottom && (next.glyph === RUNNER_GLYPHS.horizontal || next.glyph === RUNNER_GLYPHS.vertical)
+  && Math.abs(next.x - prev.x) + Math.abs(next.y - prev.y) === 1
+
+/**
+ * The highlight a running card's border carries at `frame`, for a box `width` cells wide and `height` rows
+ * tall: two runs of heavy lines half a lap apart, each moving one cell a frame clockwise around the whole
+ * border (top left to right, right side downwards, bottom right to left, left side upwards) and turning
+ * corners without a break. With no known `height` the runs keep to the top and bottom edges, between the
+ * corners. Null when the box is too small for one (under 5 wide or 3 tall) or the frame is not a number.
+ */
+export const runnerParts = (width: number, height: number | null, frame: number): RunnerPart[] | null => {
+  const w = Math.floor(width)
+  const h = height === null ? null : Math.floor(height)
+  if (!(w >= 5) || (h !== null && !(h >= 3)) || !Number.isFinite(frame)) return null
+  const loop = runnerLoop(w, h)
+  const lap = loop.length
+  const length = Math.max(RUNNER_MIN, Math.min(RUNNER_MAX, Math.round(lap / 16)))
+  const head = ((Math.floor(frame) % lap) + lap) % lap
+  const lit = new Set<number>()
+  for (const start of [head, head + Math.floor(lap / 2)]) {
+    for (let i = 0; i < length; i++) lit.add((((start - i) % lap) + lap) % lap)
+  }
+  const parts: RunnerPart[] = []
+  let prev: RunnerCell | undefined
+  let prevIndex = -2
+  for (const index of [...lit].sort((a, b) => a - b)) {
+    const cell = loop[index] as RunnerCell
+    const open = parts[parts.length - 1]
+    if (open && prev && prevIndex === index - 1 && isNextOnEdge(prev, cell)) {
+      // Cells join in loop order, so the part starts at its smallest x or y.
+      open.text += cell.glyph
+      open.x = Math.min(open.x, cell.x)
+      open.y = Math.min(open.y, cell.y)
+    } else {
+      parts.push({ x: cell.x, y: cell.y, text: cell.glyph, isVertical: cell.isVertical, isAtBottom: cell.isAtBottom })
+    }
+    prev = cell
+    prevIndex = index
+  }
+  return parts
 }
 
 /** A harness, provider or model name after its family's icon and in its family's colour; `family` names it when `name` does not. */
