@@ -88,7 +88,7 @@ const STATUS_HELP = [
   'STALE    no activity for 15 min',
   'DONE · BLOCKED · PAUSED  from the task\'s own status line',
   'UNKNOWN  no activity and no status recorded yet',
-  'A card is bordered in its harness\'s colour: full while it runs, with a bold run of half blocks moving around it, or is blocked; dim once it is quiet, paused, stale or done. The glyph and word say which.',
+  'A card is bordered in its harness\'s colour: full while it runs, with two bold heavy-line runs moving around it, or is blocked; dim once it is quiet, paused, stale or done. The glyph and word say which.',
   'The run stands still when nothing runs, the pane is closed or behind another tab, or Reduce motion is on (/config, prefersReducedMotion).',
   'Harness names: ✻ claude in amber, ◆ codex in blue, ▪ any other harness in plain text; a model or account takes its harness\'s colour.',
 ]
@@ -166,19 +166,33 @@ const kitFor = (ui: Ui, c: Paint, width: number): Kit => {
 }
 
 /**
- * An agent's bordered box and, while it runs and the border timer ticks, the run of half blocks moving over its
- * top and bottom edges (runnerParts). The run is drawn from a wrapper, since nothing inside the bordered
+ * The rows of an agent card's box, which every row of is one line: the border, the title, the task, the
+ * context figure and its bar (only with a known window), the stats and the status message, and in details
+ * mode the effort and the last tool. withRunner needs it to send the run down the box's sides.
+ */
+const cardRows = (m: CrewMember, details: boolean): number =>
+  2 + 5 + (contextFigure(m).percent !== null ? 1 : 0) + (details ? 1 + (m.lastTool && m.status ? 1 : 0) : 0)
+
+/**
+ * An agent's bordered box and, while it runs and the border timer ticks, the runs of heavy lines moving
+ * around its whole border (runnerParts). `height` is the box's rows, or null when they are not known and the
+ * runs keep to its top and bottom edges. The runs are drawn from a wrapper, since nothing inside the bordered
  * box can reach its border; any other box is returned as it is.
  */
-const withRunner = ({ ui, c }: Kit, key: string, width: number, border: CardBorder, frame: number | null, box: Node): Node => {
+const withRunner = ({ ui, c }: Kit, key: string, width: number, height: number | null, border: CardBorder, frame: number | null, box: Node): Node => {
   const { Box, Text } = ui
-  const part = frame !== null && border.isRunning ? runnerParts(width, frame) : null
-  if (!part) return box
+  const parts = frame !== null && border.isRunning ? runnerParts(width, height, frame) : null
+  if (!parts) return box
   return (
     <Box key={`runner-${key}`} flexDirection="column" width={width}>
       {box}
-      <Box key={`runner-top-${key}`} position="absolute" top={0} left={1 + part.top.left}><Text color={c(border.color)}>{part.top.text}</Text></Box>
-      <Box key={`runner-bottom-${key}`} position="absolute" bottom={0} left={1 + part.bottom.left}><Text color={c(border.color)}>{part.bottom.text}</Text></Box>
+      {parts.map((part, i) => (
+        <Box key={`runner-${i}-${key}`} position="absolute" {...(part.isAtBottom ? { bottom: 0 } : { top: part.y })} left={part.x} flexDirection="column">
+          {part.isVertical
+            ? [...part.text].map((glyph, row) => <Text key={String(row)} color={c(border.color)}>{glyph}</Text>)
+            : <Text color={c(border.color)}>{part.text}</Text>}
+        </Box>
+      ))}
     </Box>
   )
 }
@@ -481,7 +495,7 @@ const drawAgents = (kit: Kit, view: ViewState, layout: Layout, at: number, act: 
     // The figure carries the reason when there is no window, so it keeps the row and the label gives way.
     const label = 'Context usage'
     const figure = clip(context.text, inner)
-    return withRunner(kit, memberKey(m), width, border, view.pulse, (
+    return withRunner(kit, memberKey(m), width, cardRows(m, details), border, view.pulse, (
       <Box key={`panel-${memberKey(m)}`} flexDirection="column" {...style.frame} borderColor={c(border.color)} borderDimColor={border.dim} width={width} paddingX={1}>
         {title(m, i, inner)}
         {line(task(m), `task-${memberKey(m)}`, inner)}
@@ -567,7 +581,7 @@ const drawDetails = (kit: Kit, view: ViewState, m: CrewMember, at: number, home:
     )
   }
   const harness = harnessName(m.harness)
-  return withRunner(kit, `details-${memberKey(m)}`, W, border, view.pulse, (
+  return withRunner(kit, `details-${memberKey(m)}`, W, null, border, view.pulse, (
     <Box key={`details-${memberKey(m)}`} flexDirection="column" {...style.frame} borderColor={c(border.color)} borderDimColor={border.dim} width={W} paddingX={1}>
       {block([{ text: `${m.id} · details`, tone: 'text', bold: true }], 'd-title')}
       {section('STATUS', [

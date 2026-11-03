@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { CrewEvent, CrewReport, QuotaReading } from '../types'
 import { cacheHit, cells, clip, pad, roundTokens, shortPaths, tildeHome, tokens, totalTokens } from '../hooks/format'
+import type { RunnerPart } from '../hooks/view'
 import {
   KPI_DEFINITIONS, NONE, RUNNER_GLYPHS, STALE_READING_MS, TOKEN_SWATCH, accountsOf, barParts, cardBorder, cardStats, contextExact, contextFigure, contextLine,
   crewCounts, dispatchName, effectiveFilter, filterLabel, filterLogs, fitSegments, harnessName, headingParts, isActive, kpiText, layoutFor, logEntries, logKey,
@@ -458,35 +459,72 @@ test('a log row counts the tokens a call took like its recent-call line, and a d
   expect([tool && logTokens(tool), status && logTokens(status)]).toEqual([{ input: '~30', output: '9' }, { input: NONE, output: NONE }])
 })
 
-test('a running border\'s run moves one cell each frame, right along the top and left along the bottom, never past a corner', () => {
-  // A 53-cell card has 51 cells between its corners: a run of 8 moving 1 cell a frame, 51 stops a lap.
-  const top = '▀'.repeat(8)
-  const bottom = '▄'.repeat(8)
-  const frames = Array.from({ length: 53 }, (_, i) => runnerParts(53, i))
-  expect(frames.slice(0, 3).map(f => f?.top)).toEqual([{ left: 0, text: top }, { left: 1, text: top }, { left: 2, text: top }])
-  expect(frames.slice(0, 3).map(f => f?.bottom)).toEqual([{ left: 43, text: bottom }, { left: 42, text: bottom }, { left: 41, text: bottom }])
-  // The run is cut at the corner and shrinks into it, and the lap starts over.
-  expect(frames[43]?.top).toEqual({ left: 43, text: top })
-  expect(frames[48]?.top).toEqual({ left: 48, text: '▀▀▀' })
-  expect(frames[48]?.bottom).toEqual({ left: 0, text: '▄▄▄' })
-  expect(frames[50]?.top).toEqual({ left: 50, text: '▀' })
-  expect(frames[51]).toEqual(frames[0])
-  // Two frames in a row never draw the same place, so the border visibly glides.
-  for (let i = 1; i < 51; i++) expect((frames[i]?.top.left ?? 0) - (frames[i - 1]?.top.left ?? 0)).toBe(1)
-  // Nothing ever reaches a corner, at any width or frame.
-  for (const width of [5, 12, 40, 53, 57, 120]) {
-    for (let frame = 0; frame < 130; frame++) {
-      const part = runnerParts(width, frame)
-      for (const [edge, glyph] of [[part?.top, RUNNER_GLYPHS.top], [part?.bottom, RUNNER_GLYPHS.bottom]] as const) {
-        expect(edge !== undefined && edge.left >= 0 && edge.left + cells(edge.text) <= width - 2 && edge.text.length >= 1).toBe(true)
-        expect([...new Set(edge?.text ?? '')]).toEqual([glyph])
+/** Every cell the parts light, as `x,y` (a part on the bottom row is at `height - 1`) with its glyph. */
+const litCells = (parts: readonly RunnerPart[], height: number): Map<string, string> => {
+  const lit = new Map<string, string>()
+  for (const part of parts) {
+    ;[...part.text].forEach((glyph, i) => {
+      const x = part.x + (part.isVertical ? 0 : i)
+      const y = (part.isAtBottom ? height - 1 : part.y) + (part.isVertical ? i : 0)
+      lit.set(`${x},${y}`, glyph)
+    })
+  }
+  return lit
+}
+
+test('a running border\'s two runs travel the whole border clockwise, a cell each frame, turning corners with heavy corners', () => {
+  const { horizontal: h, vertical: v, topLeft, topRight, bottomRight, bottomLeft } = RUNNER_GLYPHS
+  expect([h, v, topLeft, topRight, bottomRight, bottomLeft]).toEqual(['━', '┃', '┏', '┓', '┛', '┗'])
+  // A 20 by 6 box has 2 * 19 + 2 * 5 = 48 border cells a lap; a run is 3 of them, the second half a lap behind the first.
+  const part = (x: number, y: number, text: string, isVertical = false) => ({ x, y, text, isVertical, isAtBottom: false })
+  // Along the top edge left to right, and along the bottom one right to left.
+  expect(runnerParts(20, 6, 5)).toEqual([part(3, 0, h.repeat(3)), part(14, 5, h.repeat(3))])
+  // Turning the top-right corner and the bottom-left one, with no gap.
+  expect(runnerParts(20, 6, 20)).toEqual([part(18, 0, h), part(19, 0, topRight), part(19, 1, v, true), part(1, 5, h), part(0, 5, bottomLeft), part(0, 4, v, true)])
+  // Down the right side and up the left one.
+  expect(runnerParts(20, 6, 22)).toEqual([part(19, 1, v.repeat(3), true), part(0, 2, v.repeat(3), true)])
+  // The lap starts over at the top-left corner, with the other run entering the bottom-right one.
+  expect(runnerParts(20, 6, 0)).toEqual([part(0, 0, topLeft), part(19, 3, v.repeat(2), true), part(19, 5, bottomRight), part(0, 1, v.repeat(2), true)])
+  expect(runnerParts(20, 6, 48)).toEqual(runnerParts(20, 6, 0))
+  expect(runnerParts(20, 6, -1)).toEqual(runnerParts(20, 6, 47))
+  // Every frame moves each run by one cell: two cells light up, two go out, and all stay on the border.
+  for (const [width, height] of [[20, 6], [58, 9], [116, 40], [5, 3]] as const) {
+    const lap = 2 * (width - 1) + 2 * (height - 1)
+    let before = litCells(runnerParts(width, height, 0) ?? [], height)
+    for (let frame = 1; frame <= lap; frame++) {
+      const now = litCells(runnerParts(width, height, frame) ?? [], height)
+      const added = [...now.keys()].filter(k => !before.has(k))
+      const gone = [...before.keys()].filter(k => !now.has(k))
+      expect([width, height, frame, added.length, gone.length]).toEqual([width, height, frame, 2, 2])
+      for (const key of now.keys()) {
+        const [x = -1, y = -1] = key.split(',').map(Number)
+        expect(x === 0 || x === width - 1 || y === 0 || y === height - 1).toBe(true)
+        expect(x >= 0 && x < width && y >= 0 && y < height).toBe(true)
       }
+      before = now
     }
   }
-  // A box too narrow for a run, or a frame that is not a number, draws none.
-  expect(runnerParts(4, 0)).toBeNull()
-  expect(runnerParts(53, Number.NaN)).toBeNull()
-  expect(runnerParts(53, -1)).toEqual(runnerParts(53, 50))
+})
+
+test('a border of unknown height keeps its runs to the top and bottom edges, between the corners', () => {
+  const lit = (frame: number) => runnerParts(20, null, frame) ?? []
+  expect(lit(0).every(p => !p.isVertical && p.text === '━'.repeat(p.text.length))).toBe(true)
+  for (let frame = 0; frame < 40; frame++) {
+    for (const p of lit(frame)) expect(p.x >= 1 && p.x + p.text.length <= 19 && p.y === 0).toBe(true)
+  }
+  // A top run moves right and a bottom one moves left, a cell each frame.
+  expect(lit(5)).toEqual([{ x: 4, y: 0, text: '━━━', isVertical: false, isAtBottom: false }, { x: 13, y: 0, text: '━━━', isVertical: false, isAtBottom: true }])
+  expect(lit(6)[0]?.x).toBe(5)
+  expect(lit(6)[1]?.x).toBe(12)
+})
+
+test('a box too small for a run, or a frame that is not a number, draws none', () => {
+  expect(runnerParts(4, 9, 0)).toBeNull()
+  expect(runnerParts(4, null, 0)).toBeNull()
+  expect(runnerParts(20, 2, 0)).toBeNull()
+  expect(runnerParts(20, 6, Number.NaN)).toBeNull()
+  expect(runnerParts(Number.NaN, 6, 0)).toBeNull()
+  expect(runnerParts(5, 3, 0)).not.toBeNull()
 })
 
 test('every harness, provider and model name takes its family\'s icon and colour', () => {

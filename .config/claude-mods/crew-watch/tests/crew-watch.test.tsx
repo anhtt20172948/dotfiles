@@ -7,7 +7,8 @@ import type { CrewHistory, CrewMember, CrewReport, ModelUsage, QuotaFigure, Quot
 import { PALETTES, THEME_NAMES, themePainter } from '../hooks/theme'
 import { accountFromLimits } from '../hooks/account'
 import { callTokensText, cells, clockText, estimateText, quotaRows, toolTokenNote, toolTokenText } from '../hooks/format'
-import { barParts, logEntries, logKey } from '../hooks/view'
+import { barParts, logEntries, logKey, runnerParts } from '../hooks/view'
+import type { RunnerPart } from '../hooks/view'
 
 const NOW = 1_800_000_000_000
 
@@ -1246,20 +1247,36 @@ test('Recent Events reads time, tag, crewmate, in and out under a header, then t
 
 const toggle = ($: Engine) => $.command.run({ command: 'crew', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } })
 
-/** Where a box's run sits now: the top and bottom runs' first cell (after the corner) and their text; undefined with none. */
+/**
+ * The runs a box carries now, as runnerParts draws them (x, y, glyphs), and the box's own props and rows
+ * (its children plus the two border rows); undefined with none. A bottom-edge part reads as `isAtBottom`.
+ */
 const runAt = async (ui: Mounted, key: string) => {
   const wrapper = await ui.find({ key: `runner-${key}` }) as Drawn | undefined
   if (!wrapper) return undefined
-  const edge = async (name: string) => {
-    const box = await ui.find({ key: name }) as Drawn
-    return { left: Number(box.props?.left), text: textOf(box), color: ((box.children?.[0] as Drawn).props?.color) }
+  const parts: RunnerPart[] = []
+  for (let i = 0; ; i++) {
+    const box = await ui.find({ key: `runner-${i}-${key}` }) as Drawn | undefined
+    if (!box) break
+    const text = [...textOf(box)].join('')
+    parts.push({
+      x: Number(box.props?.left), y: Number(box.props?.top ?? 0), text, isVertical: text.includes('┃'), isAtBottom: box.props?.bottom === 0,
+    })
   }
-  return { top: await edge(`runner-top-${key}`), bottom: await edge(`runner-bottom-${key}`), box: (wrapper.children?.[0] as Drawn).props }
+  const box = wrapper.children?.[0] as Drawn
+  return { parts, box: box.props, rows: (box.children ?? []).filter(Boolean).length + 2 }
 }
 
 const DONE_SCOUT = member({ id: 'crew-demo-scout', model: 'haiku', effort: 'low', kind: 'scout', status: 'done [at=1]: Scout report written', lastAt: NOW - 360_000 })
 
-test('a running card carries a run of half blocks around its border that moves a cell every 60 ms while the pane is in front, and stops with the pane', { timeoutMs: 30_000 }, async ($, on) => {
+/** The runs a card must carry `frame` frames after the pane opens: runnerParts for its width and its drawn rows. */
+const expectRun = async (ui: Mounted, key: string, width: number, frame: number, height: number | null) => {
+  const at = await runAt(ui, key)
+  expect(at?.parts).toEqual(runnerParts(width, height, frame))
+  return at
+}
+
+test('a running card carries two runs of heavy lines around its whole border that move a cell every 60 ms while the pane is in front, and stop with the pane', { timeoutMs: 30_000 }, async ($, on) => {
   const pane = stub(on, { report: { ...REFERENCE, crew: [REFERENCE.crew[0] as CrewMember, DONE_SCOUT] } }, { clock: false })
   const clock = mock.clock(on, { now: NOW + 4_000 })
   await start($)
@@ -1269,41 +1286,38 @@ test('a running card carries a run of half blocks around its border that moves a
   expect(await runAt(ui, running)).toBeUndefined()
   await clock.advance(3_000)
   expect(await runAt(ui, running)).toBeUndefined()
-  // Opened, the run starts at the left of the top edge and the right of the bottom one, in the harness colour.
+  // Opened, the runs start at the top-left corner, in the harness colour; the card is 58 cells wide.
   expect((await toggle($)).text).toBe('Crew pane opened.')
   expect(pane.isShown).toBe(true)
-  const first = await runAt(ui, running)
-  expect(first).toEqual({
-    top: { left: 1, text: '▀'.repeat(8), color: 'claude' },
-    bottom: { left: 49, text: '▄'.repeat(8), color: 'claude' },
-    box: expect.objectContaining({ borderColor: 'claude', borderDimColor: false, borderStyle: 'round', width: 58 }),
-  })
-  // Every 60 ms it moves one cell: right along the top, left along the bottom.
-  const tops: number[] = []
-  const bottoms: number[] = []
-  for (let i = 0; i < 4; i++) {
+  const first = await expectRun(ui, running, 58, 0, 8)
+  expect(first?.rows).toBe(8)
+  expect(first?.box).toMatchObject({ borderColor: 'claude', borderDimColor: false, borderStyle: 'round', width: 58 })
+  expect((await ui.find({ key: `runner-0-${running}` }) as Drawn).children?.[0]).toMatchObject({ props: { color: 'claude' } })
+  // Every 60 ms the runs move one cell, along the top and then down the right side: the whole border.
+  for (let frame = 1; frame <= 8; frame++) {
     await clock.advance(60)
-    const at = await runAt(ui, running)
-    tops.push(at?.top.left ?? -1)
-    bottoms.push(at?.bottom.left ?? -1)
+    await expectRun(ui, running, 58, frame, 8)
   }
-  expect(tops).toEqual([2, 3, 4, 5])
-  expect(bottoms).toEqual([48, 47, 46, 45])
   // Less than a tick moves nothing: one step per 60 ms.
   await clock.advance(50)
-  expect((await runAt(ui, running))?.top.left).toBe(5)
+  await expectRun(ui, running, 58, 8, 8)
   await clock.advance(10)
-  expect((await runAt(ui, running))?.top.left).toBe(6)
-  // 600 ms is ten steps.
-  await clock.advance(600)
-  expect((await runAt(ui, running))?.top.left).toBe(16)
+  await expectRun(ui, running, 58, 9, 8)
+  // 60 frames later a run has gone round the top-right corner and is on the right side; frame 80 has it at the bottom.
+  await clock.advance(60 * 60)
+  const side = await expectRun(ui, running, 58, 69, 8)
+  expect(side?.parts.some(p => p.isVertical)).toBe(true)
+  await clock.advance(60 * 11)
+  const bottom = await expectRun(ui, running, 58, 80, 8)
+  expect(bottom?.parts.some(p => p.isAtBottom || p.y === 7)).toBe(true)
   // A done card keeps a still border in its harness colour, dimmed.
   expect(await runAt(ui, '/fm:crew-demo-scout')).toBeUndefined()
   expect((await ui.find({ key: 'panel-/fm:crew-demo-scout' }) as Drawn).props).toMatchObject({ borderColor: 'claude', borderDimColor: true })
-  // The running crewmate's open details carry the same run; the box keeps its own border.
+  // The running crewmate's open details carry the runs on their top and bottom edges; the box keeps its own border.
   await ui.press({ key: `card-${running}` })
   const details = await runAt(ui, `details-${running}`)
-  expect(details?.top.text).toBe('▀'.repeat(8))
+  expect(details?.parts.length).toBeGreaterThan(0)
+  expect(details?.parts.every(p => !p.isVertical && p.text.startsWith('━'))).toBe(true)
   expect(details?.box).toMatchObject({ borderColor: 'claude', borderDimColor: false, width: 116 })
   await ui.press({ key: `card-${running}` })
   expect(overflows(await ui.drawn())).toEqual([])
@@ -1324,7 +1338,7 @@ test('the border timer stops once nothing runs and starts again with a running c
   const ui = await $.ui.mount(sized(120, 40))
   const running = '/fm:crew-watch-transparent'
   await clock.advance(60)
-  expect((await runAt(ui, running))?.top.left).toBe(2)
+  await expectRun(ui, running, 58, 1, 8)
   // The crewmate finishes: the next read stops the timer and every border stands still.
   world.report = { ...REFERENCE, crew: [{ ...(REFERENCE.crew[0] as CrewMember), status: 'done [at=1]: shipped' }, DONE_SCOUT] }
   await refresh($)
@@ -1332,12 +1346,12 @@ test('the border timer stops once nothing runs and starts again with a running c
   expect((await ui.find({ key: `panel-${running}` }) as Drawn).props).toMatchObject({ borderColor: 'claude', borderDimColor: true })
   await clock.advance(3_000)
   expect(await runAt(ui, running)).toBeUndefined()
-  // Work starts again: the run starts over from the corner.
+  // Work starts again: the runs start over from the corner.
   world.report = { ...REFERENCE, crew: [REFERENCE.crew[0] as CrewMember, DONE_SCOUT] }
   await refresh($)
-  expect((await runAt(ui, running))?.top.left).toBe(1)
+  await expectRun(ui, running, 58, 0, 8)
   await clock.advance(60)
-  expect((await runAt(ui, running))?.top.left).toBe(2)
+  await expectRun(ui, running, 58, 1, 8)
   await ui.unmount()
 })
 
@@ -1352,13 +1366,11 @@ test('opening the pane while a read is under way starts one border timer, not tw
   await opening
   world.settingsHeld = null
   const ui = await $.ui.mount(sized(120, 40))
-  const lefts: number[] = []
-  for (let i = 0; i < 3; i++) {
+  for (let frame = 1; frame <= 3; frame++) {
     await clock.advance(60)
-    lefts.push((await runAt(ui, '/fm:crew-watch-transparent'))?.top.left ?? -1)
+    // One step per tick; a second timer would move it two.
+    await expectRun(ui, '/fm:crew-watch-transparent', 58, frame, 8)
   }
-  // One step per tick; a second timer would move it two.
-  expect(lefts).toEqual([2, 3, 4])
   await ui.unmount()
 })
 
@@ -1390,7 +1402,7 @@ test('a failed read decides again whether the border timer runs', { timeoutMs: 2
   const ui = await $.ui.mount(sized(120, 40))
   const running = '/fm:crew-watch-transparent'
   await clock.advance(60)
-  expect((await runAt(ui, running))?.top.left).toBe(2)
+  await expectRun(ui, running, 58, 1, 8)
   // Reduce motion is turned on and the next read fails: that read still stops the timer.
   world.isReduced = true
   world.fail = 'read unavailable'

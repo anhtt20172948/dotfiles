@@ -205,11 +205,9 @@ tracks. Each palette defines those roles; `default` resolves them through the
 engine's theme. Agent cards and their expanded details use their harness colour:
 Claude amber, Codex blue, other harnesses neutral. Running and blocked cards
 use full colour; quiet, paused, stale and done cards are dim. The status glyph
-and word keep the state readable, with blocked status in red. While a card runs (working or active), a
-heavy `━` run moves around its border, and its open details': half its length
-each second, left to right along the top edge and right to left along the
-bottom one, in the running colour. Every other border stands still. The run
-needs a timer, which runs only while the pane is open and in front, some
+and word keep the state readable, with blocked status in red. While a card runs (working or active),
+two heavy runs (`━` along the horizontal edges, `┃` along the vertical ones, `┏ ┓ ┛ ┗` at the corners) travel its whole border clockwise, one cell every 60 ms, half a lap apart, on the same centerline as the thin border and in the running colour. A card's open details do not know their height, so their runs keep to the top and bottom edges. Every other border stands still. The runs
+need a timer, which runs only while the pane is open and in front, some
 crewmate runs and Claude Code's Reduce motion setting (`/config`, or
 `"prefersReducedMotion": true` in settings) is off. Each refresh (every 5 s by
 default, failed reads included) checks those again, and closing the pane stops
