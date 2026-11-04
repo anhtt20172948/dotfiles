@@ -311,10 +311,9 @@ export const cardBorder = (m: Pick<CrewMember, 'lastAt' | 'status' | 'harness'>,
 }
 
 /**
- * The glyphs of a running border's highlight: heavy box-drawing lines that sit on the same centerline as the
- * rounded box's thin border and join with it, yet read thicker than it, and heavy corners where a run turns.
+ * Full blocks fill the same border cells as the rounded box's thin lines, including the corners.
  */
-export const RUNNER_GLYPHS = { horizontal: '━', vertical: '┃', topLeft: '┏', topRight: '┓', bottomRight: '┛', bottomLeft: '┗' } as const
+export const RUNNER_GLYPHS = { horizontal: '█', vertical: '█', topLeft: '█', topRight: '█', bottomRight: '█', bottomLeft: '█' } as const
 
 /**
  * One straight piece of a highlight, or a corner: its first cell counted from the box's top-left corner (0, 0),
@@ -323,7 +322,7 @@ export const RUNNER_GLYPHS = { horizontal: '━', vertical: '┃', topLeft: '┏
  */
 export type RunnerPart = { x: number; y: number; text: string; isVertical: boolean; isAtBottom: boolean }
 
-type RunnerCell = Omit<RunnerPart, 'text'> & { glyph: string }
+type RunnerCell = Omit<RunnerPart, 'text'> & { glyph: string; edge: keyof typeof RUNNER_GLYPHS }
 
 /**
  * The cells of the loop a highlight travels, clockwise from the top-left corner: the whole border of a box
@@ -333,23 +332,23 @@ type RunnerCell = Omit<RunnerPart, 'text'> & { glyph: string }
 const runnerLoop = (width: number, height: number | null): RunnerCell[] => {
   const right = width - 1
   const loop: RunnerCell[] = []
-  const add = (x: number, y: number, glyph: string, isAtBottom = false) => {
-    loop.push({ x, y, glyph, isVertical: glyph === RUNNER_GLYPHS.vertical, isAtBottom })
+  const add = (x: number, y: number, edge: keyof typeof RUNNER_GLYPHS, isAtBottom = false) => {
+    loop.push({ x, y, glyph: RUNNER_GLYPHS[edge], edge, isVertical: edge === 'vertical', isAtBottom })
   }
   if (height === null) {
-    for (let x = 1; x < right; x++) add(x, 0, RUNNER_GLYPHS.horizontal)
-    for (let x = right - 1; x >= 1; x--) add(x, 0, RUNNER_GLYPHS.horizontal, true)
+    for (let x = 1; x < right; x++) add(x, 0, 'horizontal')
+    for (let x = right - 1; x >= 1; x--) add(x, 0, 'horizontal', true)
     return loop
   }
   const bottom = height - 1
-  add(0, 0, RUNNER_GLYPHS.topLeft)
-  for (let x = 1; x < right; x++) add(x, 0, RUNNER_GLYPHS.horizontal)
-  add(right, 0, RUNNER_GLYPHS.topRight)
-  for (let y = 1; y < bottom; y++) add(right, y, RUNNER_GLYPHS.vertical)
-  add(right, bottom, RUNNER_GLYPHS.bottomRight)
-  for (let x = right - 1; x >= 1; x--) add(x, bottom, RUNNER_GLYPHS.horizontal)
-  add(0, bottom, RUNNER_GLYPHS.bottomLeft)
-  for (let y = bottom - 1; y >= 1; y--) add(0, y, RUNNER_GLYPHS.vertical)
+  add(0, 0, 'topLeft')
+  for (let x = 1; x < right; x++) add(x, 0, 'horizontal')
+  add(right, 0, 'topRight')
+  for (let y = 1; y < bottom; y++) add(right, y, 'vertical')
+  add(right, bottom, 'bottomRight')
+  for (let x = right - 1; x >= 1; x--) add(x, bottom, 'horizontal')
+  add(0, bottom, 'bottomLeft')
+  for (let y = bottom - 1; y >= 1; y--) add(0, y, 'vertical')
   return loop
 }
 
@@ -359,12 +358,12 @@ const RUNNER_MAX = 8
 
 /** Whether `next` is the cell right after `prev` along one straight edge. */
 const isNextOnEdge = (prev: RunnerCell, next: RunnerCell): boolean =>
-  prev.glyph === next.glyph && prev.isAtBottom === next.isAtBottom && (next.glyph === RUNNER_GLYPHS.horizontal || next.glyph === RUNNER_GLYPHS.vertical)
+  prev.edge === next.edge && prev.isAtBottom === next.isAtBottom && (next.edge === 'horizontal' || next.edge === 'vertical')
   && Math.abs(next.x - prev.x) + Math.abs(next.y - prev.y) === 1
 
 /**
  * The highlight a running card's border carries at `frame`, for a box `width` cells wide and `height` rows
- * tall: two runs of heavy lines half a lap apart, each moving one cell a frame clockwise around the whole
+ * tall: two runs of full blocks half a lap apart, each moving one cell a frame clockwise around the whole
  * border (top left to right, right side downwards, bottom right to left, left side upwards) and turning
  * corners without a break. With no known `height` the runs keep to the top and bottom edges, between the
  * corners. Null when the box is too small for one (under 5 wide or 3 tall) or the frame is not a number.
