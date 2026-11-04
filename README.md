@@ -205,8 +205,9 @@ tracks. Each palette defines those roles; `default` resolves them through the
 engine's theme. Agent cards and their expanded details use their harness colour:
 Claude amber, Codex blue, other harnesses neutral. Running and blocked cards
 use full colour; quiet, paused, stale and done cards are dim. The status glyph
-and word keep the state readable, with blocked status in red. While a card runs (working or active),
-two full-block runs (`█` along every edge and across corners) travel its whole border clockwise, one cell every 60 ms, half a lap apart, in the thin border's cells and in the running colour.
+and word keep the state readable, with blocked status in red.
+While a card runs (working or active), two thick runs travel its whole border clockwise, half a lap apart, in the thin border's cells and in the running colour.
+Their full-block bodies (`█`) keep their thickness on every edge and across corners; fractional block ends advance half a cell every 30 ms at the same speed of one cell per 60 ms.
 A card's open details do not know their height, so their runs keep to the top and bottom edges.
 Every other border stands still.
 The runs

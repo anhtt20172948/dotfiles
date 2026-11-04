@@ -318,9 +318,10 @@ export const RUNNER_GLYPHS = { horizontal: '█', vertical: '█', topLeft: '█
 /**
  * One straight piece of a highlight, or a corner: its first cell counted from the box's top-left corner (0, 0),
  * its glyphs (a column of them when `isVertical`) and, when the box's height is unknown, `isAtBottom`: it
- * sits on the box's last row, whatever that is, and `y` is 0.
+ * sits on the box's last row, whatever that is, and `y` is 0. `inverse` complements an eighth block
+ * to align its fill to the right or top of the cell.
  */
-export type RunnerPart = { x: number; y: number; text: string; isVertical: boolean; isAtBottom: boolean }
+export type RunnerPart = { x: number; y: number; text: string; isVertical: boolean; isAtBottom: boolean; inverse?: true }
 
 type RunnerCell = Omit<RunnerPart, 'text'> & { glyph: string; edge: keyof typeof RUNNER_GLYPHS }
 
@@ -361,12 +362,24 @@ const isNextOnEdge = (prev: RunnerCell, next: RunnerCell): boolean =>
   prev.edge === next.edge && prev.isAtBottom === next.isAtBottom && (next.edge === 'horizontal' || next.edge === 'vertical')
   && Math.abs(next.x - prev.x) + Math.abs(next.y - prev.y) === 1
 
+/** Fractional ends fill from the incoming edge at corners; inverse supplies right/top aligned fills. */
+const runnerEnd = (cell: RunnerCell, width: number, amount: number, leading: boolean): { glyph: string; inverse?: true } => {
+  const rightward = cell.edge === 'horizontal' ? cell.y === 0 && !cell.isAtBottom : cell.edge === 'topRight'
+  const downward = cell.edge === 'vertical' ? cell.x === width - 1 : cell.edge === 'bottomRight'
+  const vertical = cell.isVertical || cell.edge === 'topLeft' || cell.edge === 'bottomRight'
+  const inverse = vertical ? downward === leading : rightward !== leading
+  const fill = inverse ? 8 - amount : amount
+  return { glyph: (vertical ? '▁▂▃▄▅▆▇' : '▏▎▍▌▋▊▉')[fill - 1] as string,
+    ...(inverse ? { inverse: true as const } : {}) }
+}
+
 /**
  * The highlight a running card's border carries at `frame`, for a box `width` cells wide and `height` rows
- * tall: two runs of full blocks half a lap apart, each moving one cell a frame clockwise around the whole
+ * tall: two runs of full blocks half a lap apart, with fractional ends moving clockwise around the whole
  * border (top left to right, right side downwards, bottom right to left, left side upwards) and turning
  * corners without a break. With no known `height` the runs keep to the top and bottom edges, between the
- * corners. Null when the box is too small for one (under 5 wide or 3 tall) or the frame is not a number.
+ * corners. `frame` measures cells travelled; its fractional part quantizes to eighths.
+ * Null when the box is too small for one (under 5 wide or 3 tall) or the frame is not a number.
  */
 export const runnerParts = (width: number, height: number | null, frame: number): RunnerPart[] | null => {
   const w = Math.floor(width)
@@ -375,24 +388,39 @@ export const runnerParts = (width: number, height: number | null, frame: number)
   const loop = runnerLoop(w, h)
   const lap = loop.length
   const length = Math.max(RUNNER_MIN, Math.min(RUNNER_MAX, Math.round(lap / 16)))
-  const head = ((Math.floor(frame) % lap) + lap) % lap
-  const lit = new Set<number>()
+  const phase = ((Math.round((frame % lap) * 8) % (lap * 8)) + lap * 8) % (lap * 8) / 8
+  const head = Math.floor(phase)
+  const fraction = Math.round((phase - head) * 8)
+  const lit = new Map<number, { glyph: string; inverse?: true }>()
   for (const start of [head, head + Math.floor(lap / 2)]) {
-    for (let i = 0; i < length; i++) lit.add((((start - i) % lap) + lap) % lap)
+    for (let i = 0; i <= length; i++) {
+      const leading = i === 0
+      const amount = leading ? fraction : i === length ? 8 - fraction : 8
+      if (amount === 0) continue
+      const index = (start + 1 - i + lap) % lap
+      const cell = loop[index] as RunnerCell
+      if (amount === 8 || lit.has(index)) {
+        lit.set(index, { glyph: cell.glyph })
+        continue
+      }
+      lit.set(index, runnerEnd(cell, w, amount, leading))
+    }
   }
   const parts: RunnerPart[] = []
   let prev: RunnerCell | undefined
   let prevIndex = -2
-  for (const index of [...lit].sort((a, b) => a - b)) {
+  for (const [index, paint] of [...lit].sort(([a], [b]) => a - b)) {
     const cell = loop[index] as RunnerCell
     const open = parts[parts.length - 1]
-    if (open && prev && prevIndex === index - 1 && isNextOnEdge(prev, cell)) {
+    if (open && prev && prevIndex === index - 1 && isNextOnEdge(prev, cell)
+      && paint.glyph === '█' && open.text.endsWith('█')) {
       // Cells join in loop order, so the part starts at its smallest x or y.
-      open.text += cell.glyph
+      open.text += paint.glyph
       open.x = Math.min(open.x, cell.x)
       open.y = Math.min(open.y, cell.y)
     } else {
-      parts.push({ x: cell.x, y: cell.y, text: cell.glyph, isVertical: cell.isVertical, isAtBottom: cell.isAtBottom })
+      parts.push({ x: cell.x, y: cell.y, text: paint.glyph, isVertical: cell.isVertical,
+        isAtBottom: cell.isAtBottom, ...(paint.inverse ? { inverse: paint.inverse } : {}) })
     }
     prev = cell
     prevIndex = index

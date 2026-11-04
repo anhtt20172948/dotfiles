@@ -17,8 +17,8 @@ const PANE = 'crew-watch'
 const TITLE = 'Crew'
 const POLL_TIMEOUT_MS = 20_000
 const ACCOUNT_CACHE_MS = 60_000
-/** How often a running card's border highlight moves one cell: about 17 cells a second, fast enough to glide yet cheap to redraw. */
-const PULSE_MS = 60
+/** Two frames per cell preserve the 60 ms travel speed; ends quantize to eighths. */
+const PULSE_MS = 30
 
 const reportAtom = atom({ plugin: 'crew-watch', key: 'report' } as const, null)
 const errorAtom = atom({ plugin: 'crew-watch', key: 'error' } as const, '')
@@ -97,7 +97,7 @@ async function syncPulse($: Dollar): Promise<void> {
   if (pulseTimer !== null || stops !== pulseStops) return
   // A tick or this first frame landing after a stop finds the frame cleared and leaves it so.
   const timer = $.clock.every(PULSE_MS, () => {
-    void update($, pulseAtom, value => value === null ? null : value + 1)
+    void update($, pulseAtom, value => value === null ? null : value + 1 / 2)
   })
   pulseTimer = timer
   await update($, pulseAtom, value => pulseTimer === timer ? value ?? 0 : value)

@@ -507,6 +507,53 @@ test('a running border\'s two full-block runs travel the whole border clockwise,
   }
 })
 
+test('fractional heads and tails slide along both axes with eighth blocks and complementary inverse fills', () => {
+  for (let eighth = 1; eighth < 8; eighth++) {
+    const f = eighth / 8
+    const top = runnerParts(20, 6, 5 + f) ?? []
+    expect(top).toContainEqual({ x: 6, y: 0, text: '▏▎▍▌▋▊▉'[eighth - 1], isVertical: false, isAtBottom: false })
+    expect(top).toContainEqual({ x: 3, y: 0, text: '▏▎▍▌▋▊▉'[eighth - 1], inverse: true, isVertical: false, isAtBottom: false })
+    expect(top).toContainEqual({ x: 13, y: 5, text: '▏▎▍▌▋▊▉'[7 - eighth], inverse: true, isVertical: false, isAtBottom: false })
+    const side = runnerParts(20, 10, 23 + f) ?? []
+    expect(side).toContainEqual({ x: 19, y: 5, text: '▁▂▃▄▅▆▇'[7 - eighth], inverse: true, isVertical: true, isAtBottom: false })
+    expect(side).toContainEqual({ x: 19, y: 1, text: '▁▂▃▄▅▆▇'[7 - eighth], isVertical: true, isAtBottom: false })
+    expect(side).toContainEqual({ x: 0, y: 4, text: '▁▂▃▄▅▆▇'[eighth - 1], isVertical: true, isAtBottom: false })
+    expect(side).toContainEqual({ x: 0, y: 8, text: '▁▂▃▄▅▆▇'[eighth - 1], inverse: true, isVertical: true, isAtBottom: false })
+    expect(runnerParts(20, 6, 48 + f)).toEqual(runnerParts(20, 6, f))
+    expect(runnerParts(20, 6, -f)).toEqual(runnerParts(20, 6, 48 - f))
+  }
+})
+
+test('fractional runs keep their area and stay on the border through every corner and the lap seam', () => {
+  const left = '▏▎▍▌▋▊▉'
+  const lower = '▁▂▃▄▅▆▇'
+  const invalid: string[] = []
+  for (const [width, height] of [[5, 3], [20, 6], [58, 9], [116, 40]] as const) {
+    const lap = 2 * (width + height - 2)
+    const length = Math.max(3, Math.min(8, Math.round(lap / 16)))
+    for (let tick = 0; tick < lap * 8; tick++) {
+      const parts = runnerParts(width, height, tick / 8) ?? []
+      const lit = litCells(parts, height)
+      let area = 0
+      for (const p of parts) {
+        for (const glyph of p.text) {
+          const fill = glyph === '█' ? 8 : Math.max(left.indexOf(glyph), lower.indexOf(glyph)) + 1
+          if (fill <= 0) invalid.push(`unknown glyph ${glyph}`)
+          area += p.inverse ? 8 - fill : fill
+        }
+      }
+      if (area !== 2 * length * 8) invalid.push(`area ${width}x${height} tick ${tick}: ${area}`)
+      if (lit.size !== parts.reduce((sum, p) => sum + p.text.length, 0)) invalid.push(`overlap ${width}x${height} tick ${tick}`)
+      for (const key of lit.keys()) {
+        const [x = -1, y = -1] = key.split(',').map(Number)
+        if (!(x >= 0 && x < width && y >= 0 && y < height
+          && (x === 0 || x === width - 1 || y === 0 || y === height - 1))) invalid.push(`outside ${width}x${height} tick ${tick}: ${key}`)
+      }
+    }
+  }
+  expect(invalid).toEqual([])
+})
+
 test('a border of unknown height keeps its runs to the top and bottom edges, between the corners', () => {
   const lit = (frame: number) => runnerParts(20, null, frame) ?? []
   expect(lit(0).every(p => !p.isVertical && p.text === '█'.repeat(p.text.length))).toBe(true)
@@ -517,6 +564,12 @@ test('a border of unknown height keeps its runs to the top and bottom edges, bet
   expect(lit(5)).toEqual([{ x: 4, y: 0, text: '███', isVertical: false, isAtBottom: false }, { x: 13, y: 0, text: '███', isVertical: false, isAtBottom: true }])
   expect(lit(6)[0]?.x).toBe(5)
   expect(lit(6)[1]?.x).toBe(12)
+})
+
+test('the smallest unknown-height box keeps two touching runs solid at fractional phases', () => {
+  for (let eighth = 1; eighth < 8; eighth++) {
+    expect(runnerParts(5, null, eighth / 8)).toEqual(runnerParts(5, null, 0))
+  }
 })
 
 test('a box too small for a run, or a frame that is not a number, draws none', () => {
