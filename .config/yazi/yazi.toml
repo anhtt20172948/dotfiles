@@ -29,10 +29,12 @@ mime = "{audio,video,image}/*"
 run  = "center-media"
 
 # duckdb: tabular data previews; duckdb-guard falls back to plain text without the duckdb CLI.
+# JSON is left out on purpose: nested config files read far better in Yazi's
+# syntax-highlighted code previewer. Press `g o` to open a JSON file in duckdb.
 [[plugin.prepend_previewers]]
-url = "*.{csv,tsv,json,parquet,xlsx,db,duckdb}"
+url = "*.{csv,tsv,parquet,xlsx,db,duckdb}"
 run = "duckdb-guard"
 
 [[plugin.prepend_preloaders]]
-url = "*.{csv,tsv,json,parquet,xlsx}"
+url = "*.{csv,tsv,parquet,xlsx}"
 run = "duckdb-guard"

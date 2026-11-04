@@ -18,23 +18,31 @@ on   = "<F5>"
 run  = "plugin center-media -- reset"
 desc = "Reset media preview"
 
+# Yazi 26 needs `--` so args starting with `-` reach the plugin.
 # H and L stay on Yazi's history navigation, so columns scroll on Alt+h/l.
 [[mgr.prepend_keymap]]
 on   = "<A-h>"
-run  = "plugin duckdb -1"
+run  = "plugin duckdb -- -1"
 desc = "Scroll one column to the left"
 
 [[mgr.prepend_keymap]]
 on   = "<A-l>"
-run  = "plugin duckdb +1"
+run  = "plugin duckdb -- +1"
 desc = "Scroll one column to the right"
 
 [[mgr.prepend_keymap]]
 on   = ["g", "o"]
-run  = "plugin duckdb -open"
+run  = "plugin duckdb -- -open"
 desc = "Open with duckdb"
 
 [[mgr.prepend_keymap]]
 on   = ["g", "u"]
-run  = "plugin duckdb -ui"
+run  = "plugin duckdb -- -ui"
 desc = "Open with duckdb ui"
+
+# Rows scroll with Yazi's default J/K (K at the top of a file also toggles the view).
+# M switches between standard and summarized from anywhere in the file.
+[[mgr.prepend_keymap]]
+on   = "M"
+run  = "seek -- -10000"
+desc = "Toggle duckdb standard/summarized view"

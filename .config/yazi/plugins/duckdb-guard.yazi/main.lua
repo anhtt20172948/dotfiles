@@ -18,8 +18,10 @@ function M:peek(job)
 	return require(has_duckdb() and "duckdb" or "code"):peek(job)
 end
 
+-- seek runs in a sync context where Command:output() cannot yield, so it only
+-- reads the result peek/preload cached (peek always runs before the first seek).
 function M:seek(job)
-	return require(has_duckdb() and "duckdb" or "code"):seek(job)
+	return require(installed == false and "code" or "duckdb"):seek(job)
 end
 
 function M:preload(job)
