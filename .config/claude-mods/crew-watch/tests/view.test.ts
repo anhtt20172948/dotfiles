@@ -472,9 +472,9 @@ const litCells = (parts: readonly RunnerPart[], height: number): Map<string, str
   return lit
 }
 
-test('a running border\'s two runs travel the whole border clockwise, a cell each frame, turning corners with heavy corners', () => {
+test('a running border\'s two full-block runs travel the whole border clockwise, a cell each frame, including corners', () => {
   const { horizontal: h, vertical: v, topLeft, topRight, bottomRight, bottomLeft } = RUNNER_GLYPHS
-  expect([h, v, topLeft, topRight, bottomRight, bottomLeft]).toEqual(['━', '┃', '┏', '┓', '┛', '┗'])
+  expect([h, v, topLeft, topRight, bottomRight, bottomLeft]).toEqual(['█', '█', '█', '█', '█', '█'])
   // A 20 by 6 box has 2 * 19 + 2 * 5 = 48 border cells a lap; a run is 3 of them, the second half a lap behind the first.
   const part = (x: number, y: number, text: string, isVertical = false) => ({ x, y, text, isVertical, isAtBottom: false })
   // Along the top edge left to right, and along the bottom one right to left.
@@ -496,7 +496,8 @@ test('a running border\'s two runs travel the whole border clockwise, a cell eac
       const added = [...now.keys()].filter(k => !before.has(k))
       const gone = [...before.keys()].filter(k => !now.has(k))
       expect([width, height, frame, added.length, gone.length]).toEqual([width, height, frame, 2, 2])
-      for (const key of now.keys()) {
+      for (const [key, glyph] of now) {
+        expect(glyph).toBe('█')
         const [x = -1, y = -1] = key.split(',').map(Number)
         expect(x === 0 || x === width - 1 || y === 0 || y === height - 1).toBe(true)
         expect(x >= 0 && x < width && y >= 0 && y < height).toBe(true)
@@ -508,12 +509,12 @@ test('a running border\'s two runs travel the whole border clockwise, a cell eac
 
 test('a border of unknown height keeps its runs to the top and bottom edges, between the corners', () => {
   const lit = (frame: number) => runnerParts(20, null, frame) ?? []
-  expect(lit(0).every(p => !p.isVertical && p.text === '━'.repeat(p.text.length))).toBe(true)
+  expect(lit(0).every(p => !p.isVertical && p.text === '█'.repeat(p.text.length))).toBe(true)
   for (let frame = 0; frame < 40; frame++) {
     for (const p of lit(frame)) expect(p.x >= 1 && p.x + p.text.length <= 19 && p.y === 0).toBe(true)
   }
   // A top run moves right and a bottom one moves left, a cell each frame.
-  expect(lit(5)).toEqual([{ x: 4, y: 0, text: '━━━', isVertical: false, isAtBottom: false }, { x: 13, y: 0, text: '━━━', isVertical: false, isAtBottom: true }])
+  expect(lit(5)).toEqual([{ x: 4, y: 0, text: '███', isVertical: false, isAtBottom: false }, { x: 13, y: 0, text: '███', isVertical: false, isAtBottom: true }])
   expect(lit(6)[0]?.x).toBe(5)
   expect(lit(6)[1]?.x).toBe(12)
 })

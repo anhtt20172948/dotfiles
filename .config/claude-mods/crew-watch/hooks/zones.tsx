@@ -88,7 +88,7 @@ const STATUS_HELP = [
   'STALE    no activity for 15 min',
   'DONE · BLOCKED · PAUSED  from the task\'s own status line',
   'UNKNOWN  no activity and no status recorded yet',
-  'A card is bordered in its harness\'s colour: full while it runs, with two bold heavy-line runs moving around it, or is blocked; dim once it is quiet, paused, stale or done. The glyph and word say which.',
+  'A card is bordered in its harness\'s colour: full while it runs, with two solid-block runs moving around it, or is blocked; dim once it is quiet, paused, stale or done. The glyph and word say which.',
   'The run stands still when nothing runs, the pane is closed or behind another tab, or Reduce motion is on (/config, prefersReducedMotion).',
   'Harness names: ✻ claude in amber, ◆ codex in blue, ▪ any other harness in plain text; a model or account takes its harness\'s colour.',
 ]
@@ -174,7 +174,7 @@ const cardRows = (m: CrewMember, details: boolean): number =>
   2 + 5 + (contextFigure(m).percent !== null ? 1 : 0) + (details ? 1 + (m.lastTool && m.status ? 1 : 0) : 0)
 
 /**
- * An agent's bordered box and, while it runs and the border timer ticks, the runs of heavy lines moving
+ * An agent's bordered box and, while it runs and the border timer ticks, the runs of full blocks moving
  * around its whole border (runnerParts). `height` is the box's rows, or null when they are not known and the
  * runs keep to its top and bottom edges. The runs are drawn from a wrapper, since nothing inside the bordered
  * box can reach its border; any other box is returned as it is.

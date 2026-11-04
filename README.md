@@ -206,7 +206,10 @@ engine's theme. Agent cards and their expanded details use their harness colour:
 Claude amber, Codex blue, other harnesses neutral. Running and blocked cards
 use full colour; quiet, paused, stale and done cards are dim. The status glyph
 and word keep the state readable, with blocked status in red. While a card runs (working or active),
-two heavy runs (`━` along the horizontal edges, `┃` along the vertical ones, `┏ ┓ ┛ ┗` at the corners) travel its whole border clockwise, one cell every 60 ms, half a lap apart, on the same centerline as the thin border and in the running colour. A card's open details do not know their height, so their runs keep to the top and bottom edges. Every other border stands still. The runs
+two full-block runs (`█` along every edge and across corners) travel its whole border clockwise, one cell every 60 ms, half a lap apart, in the thin border's cells and in the running colour.
+A card's open details do not know their height, so their runs keep to the top and bottom edges.
+Every other border stands still.
+The runs
 need a timer, which runs only while the pane is open and in front, some
 crewmate runs and Claude Code's Reduce motion setting (`/config`, or
 `"prefersReducedMotion": true` in settings) is off. Each refresh (every 5 s by
@@ -323,7 +326,7 @@ What it shows, and what it does not:
   working and active count as active. Each card ends with the crewmate's latest
   status line (else its last tool call); in the row layout it is the third row,
   left out only under 24 rows (a blocked one's stays). A running (working or
-  active) card has a harness-coloured border with a bold heavy run moving around
+  active) card has a harness-coloured border with two full-block runs moving around
   it; a quiet or done card has a dim harness-coloured border. A blocked card keeps
   its harness border and red status; a done card has a green
   `✓ DONE`, so it sits back from the running ones.

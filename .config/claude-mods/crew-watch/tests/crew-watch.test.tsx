@@ -1260,7 +1260,7 @@ const runAt = async (ui: Mounted, key: string) => {
     if (!box) break
     const text = [...textOf(box)].join('')
     parts.push({
-      x: Number(box.props?.left), y: Number(box.props?.top ?? 0), text, isVertical: text.includes('┃'), isAtBottom: box.props?.bottom === 0,
+      x: Number(box.props?.left), y: Number(box.props?.top ?? 0), text, isVertical: (box.children ?? []).length > 1, isAtBottom: box.props?.bottom === 0,
     })
   }
   const box = wrapper.children?.[0] as Drawn
@@ -1272,11 +1272,12 @@ const DONE_SCOUT = member({ id: 'crew-demo-scout', model: 'haiku', effort: 'low'
 /** The runs a card must carry `frame` frames after the pane opens: runnerParts for its width and its drawn rows. */
 const expectRun = async (ui: Mounted, key: string, width: number, frame: number, height: number | null) => {
   const at = await runAt(ui, key)
-  expect(at?.parts).toEqual(runnerParts(width, height, frame))
+  // A one-cell part renders identically in either direction; longer columns have one Text per row.
+  expect(at?.parts).toEqual(runnerParts(width, height, frame)?.map(p => ({ ...p, isVertical: p.isVertical && p.text.length > 1 })))
   return at
 }
 
-test('a running card carries two runs of heavy lines around its whole border that move a cell every 60 ms while the pane is in front, and stop with the pane', { timeoutMs: 30_000 }, async ($, on) => {
+test('a running card carries two full-block runs around its whole border that move a cell every 60 ms while the pane is in front, and stop with the pane', { timeoutMs: 30_000 }, async ($, on) => {
   const pane = stub(on, { report: { ...REFERENCE, crew: [REFERENCE.crew[0] as CrewMember, DONE_SCOUT] } }, { clock: false })
   const clock = mock.clock(on, { now: NOW + 4_000 })
   await start($)
@@ -1317,7 +1318,7 @@ test('a running card carries two runs of heavy lines around its whole border tha
   await ui.press({ key: `card-${running}` })
   const details = await runAt(ui, `details-${running}`)
   expect(details?.parts.length).toBeGreaterThan(0)
-  expect(details?.parts.every(p => !p.isVertical && p.text.startsWith('━'))).toBe(true)
+  expect(details?.parts.every(p => !p.isVertical && p.text.startsWith('█'))).toBe(true)
   expect(details?.box).toMatchObject({ borderColor: 'claude', borderDimColor: false, width: 116 })
   await ui.press({ key: `card-${running}` })
   expect(overflows(await ui.drawn())).toEqual([])
