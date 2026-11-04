@@ -2,3 +2,39 @@
 on   = "T"
 run  = "plugin toggle-pane max-preview"
 desc = "Maximize or restore the preview pane"
+
+[[mgr.prepend_keymap]]
+on   = "<F3>"
+run  = "plugin center-media -- toggle-metadata"
+desc = "Toggle media metadata"
+
+[[mgr.prepend_keymap]]
+on   = "<F4>"
+run  = "plugin center-media -- toggle-preview"
+desc = "Toggle media image"
+
+[[mgr.prepend_keymap]]
+on   = "<F5>"
+run  = "plugin center-media -- reset"
+desc = "Reset media preview"
+
+# H and L stay on Yazi's history navigation, so columns scroll on Alt+h/l.
+[[mgr.prepend_keymap]]
+on   = "<A-h>"
+run  = "plugin duckdb -1"
+desc = "Scroll one column to the left"
+
+[[mgr.prepend_keymap]]
+on   = "<A-l>"
+run  = "plugin duckdb +1"
+desc = "Scroll one column to the right"
+
+[[mgr.prepend_keymap]]
+on   = ["g", "o"]
+run  = "plugin duckdb -open"
+desc = "Open with duckdb"
+
+[[mgr.prepend_keymap]]
+on   = ["g", "u"]
+run  = "plugin duckdb -ui"
+desc = "Open with duckdb ui"

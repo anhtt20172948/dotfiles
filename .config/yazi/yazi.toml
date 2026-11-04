@@ -16,3 +16,23 @@ ratio=[2,4,4]
 show_hidden=true
 linemode = "size_and_mtime"
 
+
+# center-media: centered image/video/audio previews with mediainfo metadata
+# (falls back to Yazi's own previewers when mediainfo is not installed).
+# Previewers and preloaders need the same rules.
+[[plugin.prepend_previewers]]
+mime = "{audio,video,image}/*"
+run  = "center-media"
+
+[[plugin.prepend_preloaders]]
+mime = "{audio,video,image}/*"
+run  = "center-media"
+
+# duckdb: tabular data previews; duckdb-guard falls back to plain text without the duckdb CLI.
+[[plugin.prepend_previewers]]
+url = "*.{csv,tsv,json,parquet,xlsx,db,duckdb}"
+run = "duckdb-guard"
+
+[[plugin.prepend_preloaders]]
+url = "*.{csv,tsv,json,parquet,xlsx}"
+run = "duckdb-guard"
