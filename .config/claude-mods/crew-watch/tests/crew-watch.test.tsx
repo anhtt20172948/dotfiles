@@ -1261,6 +1261,7 @@ const runAt = async (ui: Mounted, key: string) => {
     const text = [...textOf(box)].join('')
     parts.push({
       x: Number(box.props?.left), y: Number(box.props?.top ?? 0), text, isVertical: (box.children ?? []).length > 1, isAtBottom: box.props?.bottom === 0,
+      ...((box.children?.[0] as Drawn)?.props?.inverse ? { inverse: true as const } : {}),
     })
   }
   const box = wrapper.children?.[0] as Drawn
@@ -1277,7 +1278,7 @@ const expectRun = async (ui: Mounted, key: string, width: number, frame: number,
   return at
 }
 
-test('a running card carries two full-block runs around its whole border that move a cell every 60 ms while the pane is in front, and stop with the pane', { timeoutMs: 30_000 }, async ($, on) => {
+test('a running card carries two full-block runs around its whole border with fractional ends every 30 ms at one cell per 60 ms while the pane is in front, and stop with the pane', { timeoutMs: 30_000 }, async ($, on) => {
   const pane = stub(on, { report: { ...REFERENCE, crew: [REFERENCE.crew[0] as CrewMember, DONE_SCOUT] } }, { clock: false })
   const clock = mock.clock(on, { now: NOW + 4_000 })
   await start($)
@@ -1294,17 +1295,19 @@ test('a running card carries two full-block runs around its whole border that mo
   expect(first?.rows).toBe(8)
   expect(first?.box).toMatchObject({ borderColor: 'claude', borderDimColor: false, borderStyle: 'round', width: 58 })
   expect((await ui.find({ key: `runner-0-${running}` }) as Drawn).children?.[0]).toMatchObject({ props: { color: 'claude' } })
-  // Every 60 ms the runs move one cell, along the top and then down the right side: the whole border.
+  // Two fractional frames cover one cell in 60 ms along the whole border.
   for (let frame = 1; frame <= 8; frame++) {
     await clock.advance(60)
     await expectRun(ui, running, 58, frame, 8)
   }
-  // Less than a tick moves nothing: one step per 60 ms.
-  await clock.advance(50)
-  await expectRun(ui, running, 58, 8, 8)
+  // Less than 30 ms moves nothing; the next frame advances half a cell.
   await clock.advance(10)
+  await expectRun(ui, running, 58, 8, 8)
+  await clock.advance(20)
+  await expectRun(ui, running, 58, 8 + 1 / 2, 8)
+  await clock.advance(30)
   await expectRun(ui, running, 58, 9, 8)
-  // 60 frames later a run has gone round the top-right corner and is on the right side; frame 80 has it at the bottom.
+  // 60 cells later a run has gone round the top-right corner and is on the right side; frame 80 has it at the bottom.
   await clock.advance(60 * 60)
   const side = await expectRun(ui, running, 58, 69, 8)
   expect(side?.parts.some(p => p.isVertical)).toBe(true)
