@@ -15,3 +15,6 @@ function Linemode:size_and_mtime()
 
     return string.format("%s %s %s", size and ya.readable_size(size) or "-", user, time)
 end
+
+-- duckdb.yazi requires setup() even with default options
+require("duckdb"):setup()

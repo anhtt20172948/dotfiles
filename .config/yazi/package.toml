@@ -1,7 +1,17 @@
 [[plugin.deps]]
+use = "wylie102/duckdb"
+rev = "3f8c863"
+hash = "87b9233a74325e95011670ed20bbd0d4"
+
+[[plugin.deps]]
+use = "ENEmyr/center-media"
+rev = "390ddbd"
+hash = "bbecbe10813723de3c1a0a66c29ba9aa"
+
+[[plugin.deps]]
 use = "yazi-rs/plugins:toggle-pane"
-rev = "4ffa48f"
-hash = "9c7987da2d2a2120dac33abb64132004"
+rev = "25d992d"
+hash = "5b2fbef7d1513ce38ff72623a071a5e"
 
 [[flavor.deps]]
 use = "yazi-rs/flavors:catppuccin-macchiato"
