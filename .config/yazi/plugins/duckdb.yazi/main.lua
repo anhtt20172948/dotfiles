@@ -123,10 +123,11 @@ end)
 
 function M:entry(job)
 	local arg = job.args and job.args[1]
-	if arg ~= "+1" and arg ~= "-1" then
+	-- Yazi 26 may hand "+1"/"-1" over as numbers, so compare numerically.
+	local scroll_delta = tonumber(arg)
+	if scroll_delta ~= 1 and scroll_delta ~= -1 then
 		return duckdb_opener(arg)
 	end
-	local scroll_delta = tonumber(arg)
 
 	if not scroll_delta then
 		ya.err("DuckDB column scroll entry: Invalid or missing scroll delta; exiting.")
@@ -137,7 +138,8 @@ function M:entry(job)
 	scrolled_columns = math.max(0, scrolled_columns + scroll_delta)
 	set_opts("scrolled_columns", scrolled_columns)
 
-	ya.emit("seek", { "lateral scroll" })
+	-- seek 0 re-peeks at the current row offset, keeping the new column offset.
+	ya.emit("seek", { 0 })
 end
 
 -- Setup from init.lua: require("duckdb"):setup({ mode = "standard"/"summarized" })
@@ -310,7 +312,9 @@ local function run_query(job, query, target, file_type)
 		return nil
 	end
 
-	return output
+	-- DuckDB announces ~/.duckdbrc on stderr; that is not an error.
+	local stderr = (output.stderr or ""):gsub("\27%[[%d;]*m", ""):gsub("%-%- Loading resources from [^\n]*\n?", "")
+	return { status = output.status, stdout = output.stdout, stderr = stderr }
 end
 
 local function generate_db_query(limit, offset)
@@ -423,7 +427,7 @@ set variable included_columns = (
 	)
 
 	local filtered_select = string.format(
-		"select %scolumns(c -> list_contains(getvariable('included_columns'), c)) from %s limit %d offset %d;",
+		"select %scolumns(lambda c: list_contains(getvariable('included_columns'), c)) from %s limit %d offset %d;",
 		row_id_prefix,
 		target,
 		limit,
@@ -672,8 +676,10 @@ local function create_cache(job, mode, file_type, limit)
 	local base_query = generate_preload_query(job, mode, file_type, limit)
 	local query = string.format("COPY (%s) TO '%s' (FORMAT 'parquet');", base_query, target)
 	local output = run_query(job, query, nil, file_type)
-	ya.dbg("stdout: " .. tostring(output.stdout))
-	ya.dbg("stderr: " .. tostring(output.stderr))
+	if output then
+		ya.dbg("stdout: " .. tostring(output.stdout))
+		ya.dbg("stderr: " .. tostring(output.stderr))
+	end
 
 	if not output or (output.stderr and output.stderr ~= "") then
 		ya.err(
@@ -799,7 +805,7 @@ function M:seek(job)
 		-- Trigger re-peek
 		ya.emit("peek", { OFFSET_BASE, only_if = job.file.url })
 	else
-		ya.emit("peek", { new_skip + OFFSET_BASE, only_if = job.file.url })
+		ya.emit("peek", { new_skip + OFFSET_BASE, only_if = job.file.url, force = true })
 	end
 end
 
