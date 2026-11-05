@@ -32,3 +32,63 @@ require("duckdb"):setup({
     -- with 22 columns still hidden; 7.73 keeps overspilling even then.
     column_fit_factor = 7.73,
 })
+
+-- center-media: compact metadata. Only options are set here, the plugin itself
+-- stays untouched. `skip_labels` replaces the plugin's default list, so the
+-- defaults are repeated first. Labels match mediainfo's output exactly and
+-- apply to every section, so a label hidden here is hidden everywhere.
+require("center-media"):setup({
+    sections = {
+        video = { "General", "Video", "Audio" },
+        image = { "General", "Image" },
+        audio = { "General", "Audio" },
+    },
+    skip_labels = {
+        -- plugin defaults
+        "Complete name",
+        "CompleteName_Last",
+        "Unique ID",
+        "File size",
+        "Format/Info",
+        "Codec ID/Info",
+        "MD5 of the unencoded content",
+        -- identifiers and encoder/tool noise
+        "ID",
+        "Codec ID",
+        "Codec configuration box",
+        "Writing application",
+        "Writing library",
+        "Encoding settings",
+        "Encoded by",
+        "Encoded date",
+        "Tagged date",
+        "Comment",
+        -- codec internals
+        "Format settings",
+        "Format settings, CABAC",
+        "Format settings, Reference frames",
+        "Format version",
+        "Bit rate mode",
+        "Overall bit rate mode",
+        "Frame rate mode",
+        "Compression mode",
+        "Maximum bit rate",
+        "Scan type",
+        "Chroma subsampling",
+        "Color space",
+        "Bits/(Pixel*Frame)",
+        "Stream size",
+        "Source stream size",
+        "Source duration",
+        "Source_Duration_LastFrame",
+        "Channel layout",
+        "Default",
+        "Forced",
+        "Alternate group",
+        -- color description
+        "Color range",
+        "Color primaries",
+        "Transfer characteristics",
+        "Matrix coefficients",
+    },
+})
