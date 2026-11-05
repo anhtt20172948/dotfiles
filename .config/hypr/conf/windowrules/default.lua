@@ -1,0 +1,1 @@
+-- default.conf contains only commented examples; there are no active rules.
