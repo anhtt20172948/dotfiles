@@ -1,0 +1,26 @@
+-- Keep this source order aligned with hyprland.conf for older hosts.
+hl.env("QT_QPA_PLATFORM", "wayland")
+hl.env("ELECTRON_OZONE_PLATFORM_HINT", "auto")
+hl.env("QT_QPA_PLATFORMTHEME", "gtk3")
+hl.env("QT_QPA_PLATFORMTHEME_QT6", "gtk3")
+hl.env("TERMINAL", "kitty")
+hl.env("AQ_DRM_DEVICES", "/dev/dri/card1")
+
+hl.on("hyprland.start", function()
+    hl.exec_cmd([[bash -c "wl-paste --watch cliphist store &"]])
+    hl.exec_cmd("dms run")
+    hl.exec_cmd("fcitx5 -d")
+    hl.exec_cmd("/usr/lib/mate-polkit/polkit-mate-authentication-agent-1")
+end)
+
+require("conf.windows.custom")
+require("conf.decorations.default")
+require("conf.animations.animations-moving")
+require("conf.layouts.default")
+require("conf.misc")
+require("conf.windowrules.default")
+require("monitors")
+require("workspaces")
+require("keybindings_dms")
+-- Other DMS modules override settings that the legacy source chain never loaded.
+require("dms.cursor")
