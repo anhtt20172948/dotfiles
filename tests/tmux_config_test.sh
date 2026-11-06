@@ -114,8 +114,9 @@ if version_ge 3.2; then
   assert_icon nvim $''
   assert_icon vim $''
   assert_icon zsh $''
-  assert_icon ssh $'\U000f08c0'
-  assert_icon claude $'\U000f06a9'
+  # Astral-plane glyphs as UTF-8 bytes: bash 3.2 has no \U escape.
+  assert_icon ssh $'\xf3\xb0\xa3\x80'
+  assert_icon claude $'\xf3\xb0\x9a\xa9'
   assert_icon lazygit $''
   assert_icon git $''
   assert_icon python3.12 $''
