@@ -12,8 +12,16 @@ hl.window_rule({
 hl.window_rule({
 	name = "float-utilities",
 	match = {
-		class = "^(pavucontrol|org\\.pulseaudio\\.pavucontrol|blueman-manager|\\.blueman-manager-wrapped|nm-connection-editor|org\\.gnome\\.Calculator|polkit-mate-authentication-agent-1|org\\.freedesktop\\.impl\\.portal\\.desktop\\.gtk|xdg-desktop-portal-gtk)$",
+		class = "^(pavucontrol|org\\.pulseaudio\\.pavucontrol|blueman-manager|\\.blueman-manager-wrapped|nm-connection-editor|org\\.gnome\\.Calculator|org\\.freedesktop\\.impl\\.portal\\.desktop\\.gtk|xdg-desktop-portal-gtk)$",
 	},
+	float = true,
+	center = true,
+})
+
+-- Screen sharing picker of xdg-desktop-portal-hyprland.
+hl.window_rule({
+	name = "float-screenshare-picker",
+	match = { class = "^(hyprland-share-picker)$" },
 	float = true,
 	center = true,
 })
@@ -51,9 +59,58 @@ hl.window_rule({
 	no_blur = true,
 })
 
--- Do not let the screen idle while a video app is fullscreen.
+-- Tags: one rule per concept, behaviour attached to the tag.
 hl.window_rule({
-	name = "idle-inhibit-fullscreen-video",
-	match = { class = "^(mpv|vlc|google-chrome|firefox|zen|org\\.gnome\\.Totem)$" },
-	idle_inhibit = "fullscreen",
+	name = "tag-video",
+	match = { class = "^(mpv|vlc|org\\.gnome\\.Totem)$" },
+	tag = "+video",
+})
+hl.window_rule({
+	name = "tag-browser",
+	match = { class = "^(google-chrome|firefox|zen)$" },
+	tag = "+browser",
+})
+
+-- Do not let the screen idle while video plays or a browser is fullscreen.
+hl.window_rule({ name = "video-idle-inhibit", match = { tag = "video" }, idle_inhibit = "focus" })
+hl.window_rule({ name = "browser-idle-inhibit", match = { tag = "browser" }, idle_inhibit = "fullscreen" })
+hl.window_rule({ name = "video-opaque", match = { tag = "video" }, opaque = true, no_blur = true })
+
+-- Smart gaps: a lone tiled window (or a fullscreen one) fills the monitor.
+hl.workspace_rule({ workspace = "w[tv1]", gaps_out = 0, gaps_in = 0 })
+hl.workspace_rule({ workspace = "f[1]", gaps_out = 0, gaps_in = 0 })
+hl.window_rule({
+	name = "no-gaps-wtv1",
+	match = { float = false, workspace = "w[tv1]" },
+	border_size = 0,
+	rounding = 0,
+})
+hl.window_rule({
+	name = "no-gaps-f1",
+	match = { float = false, workspace = "f[1]" },
+	border_size = 0,
+	rounding = 0,
+})
+
+-- Kitty scratchpad (SUPER + grave), launched from autostart.lua.
+hl.window_rule({
+	name = "scratch-term",
+	match = { class = "^scratch-term$" },
+	workspace = "special:term silent",
+	float = true,
+	size = "1200 700",
+	center = true,
+})
+
+-- Kitty columns on the scrolling workspaces are half a monitor wide.
+hl.window_rule({ name = "kitty-column-width", match = { class = "^kitty$" }, scrolling_width = 0.5 })
+
+-- Blur for DMS popouts and modals (layer namespaces taken from the DMS shell).
+hl.layer_rule({
+	name = "dms-blur",
+	match = {
+		namespace = "^dms:(popout|modal|slideout|control-center|app-launcher|clipboard|clipboard-popout|dash|notification-center-popout|notification-center-modal|power-menu|keybinds|process-list-popout)$",
+	},
+	blur = true,
+	ignore_alpha = 0.3,
 })
