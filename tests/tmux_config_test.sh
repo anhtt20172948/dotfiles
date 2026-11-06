@@ -5,10 +5,13 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 TMP=$(mktemp -d)
-SOCK="fm-config-test-$$"
-export HOME="$TMP/home" TMUX_TMPDIR="$TMP/sock"
+# The socket directory is separate and short: a unix socket path is limited to
+# ~100 bytes and macOS's per-user $TMPDIR alone is most of that.
+SOCKDIR=$(mktemp -d /tmp/fmtmux.XXXXXX)
+SOCK="fm-cfg-$$"
+export HOME="$TMP/home" TMUX_TMPDIR="$SOCKDIR"
 unset TMUX
-trap 'tmux -L "$SOCK" kill-server 2>/dev/null || true; rm -rf -- "$TMP"' EXIT
+trap 'tmux -L "$SOCK" kill-server 2>/dev/null || true; rm -rf -- "$TMP" "$SOCKDIR"' EXIT
 
 command -v tmux >/dev/null || {
   echo "skip: tmux not installed"
@@ -39,8 +42,7 @@ version_ge() {
   [[ $(printf '%s\n%s\n' "$v" "$1" | sort -V | head -n1) == "$1" ]]
 }
 
-mkdir -p "$HOME/.config" "$HOME/.tmux/plugins/tpm" "$TMUX_TMPDIR"
-chmod 700 "$TMUX_TMPDIR"
+mkdir -p "$HOME/.config" "$HOME/.tmux/plugins/tpm"
 ln -s "$ROOT/.config/tmux" "$HOME/.config/tmux"
 ln -s "$ROOT/.config/extrakto" "$HOME/.config/extrakto"
 ln -s "$ROOT/.tmux.conf" "$HOME/.tmux.conf"
