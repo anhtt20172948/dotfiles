@@ -94,9 +94,13 @@ if version_ge 3.2; then
   assert_contains "tab format uses the icon" "@tab_icon" "$fmt"
   # Re-point every rule at a settable variable so each program name can be tried
   # without having to run that program in a pane.
+  # (Pattern and replacement live in variables: bash 3.2 on stock macOS keeps
+  # the backslashes of an escaped replacement literally.)
+  from='#{pane_current_command}'
+  to='#{@probe_cmd}'
   for opt in $(tm show -g | awk '/^@tab_icon_[0-9]+ /{print $1}'); do
     val=$(tm show -gv "$opt")
-    tm set -g "$opt" "${val//#\{pane_current_command\}/#\{@probe_cmd\}}"
+    tm set -g "$opt" "${val//"$from"/$to}"
   done
   icon_for() {
     tm set -g @probe_cmd "$1"
