@@ -12,7 +12,8 @@ configuration with `install.sh`.
 ├── options.conf                → terminal, history, base settings
 ├── keymaps.conf                → navigation, resize, copy-mode, utils
 ├── plugins.conf                → TPM plugin list (7 plugins)
-├── status.conf                 → status bar + ANSI-colour theme
+├── plugins/tmux-which-key/     → config.yaml: the `prefix Space` key-hint menu
+├── status.conf                 → status bar, tab icons, pane borders + ANSI-colour theme
 ├── popup.conf                  → shared popup dimensions + keybinds
 ├── hooks.conf                  → pane-focus status refresh
 ├── navigation.conf             → vim-tmux-navigator mappings
@@ -24,6 +25,7 @@ configuration with `install.sh`.
     ├── ai-sessions.sh          → per-tool new, live and saved session picker
     ├── persistent-ai.sh        → persistent, per-project AI popup controller
     ├── ai-status.sh            → status-bar segment: live agent count
+    ├── status-context.sh       → status-bar segment: git branch/dirty + SSH host
     ├── ai-workflow.sh          → agent workflow menu (treehouse/no-mistakes/gnhf/firstmate)
     ├── firstmate-lib.sh        → firstmate launch helpers: live primary, window and session lookup
     ├── ai-account.sh           → Claude account manager (prefix E)
@@ -36,6 +38,9 @@ configuration with `install.sh`.
     ├── sesh-picker.sh          → sesh + fzf session picker
     └── rename-window.sh        → popup window rename prompt
 ```
+
+`~/.config/extrakto/extrakto.conf` (outside this directory) adds the git-hash
+and IPv4 filters to extrakto.
 
 There is no `theme.conf` - the theme lives in `status.conf` and uses ANSI colour
 names only (`green`, `brightblack`, `default`, ...), never hex. tmux therefore
@@ -60,9 +65,56 @@ Two consequences worth remembering when editing:
 - **Plugins load last and in the background**, so options a plugin also sets
   (e.g. `copy-mode-vi y` from tmux-yank) are overwritten by the plugin.
 
+## Status bar and panes
+
+The bar sits at the **top** (nvim's lualine owns the bottom row).
+
+```
+ main │  dir │ [COPY] [SYNC]      0 │ 1 󰣀: ssh │ 2  │ 3 󰚩      ⎇ branch ⇡1 ⇣2 ●  󰘩 2
+ ^session ^cwd ^mode flags          ^window tabs with program icon    ^git / SSH / agents
+```
+
+- **Session** turns red while the prefix is pending.
+- **COPY** (black on yellow) shows while the pane is in copy-mode or any other
+  mode that swallows keys; **SYNC** (black on red) shows while
+  `synchronize-panes` is on, because every keystroke then goes to every pane.
+- **Git** - branch, `⇡`/`⇣` ahead/behind, and `●` when the working tree is dirty,
+  for the focused pane's directory (`scripts/status-context.sh`). Nothing is
+  printed outside a repository. tmux runs the script in the background once per
+  `status-interval`, so a redraw never waits on `git`.
+- **SSH host** - the destination of the `ssh` running in the focused pane; when
+  the tmux server itself lives behind SSH, that machine's short host name.
+- **AI agents** - live count on the ai-popup server (idle: nothing).
+- **Tabs** - a Nerd Font icon from the window's foreground command (nvim, git,
+  ssh, python, node, claude/codex, shells, ...). The rules are the
+  `@tab_icon_N` chain in `status.conf`, lowest priority first; auto-named
+  windows still render as a bare index. Needs tmux >= 3.2, older servers keep
+  plain tabs.
+- The active pane's border gets arrows on top of the cyan colour
+  (`pane-border-indicators`, tmux >= 3.3). Each pane's border label keeps its
+  command; the status bar no longer repeats it.
+- Date, clock, battery and online state are not shown: the desktop bar already
+  has them (tmux-battery and tmux-online-status were removed).
+
+Styles inside `#{?...}` must spell their commas as `#,`
+(`#[bg=red#,fg=black]`); the `#{#[...]}` wrapper applies no style on tmux 3.8.
+
 ## Keybinds
 
 Prefix is the default `C-b`.
+
+`C-b Space` opens a grouped **key-hint menu** (tmux-which-key) listing the popup
+and workflow bindings below: AI agents, find/jump, tools, panes, windows,
+session. Entries show the direct key, e.g. `Lazygit  (prefix g)`. It replaces
+the default `next-layout` on `Space`. The menu is
+`plugins/tmux-which-key/config.yaml`; its popup commands mirror `popup.conf`, so
+change both together. The plugin rebuilds it on `prefix r`. Commands in it must
+not contain single quotes (`tests/tmux_config_test.sh` checks this).
+
+`C-b Tab` opens **hint-based copy** (extrakto): fuzzy-pick a URL, path, git hash,
+IPv4, quoted string or word from the visible text of the window's panes; `Enter`
+copies it, `Tab` inserts it at the cursor, `Ctrl-F` cycles filters. It replaces
+tmux 3.8's default `Tab` binding.
 
 `C-b a` opens the tool picker, then that tool's session list. It is the browse
 path, and the only route to `New session`. `C-b A` is the fast path: it attaches
@@ -133,6 +185,8 @@ the lot.
 | `/` | Grep search (rg) |
 | `s` | Sesh session picker (replaces default `choose-tree`) |
 | `T` | Scratchpad session toggle |
+| `Space` | Key-hint menu (tmux-which-key) |
+| `Tab` | Copy a URL, path, hash, IP... from the screen (extrakto) |
 
 ### Panes & windows
 
@@ -277,6 +331,14 @@ Notes:
 - `codex`, `opencode`, `claude` — for the AI coding picker. All three are
   optional and independent; a missing one is shown as *not installed*.
 - TPM (auto-bootstrapped on first launch)
+- `python3` for the key-hint menu (tmux-which-key builds it from YAML with its own
+  vendored pyyaml) and for extrakto (with `fzf`). In XDG mode the which-key plugin
+  calls `realpath --relative-to`, so stock macOS needs GNU coreutils on `PATH`.
+  extrakto was picked over tmux-fingers because fingers 2.x ships a prebuilt
+  binary with no linux aarch64 build.
+- Neither new plugin publishes release tags, so TPM tracks their default branch
+  (TPM can pin a branch or tag, not a commit).
+- A Nerd Font in the terminal, for the status and tab icons.
 
 ### Two invariants in the AI scripts
 

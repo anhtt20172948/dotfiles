@@ -1,0 +1,200 @@
+# yaml-language-server: $schema=config.schema.yaml
+#
+# Key hint menu for tmux-which-key, opened with `prefix Space`.
+#
+# Each entry mirrors a direct prefix binding from keymaps.conf / popup.conf, so
+# the menu teaches the shortcut while it is still one key away: the group is the
+# thing to remember, the letter inside is the direct key where one exists.
+# Popup commands are copied from popup.conf, so change both together.
+# Edit this file, then `prefix r` (the plugin rebuilds its menu on reload).
+command_alias_start_index: 200
+keybindings:
+  prefix_table: Space
+title:
+  style: align=centre,bold
+  prefix: tmux
+  prefix_style: fg=green,align=centre,bold
+position:
+  x: C
+  y: C
+custom_variables:
+  - name: log_info
+    value: '#[fg=green,italics] [info]#[default]#[italics]'
+macros:
+  - name: reload-config
+    commands:
+      - source-file ~/.tmux.conf
+      - display "#{log_info} Config reloaded"
+items:
+  - name: +AI agents
+    key: a
+    menu:
+      - name: Pick tool / session  (prefix a)
+        key: a
+        command: display-popup -d "#{pane_current_path}" -w 90% -h 90% -b rounded -T " 󰘩 AI · #{b:pane_current_path} " -E "~/.config/tmux/scripts/persistent-ai.sh"
+      - name: Latest agent  (prefix A)
+        key: A
+        command: display-popup -d "#{pane_current_path}" -w 90% -h 90% -b rounded -T " 󰘩 AI · latest · #{b:pane_current_path} " -E "~/.config/tmux/scripts/persistent-ai.sh --latest"
+      - name: Agent workflow menu  (prefix F)
+        key: f
+        command: display-popup -d "#{pane_current_path}" -w 70% -h 60% -b rounded -T " 󰚩 Agent workflow · #{b:pane_current_path} " -E "~/.config/tmux/scripts/ai-workflow.sh"
+      - name: no-mistakes pipelines  (prefix N)
+        key: n
+        command: display-popup -d "#{pane_current_path}" -w 90% -h 90% -b rounded -T " 󰑮 no-mistakes · #{b:pane_current_path} " -E "~/.config/tmux/scripts/ai-workflow.sh pipelines"
+      - name: Firstmate crew  (prefix C)
+        key: c
+        command: display-popup -d "#{pane_current_path}" -w 90% -h 90% -b rounded -T " 󰚩 Firstmate crew " -E "~/.config/tmux/scripts/crew-view.sh"
+      - separator: true
+      - name: Quota  (prefix Q)
+        key: q
+        command: display-popup -w 90% -h 85% -T " AI account quota " -E "ai-acct exec quota-axi --tui --provider claude,codex"
+      - name: Claude accounts  (prefix E)
+        key: e
+        command: display-popup -w 60% -h 60% -T " Claude accounts " -E "~/.config/tmux/scripts/ai-account.sh"
+  - name: +Find / jump
+    key: f
+    menu:
+      - name: Copy hint (URL, path, hash, IP)  (prefix Tab)
+        key: tab
+        command: run-shell "$TMUX_PLUGIN_MANAGER_PATH/extrakto/scripts/open.sh #{pane_id}"
+      - name: Files  (prefix f)
+        key: f
+        command: display-popup -d "#{pane_current_path}" -w 75% -h 75% -E "~/.config/tmux/scripts/file-finder.sh"
+      - name: Grep  (prefix /)
+        key: /
+        command: display-popup -d "#{pane_current_path}" -w 75% -h 75% -E "~/.config/tmux/scripts/grep-finder.sh"
+      - name: Sessions  (prefix s)
+        key: s
+        command: display-popup -d "#{pane_current_path}" -w 80% -h 70% -E "~/.config/tmux/scripts/sesh-picker.sh"
+      - name: Windows and panes tree
+        key: w
+        command: choose-tree -Zw
+      - name: Scratchpad  (prefix T, which also closes it)
+        key: T
+        command: display-popup -E -w 80% -h 80% "tmux new-session -A -s scratch"
+  - name: +Tools
+    key: t
+    menu:
+      - name: Lazygit  (prefix g)
+        key: g
+        command: display-popup -d "#{pane_current_path}" -w 90% -h 85% -E "lazygit"
+      - name: Lazydocker  (prefix G)
+        key: G
+        command: display-popup -d "#{pane_current_path}" -w 90% -h 85% -E "lazydocker"
+      - name: Btop  (prefix b)
+        key: b
+        command: display-popup -d "#{pane_current_path}" -w 60% -h 60% -E "btop 2>/dev/null || htop"
+      - name: Monitor Center  (prefix M)
+        key: m
+        command: run-shell -b "$HOME/.config/tmux/scripts/monitor.sh --popup #{pane_id}"
+  - name: +Panes
+    key: p
+    menu:
+      - name: Zoom  (prefix m)
+        key: z
+        command: resize-pane -Z
+      - name: Split right  (prefix |)
+        key: '|'
+        command: split-window -h -c "#{pane_current_path}"
+      - name: Split below  (prefix -)
+        key: '-'
+        command: split-window -v -c "#{pane_current_path}"
+      - name: Choose by number
+        key: p
+        command: display-panes -d 0
+      - name: Last pane
+        key: tab
+        command: last-pane
+      - separator: true
+      - name: Swap up
+        key: K
+        command: swap-pane -U
+      - name: Swap down
+        key: J
+        command: swap-pane -D
+      - name: Break out to window
+        key: '!'
+        command: break-pane
+      - name: Respawn
+        key: R
+        command: respawn-pane -k -c "#{pane_current_path}"
+      - name: Kill
+        key: X
+        command: confirm-before -p "Kill pane #P? (y/n)" kill-pane
+      - separator: true
+      - name: Synchronize panes  (prefix S) - status bar shows SYNC
+        key: S
+        command: setw synchronize-panes \; display-message "Sync #{?synchronize-panes,ON,OFF}"
+  - name: +Windows
+    key: w
+    menu:
+      - name: New  (prefix c)
+        key: c
+        command: new-window -c "#{pane_current_path}"
+      - name: Rename  (prefix ,)
+        key: r
+        command: command-prompt -I "#W" "rename-window -- \"%%\""
+      - name: Last
+        key: tab
+        command: last-window
+      - name: Previous
+        key: p
+        command: previous-window
+      - name: Next
+        key: n
+        command: next-window
+      - name: Layout tiled
+        key: t
+        command: select-layout tiled
+      - name: Layout even horizontal
+        key: h
+        command: select-layout even-horizontal
+      - name: Layout even vertical
+        key: v
+        command: select-layout even-vertical
+      - name: Kill  (prefix W)
+        key: X
+        command: confirm-before -p "Kill window #W? (y/n)" kill-window
+  - name: +Session
+    key: s
+    menu:
+      - name: Rename  (prefix R)
+        key: r
+        command: command-prompt -I "#S" "rename-session -- \"%%\""
+      - name: New
+        key: n
+        command: new-session
+      - name: Choose
+        key: s
+        command: choose-tree -Zs
+      - name: Detach
+        key: d
+        command: detach-client
+  - separator: true
+  - name: Copy mode
+    key: '['
+    command: copy-mode
+  - name: Paste buffer
+    key: ']'
+    command: paste-buffer
+  - name: Clear buffer  (prefix C-l)
+    key: C-l
+    command: send-keys C-l \; clear-history \; display-message "Buffer cleared!"
+  - name: Reload config  (prefix r)
+    key: r
+    macro: reload-config
+  - name: +Plugins
+    key: P
+    menu:
+      - name: Install
+        key: i
+        command: run-shell $TMUX_PLUGIN_MANAGER_PATH/tpm/bindings/install_plugins
+      - name: Update  (prefix U)
+        key: u
+        command: run-shell $TMUX_PLUGIN_MANAGER_PATH/tpm/bindings/update_plugins
+      - name: Clean
+        key: c
+        command: run-shell $TMUX_PLUGIN_MANAGER_PATH/tpm/bindings/clean_plugins
+  - name: List all keys
+    key: '?'
+    command: list-keys -N
