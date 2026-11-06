@@ -14,8 +14,7 @@ local function blend(a, b, amount)
 	)
 end
 
-local function read_env()
-	local encoded = vim.env.LC_KITTY_PALETTE
+local function parse_encoded(encoded)
 	if not encoded or #encoded ~= 125 then
 		return nil
 	end
@@ -32,6 +31,27 @@ local function read_env()
 		values[key] = "#" .. color
 	end
 	return values
+end
+
+local function read_remote()
+	local source = vim.env.LC_KITTY_PALETTE_SRC
+	if not vim.env.SSH_CONNECTION or vim.env.SSH_CONNECTION == "" then
+		return nil
+	end
+	if not source or #source == 0 or #source > 32 or not source:match("^[a-z0-9-]+$") then
+		return nil
+	end
+	local file = io.open(vim.env.HOME .. "/.config/kitty/remote-palette-" .. source .. ".conf", "r")
+	if not file then
+		return nil
+	end
+	-- Bound reads and require exactly one encoded line, with an optional final newline.
+	local encoded = file:read(127)
+	file:close()
+	if encoded and #encoded == 126 and encoded:sub(-1) == "\n" then
+		encoded = encoded:sub(1, -2)
+	end
+	return parse_encoded(encoded)
 end
 
 -- Resolve symlinks: install.sh links the kitty directory into this checkout.
@@ -78,7 +98,7 @@ local function read_file()
 end
 
 function M.read()
-	local values = read_env() or read_file()
+	local values = read_remote() or parse_encoded(vim.env.LC_KITTY_PALETTE) or read_file()
 	if not values then
 		return nil
 	end

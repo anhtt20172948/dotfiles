@@ -2,6 +2,7 @@ local root = assert(arg[1])
 vim.opt.rtp:prepend(root .. "/.config/nvim")
 vim.env.SSH_CONNECTION = nil
 vim.env.LC_KITTY_PALETTE = nil
+vim.env.LC_KITTY_PALETTE_SRC = nil
 local theme = require("customize.kitty_palette")
 local dir = vim.fn.fnamemodify(vim.fn.stdpath("config"), ":h") .. "/kitty"
 vim.fn.mkdir(dir, "p")
@@ -59,6 +60,35 @@ assert(require("customize.kitty_palette").active.colors.base == "#fafafa", "star
 vim.env.SSH_CONNECTION = nil
 assert(theme.read().colors.base == "#fafafa", "env precedence must not depend on SSH_CONNECTION")
 vim.env.SSH_CONNECTION = "127.0.0.1 1234 127.0.0.1 22"
+local remote_dir = vim.env.HOME .. "/.config/kitty"
+vim.fn.mkdir(remote_dir, "p")
+vim.env.LC_KITTY_PALETTE_SRC = "arch-local"
+vim.fn.writefile({ env_palette("333333") }, remote_dir .. "/remote-palette-arch-local.conf")
+vim.fn.writefile({ env_palette("444444") }, remote_dir .. "/remote-palette-mac-local.conf")
+assert(theme.read().colors.base == "#333333", "matching source file must override env")
+vim.fn.writefile({ env_palette("555555") }, remote_dir .. "/remote-palette-arch-local.conf")
+package.loaded["customize.kitty_palette"] = nil
+assert(require("customize.kitty_palette").active.colors.base == "#555555", "restart must read fresh file")
+vim.env.SSH_CONNECTION = nil
+assert(theme.read().colors.base == "#fafafa", "local sessions must ignore pushed files")
+vim.env.SSH_CONNECTION = "127.0.0.1 1234 127.0.0.1 22"
+vim.env.LC_KITTY_PALETTE_SRC = "missing"
+assert(theme.read().colors.base == "#fafafa", "other source files must be ignored")
+for _, source in ipairs({ "", "../arch-local", "Arch-local", "arch_local", string.rep("a", 33), "arch-local\n" }) do
+	vim.env.LC_KITTY_PALETTE_SRC = source
+	local original_open = io.open
+	io.open = function()
+		error("invalid source must be rejected before opening a file")
+	end
+	assert(theme.read().colors.base == "#fafafa", "invalid source must fall back to env")
+	io.open = original_open
+end
+vim.env.LC_KITTY_PALETTE_SRC = "arch-local"
+for _, lines in ipairs({ { "invalid" }, { env_palette("333333"), "extra" }, { env_palette("333333") .. " " } }) do
+	vim.fn.writefile(lines, remote_dir .. "/remote-palette-arch-local.conf")
+	assert(theme.read().colors.base == "#fafafa", "malformed pushed file must fall back to env")
+end
+vim.env.LC_KITTY_PALETTE_SRC = nil
 local valid = env_palette("abcdef")
 for _, invalid in ipairs({
 	"",
