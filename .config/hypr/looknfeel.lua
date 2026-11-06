@@ -37,6 +37,15 @@ hl.config({
 			render_power = 3,
 			color = "rgba(00000055)",
 		},
+		-- Subtle glow around the focused window only; DMS (dms.colors) supplies
+		-- the accent color, and hyprland.lua clears color_inactive after it loads.
+		glow = {
+			enabled = true,
+			range = 12,
+			render_power = 4,
+			color = "rgba(bbc3ff99)",
+			color_inactive = "rgba(00000000)",
+		},
 	},
 	dwindle = {
 		preserve_split = true,

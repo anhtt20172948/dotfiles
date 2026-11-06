@@ -21,3 +21,7 @@ for _, name in ipairs({ "dms.colors", "dms.layout", "dms.input", "dms.windowrule
 		hl.exec_cmd("notify-send -u critical 'Hyprland' " .. string.format("%q", name .. " failed to load"))
 	end
 end
+
+-- Only the focused window glows: dms.colors tints color_inactive, so clear it
+-- again once the DMS overrides are in.
+hl.config({ decoration = { glow = { color_inactive = "rgba(00000000)" } } })
