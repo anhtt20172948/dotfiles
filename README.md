@@ -642,30 +642,44 @@ provisioning path.
 
 Kitty's active palette is the colour source on both platforms. DMS writes
 `~/.config/kitty/dank-theme.conf` on Arch Linux with Hyprland; macOS uses
-`current-theme.conf` (Catppuccin Mocha) without DMS. Neovim first reads
-`LC_KITTY_PALETTE`: exactly 18 colon-separated colours, ordered background,
+`current-theme.conf` (Catppuccin Mocha) without DMS. In SSH sessions, Neovim first
+reads the pushed file
+`~/.config/kitty/remote-palette-<src>.conf` for `LC_KITTY_PALETTE_SRC`. The source
+must contain only lowercase letters, digits and hyphens, with 1 to 32 characters.
+The file must contain exactly one palette line in the format below. Missing or
+malformed files and invalid sources fall back to the forwarded environment value,
+then the existing file fallbacks. Files for other sources are ignored, and local
+sessions ignore pushed files.
+
+`LC_KITTY_PALETTE` contains exactly 18 colon-separated colours, ordered background,
 foreground, then color0 through color15. Each entry must be six lowercase hex
 digits without `#`, whitespace, or newlines. A malformed value is ignored.
 
 The workflow repo manages the local shell export and SSH `SendEnv` configuration;
-servers must accept `LC_KITTY_PALETTE` (for example through `AcceptEnv LC_*`).
+servers must accept `LC_KITTY_PALETTE` and `LC_KITTY_PALETTE_SRC` (for example
+through `AcceptEnv LC_*`).
 The local export runs only outside SSH sessions, preserving a palette received
 from the client. This carries the palette over plain `ssh`, lazyssh's direct
 `/usr/bin/ssh`, and `kitten ssh`. These dotfiles do not alias `ssh` or copy palettes.
 The server needs this Neovim configuration too.
 
-If the variable is absent or malformed, Neovim reads the first available file:
+If neither the source-specific file nor the variable is valid, Neovim reads the
+first available legacy file:
 `remote-palette.conf` during SSH sessions only, then `dank-theme.conf`, then
 `current-theme.conf`. It resolves symlinks. Existing remote snapshots remain a
 compatibility fallback for hosts that already have them; they are no longer
-updated and may be stale, but a valid forwarded variable always takes priority.
+updated and may be stale, but a valid forwarded variable takes priority over
+these legacy files.
 Missing or incomplete file palettes fall back to plain Mocha.
 
 Neovim derives its Catppuccin palette from foreground/background and the 16 ANSI
-colours. Light backgrounds select Latte; dark backgrounds select Mocha. Reconnect
-and restart remote Neovim after changing the local theme. tmux refreshes
-`LC_KITTY_PALETTE` on attach so newly created panes inherit the latest value;
-existing panes and Neovim processes retain their original environment.
+colours. Light backgrounds select Latte; dark backgrounds select Mocha. The workflow
+repo manages a local watcher that pushes source-specific palettes to reachable
+servers. After a local theme change, quit and reopen remote Neovim in the same pane
+to read the latest pushed palette. Offline servers miss that push; the next SSH
+connection still forwards the current palette, and the next theme change pushes
+again. tmux refreshes both palette variables on attach so newly created panes
+inherit them; existing panes retain their source identity and environment.
 
 Kitty shell integration, remote kitty installation, and connection sharing remain
 disabled in `ssh.conf`, preserving the server's account login shell and existing

@@ -75,6 +75,7 @@ assert_contains "status-right shows git and ssh context" "status-context.sh" "$r
 
 # Re-attaching must refresh the palette inherited by subsequent panes.
 assert_contains "reattach refreshes kitty palette" "LC_KITTY_PALETTE" "$(tm show -gv update-environment)"
+assert_contains "reattach refreshes kitty source" "LC_KITTY_PALETTE_SRC" "$(tm show -gv update-environment)"
 
 # --- dangerous-mode indicators ------------------------------------------------
 rendered=$(tm display -p '#{T:status-left}')
