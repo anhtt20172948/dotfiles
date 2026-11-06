@@ -25,22 +25,29 @@ return {
 		lazy = true,
 		priority = 1000,
 		config = function()
+			local flavour = kitty.active and kitty.active.flavour or "mocha"
+			local palette = kitty.colors(require("catppuccin.palettes." .. flavour))
+			local primary = kitty.active and kitty.active.primary or palette.lavender
+			primary = kitty.ensure_contrast(primary or palette.lavender, palette.base, palette.text, 4.5)
 			require("catppuccin").setup({
 				flavour = kitty.active and kitty.active.flavour or "mocha",
-				transparent_background = true, -- disables setting the background color.
-				kitty = false, -- Preserve exact kitty colours; transparency is already explicit.
+				transparent_background = false,
+				kitty = false,
 				float = {
-					transparent = true,
-					solid = false, -- to enable solid-window styling
+					transparent = false,
+					solid = true,
 				},
 				styles = {
 					comments = { "italic" },
-					conditionals = { "italic" },
-					loops = { "italic" },
-					operators = { "italic" },
-					functions = { "bold" },
+					conditionals = { "bold" },
+					loops = { "bold" },
+					operators = {},
+					functions = {},
 					keywords = { "bold" },
-					types = { "bold" },
+					types = {},
+					variables = {},
+					miscs = {},
+					properties = {},
 				},
 				dim_inactive = {
 					enabled = false,
@@ -49,9 +56,9 @@ return {
 				},
 				lsp_styles = { -- Handles the style of specific lsp hl groups (see `:h lsp-highlight`).
 					virtual_text = {
-						hints = { "italic" },
-						information = { "italic" },
-						ok = { "italic" },
+						hints = {},
+						information = {},
+						ok = {},
 					},
 					underlines = {
 						errors = { "underline" },
@@ -66,10 +73,26 @@ return {
 						return {
 							CurSearch = { bg = colors.sky },
 							IncSearch = { bg = colors.sky },
-							CursorLineNr = { fg = colors.blue, style = { "bold" } },
+							CursorLineNr = { fg = primary },
+							Cursor = { fg = colors.base, bg = primary },
+							FloatBorder = { fg = primary, bg = colors.mantle },
 							DashboardFooter = { fg = colors.overlay0 },
 							TreesitterContextBottom = { style = {} },
-							WinSeparator = { fg = colors.overlay0, style = { "bold" } },
+							WinSeparator = { fg = primary },
+							["@variable"] = { fg = colors.text, style = {} },
+							["@keyword.operator"] = { fg = colors.mauve, style = {} },
+							["@string.special.url"] = { fg = colors.blue, style = { "underline" } },
+							["@constant"] = { fg = colors.peach, style = {} },
+							["@constant.builtin"] = { fg = colors.peach, style = {} },
+							["@lsp.type.enumMember"] = { fg = colors.peach, style = {} },
+							["@lsp.typemod.variable.readonly"] = { fg = colors.peach, style = {} },
+							["@variable.parameter"] = { fg = colors.maroon, style = {} },
+							["@lsp.type.parameter"] = { fg = colors.maroon, style = {} },
+							["@property"] = { fg = colors.teal, style = {} },
+							["@variable.member"] = { fg = colors.teal, style = {} },
+							["@lsp.type.property"] = { fg = colors.teal, style = {} },
+							["@variable.builtin"] = { fg = colors.red, style = {} },
+							["@function.builtin"] = { fg = colors.sapphire, style = {} },
 							["@markup.italic"] = { fg = colors.blue, style = { "italic" } },
 							["@markup.strong"] = { fg = colors.blue, style = { "bold" } },
 							Headline = { style = { "bold" } },
@@ -79,16 +102,16 @@ return {
 							Headline4 = { fg = colors.green, style = { "bold" } },
 							Headline5 = { fg = colors.peach, style = { "bold" } },
 							Headline6 = { fg = colors.flamingo, style = { "bold" } },
-							rainbow1 = { fg = colors.blue, style = { "bold" } },
-							rainbow2 = { fg = colors.pink, style = { "bold" } },
-							rainbow3 = { fg = colors.lavender, style = { "bold" } },
-							rainbow4 = { fg = colors.green, style = { "bold" } },
-							rainbow5 = { fg = colors.peach, style = { "bold" } },
-							rainbow6 = { fg = colors.flamingo, style = { "bold" } },
+							rainbow1 = { fg = colors.blue },
+							rainbow2 = { fg = colors.pink },
+							rainbow3 = { fg = colors.lavender },
+							rainbow4 = { fg = colors.green },
+							rainbow5 = { fg = colors.peach },
+							rainbow6 = { fg = colors.flamingo },
 						}
 					end,
 				},
-				color_overrides = kitty.active and { [kitty.active.flavour] = kitty.active.colors } or {},
+				color_overrides = { [flavour] = palette },
 				integrations = {
 					cmp = true,
 					gitsigns = true,

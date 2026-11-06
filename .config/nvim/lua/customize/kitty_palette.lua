@@ -14,6 +14,59 @@ local function blend(a, b, amount)
 	)
 end
 
+local function luminance(color)
+	local r, g, b = rgb(color)
+	local function linear(channel)
+		channel = channel / 255
+		return channel <= 0.04045 and channel / 12.92 or ((channel + 0.055) / 1.055) ^ 2.4
+	end
+	return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+end
+
+function M.contrast(a, b)
+	local x, y = luminance(a), luminance(b)
+	return (math.max(x, y) + 0.05) / (math.min(x, y) + 0.05)
+end
+
+function M.ensure_contrast(color, background, foreground, floor)
+	if M.contrast(color, background) >= floor then
+		return color
+	end
+	-- A malformed/low-contrast terminal foreground cannot be our endpoint.
+	local target = foreground
+	if M.contrast(target, background) < floor then
+		target = luminance(background) > 0.179 and string.format("#%06x", 0) or string.format("#%06x", 16777215)
+	end
+	-- Find the smallest blend that meets the floor, including 8-bit rounding.
+	local low, high = 0, 1
+	for _ = 1, 24 do
+		local mid = (low + high) / 2
+		if M.contrast(blend(color, target, mid), background) >= floor then
+			high = mid
+		else
+			low = mid
+		end
+	end
+	return blend(color, target, high)
+end
+
+-- Called after lazy.nvim adds Catppuccin to runtimepath. Never require the
+-- plugin while reading the plugin specs, or startup depends on load order.
+function M.colors(stock)
+	local colors = vim.tbl_extend("force", {}, stock, M.active and M.active.colors or {})
+	-- Kitty applies terminal opacity to cells matching its default background.
+	-- One blue-channel step preserves the perceived DMS colour but makes code opaque.
+	local r, g, b = rgb(colors.base)
+	colors.base = ("#%02x%02x%02x"):format(r, g, b == 255 and b - 1 or b + 1)
+	local foreground = colors.text
+	for key, color in pairs(colors) do
+		if not vim.tbl_contains({ "base", "mantle", "crust", "surface0", "surface1", "surface2" }, key) then
+			colors[key] = M.ensure_contrast(color, colors.base, foreground, 4.5)
+		end
+	end
+	return colors
+end
+
 local function parse_encoded(encoded)
 	if not encoded or #encoded ~= 125 then
 		return nil
@@ -122,28 +175,11 @@ function M.read()
 	end
 	local edge = light and string.format("#%06x", 16777215) or string.format("#%06x", 0)
 	colors.mantle, colors.crust = blend(bg, edge, 0.15), blend(bg, edge, 0.3)
-	local accents = {
-		red = 1,
-		maroon = 9,
-		green = 2,
-		yellow = 3,
-		peach = 11,
-		blue = 4,
-		sapphire = 12,
-		mauve = 5,
-		pink = 13,
-		teal = 6,
-		sky = 14,
-		lavender = 12,
-		rosewater = 7,
-		flamingo = 15,
-	}
-	for key, slot in pairs(accents) do
-		colors[key] = values["color" .. slot]
-	end
+
 	return {
 		flavour = light and "latte" or "mocha",
 		colors = colors,
+		primary = values.cursor or values.url_color,
 		cursor = values.cursor,
 		selection_background = values.selection_background,
 		selection_foreground = values.selection_foreground,

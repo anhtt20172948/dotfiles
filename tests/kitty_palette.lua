@@ -17,7 +17,7 @@ end
 vim.env.LC_KITTY_PALETTE = env_palette("123456")
 local env_only = assert(theme.read(), "forwarded palette must work without any kitty files")
 assert(env_only.colors.base == "#123456" and env_only.flavour == "mocha")
-assert(env_only.colors.red == "#010101" and env_only.colors.flamingo == "#0f0f0f")
+assert(env_only.colors.red == nil, "ANSI slots must not replace syntax accents")
 vim.env.LC_KITTY_PALETTE = nil
 local function fixture(bg)
 	local lines = {
@@ -35,7 +35,8 @@ end
 vim.fn.writefile(fixture("#111111"), dir .. "/current-theme.conf")
 local dark = assert(theme.read())
 assert(dark.flavour == "mocha" and dark.colors.base == "#111111")
-assert(dark.colors.red == "#010101" and dark.colors.pink == "#0d0d0d")
+assert(dark.colors.red == nil, "syntax accents come from Catppuccin at setup")
+assert(dark.primary == "#abcdef", "cursor must provide the primary UI accent")
 assert(dark.selection_background == "#123456" and dark.cursor == "#abcdef")
 vim.fn.writefile(fixture("#eeeeee"), dir .. "/light.conf")
 assert(vim.uv.fs_symlink(dir .. "/light.conf", dir .. "/dank-theme.conf"))
@@ -116,4 +117,16 @@ vim.env.LC_KITTY_PALETTE = nil
 vim.fn.delete(dir .. "/remote-palette.conf")
 assert(theme.read().colors.base == "#eeeeee", "plain SSH retains the existing fallback")
 vim.env.SSH_CONNECTION = nil
+assert(theme.contrast("#000000", "#ffffff") == 21, "WCAG reference contrast")
+-- Contrast must hold even when the source foreground itself is unreadable.
+for _, case in ipairs({
+	{ bg = "#111111", fg = "#2e576b" },
+	{ bg = "#eeeeee", fg = "#dddddd" },
+}) do
+	for _, color in ipairs({ "#2e576b", "#eeeeee", "#111111", "#fab387" }) do
+		local corrected = theme.ensure_contrast(color, case.bg, case.fg, 4.5)
+		assert(theme.contrast(corrected, case.bg) >= 4.5)
+	end
+end
+assert(theme.ensure_contrast("#fab387", "#111111", "#dddddd", 4.5) == "#fab387")
 print("kitty palette: OK")
