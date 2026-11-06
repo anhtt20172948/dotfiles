@@ -1,26 +1,34 @@
 local mod = "SUPER"
 
-local function key(combo) return mod .. " + " .. combo end
-local function run(cmd) return hl.dsp.exec_cmd(cmd) end
-local function dms(call) return run("dms ipc call " .. call) end
+local function key(combo)
+	return mod .. " + " .. combo
+end
+local function run(cmd)
+	return hl.dsp.exec_cmd(cmd)
+end
+local function dms(call)
+	return run("dms ipc call " .. call)
+end
 
 local function zoom_by(delta)
-    return function()
-        hl.config({ cursor = { zoom_factor = hl.get_config("cursor.zoom_factor") + delta } })
-    end
+	return function()
+		hl.config({ cursor = { zoom_factor = hl.get_config("cursor.zoom_factor") + delta } })
+	end
 end
 
 -- Resize the active window by a percentage of its current size.
 local function resize_by_percent(x, y)
-    return function()
-        local window = hl.get_active_window()
-        if not window then return end
-        hl.dispatch(hl.dsp.window.resize({
-            window = window,
-            x = math.modf(window.size.x * (1 + x / 100)),
-            y = math.modf(window.size.y * (1 + y / 100)),
-        }))
-    end
+	return function()
+		local window = hl.get_active_window()
+		if not window then
+			return
+		end
+		hl.dispatch(hl.dsp.window.resize({
+			window = window,
+			x = math.modf(window.size.x * (1 + x / 100)),
+			y = math.modf(window.size.y * (1 + y / 100)),
+		}))
+	end
 end
 
 -- Apps
@@ -65,8 +73,8 @@ hl.bind("ALT + Tab", hl.dsp.window.alter_zorder({ mode = "top" }), { repeating =
 -- Focus
 local directions = { left = "l", right = "r", up = "u", down = "d" }
 for name, dir in pairs(directions) do
-    hl.bind(key(name), hl.dsp.focus({ direction = dir }))
-    hl.bind(key("ALT + " .. name), hl.dsp.window.swap({ direction = dir }))
+	hl.bind(key(name), hl.dsp.focus({ direction = dir }))
+	hl.bind(key("ALT + " .. name), hl.dsp.window.swap({ direction = dir }))
 end
 hl.bind(key("SHIFT + h"), hl.dsp.focus({ direction = "l" }))
 hl.bind(key("SHIFT + l"), hl.dsp.focus({ direction = "r" }))
@@ -81,8 +89,16 @@ hl.bind(key("SHIFT + right"), hl.dsp.window.resize({ x = resize_step, y = 0, rel
 hl.bind(key("SHIFT + left"), hl.dsp.window.resize({ x = -resize_step, y = 0, relative = true }))
 hl.bind(key("SHIFT + down"), hl.dsp.window.resize({ x = 0, y = resize_step, relative = true }))
 hl.bind(key("SHIFT + up"), hl.dsp.window.resize({ x = 0, y = -resize_step, relative = true }))
-hl.bind(key("code:20"), hl.dsp.window.resize({ x = -100, y = 0, relative = true }), { description = "Expand window left" })
-hl.bind(key("code:21"), hl.dsp.window.resize({ x = 100, y = 0, relative = true }), { description = "Shrink window left" })
+hl.bind(
+	key("code:20"),
+	hl.dsp.window.resize({ x = -100, y = 0, relative = true }),
+	{ description = "Expand window left" }
+)
+hl.bind(
+	key("code:21"),
+	hl.dsp.window.resize({ x = 100, y = 0, relative = true }),
+	{ description = "Shrink window left" }
+)
 hl.bind(key("minus"), resize_by_percent(-10, 0), { repeating = true })
 hl.bind(key("equal"), resize_by_percent(10, 0), { repeating = true })
 hl.bind(key("SHIFT + minus"), resize_by_percent(0, -10), { repeating = true })
@@ -95,13 +111,15 @@ hl.bind(key("mouse_down"), hl.dsp.focus({ workspace = "e+1" }))
 hl.bind(key("mouse_up"), hl.dsp.focus({ workspace = "e-1" }))
 hl.bind(key("SHIFT + mouse_down"), zoom_by(0.5))
 hl.bind(key("SHIFT + mouse_up"), zoom_by(-0.5))
-hl.bind(key("SHIFT + Z"), function() hl.config({ cursor = { zoom_factor = 1 } }) end)
+hl.bind(key("SHIFT + Z"), function()
+	hl.config({ cursor = { zoom_factor = 1 } })
+end)
 
 -- Workspaces
 for i = 1, 10 do
-    local number = i % 10
-    hl.bind(key(number), hl.dsp.focus({ workspace = tostring(i) }))
-    hl.bind(key("SHIFT + " .. number), hl.dsp.window.move({ workspace = tostring(i) }))
+	local number = i % 10
+	hl.bind(key(number), hl.dsp.focus({ workspace = tostring(i) }))
+	hl.bind(key("SHIFT + " .. number), hl.dsp.window.move({ workspace = tostring(i) }))
 end
 hl.bind(key("l"), hl.dsp.focus({ workspace = "m+1" }))
 hl.bind(key("h"), hl.dsp.focus({ workspace = "m-1" }))
@@ -111,11 +129,11 @@ hl.bind(key("CTRL + down"), hl.dsp.focus({ workspace = "empty" }))
 
 -- Screenshots
 for _, trigger in ipairs({ key("C"), "XF86Launch1", "Print" }) do
-    hl.bind(trigger, run("grimblast copy area"))
+	hl.bind(trigger, run("grimblast copy area"))
 end
 for _, prefix in ipairs({ "XF86Launch1", "Print" }) do
-    hl.bind("CTRL + " .. prefix, run("grimblast copy screen"))
-    hl.bind("ALT + " .. prefix, run("grimblast copy active"))
+	hl.bind("CTRL + " .. prefix, run("grimblast copy screen"))
+	hl.bind("ALT + " .. prefix, run("grimblast copy active"))
 end
 
 -- Media and hardware keys
