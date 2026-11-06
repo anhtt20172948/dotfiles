@@ -14,8 +14,28 @@ local function blend(a, b, amount)
 	)
 end
 
+local function read_env()
+	local encoded = vim.env.LC_KITTY_PALETTE
+	if not encoded or #encoded ~= 125 then
+		return nil
+	end
+	local entries = vim.split(encoded, ":", { plain = true })
+	if #entries ~= 18 then
+		return nil
+	end
+	local values = {}
+	for i, color in ipairs(entries) do
+		if #color ~= 6 or not color:match("^[0-9a-f]+$") then
+			return nil
+		end
+		local key = i == 1 and "background" or (i == 2 and "foreground" or "color" .. (i - 3))
+		values[key] = "#" .. color
+	end
+	return values
+end
+
 -- Resolve symlinks: install.sh links the kitty directory into this checkout.
-function M.read()
+local function read_file()
 	local config = vim.env.XDG_CONFIG_HOME
 	local dir = (config and config ~= "" and config or (vim.env.HOME .. "/.config")) .. "/kitty/"
 	local file
@@ -53,6 +73,14 @@ function M.read()
 		if not values["color" .. i] then
 			return nil
 		end
+	end
+	return values
+end
+
+function M.read()
+	local values = read_env() or read_file()
+	if not values then
+		return nil
 	end
 	local bg, fg = values.background, values.foreground
 	local r, g, b = rgb(bg)
