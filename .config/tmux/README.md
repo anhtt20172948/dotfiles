@@ -45,7 +45,9 @@ and IPv4 filters to extrakto.
 There is no `theme.conf` - the theme lives in `status.conf` and uses ANSI colour
 names only (`green`, `brightblack`, `default`, ...), never hex. tmux therefore
 follows the terminal palette (kitty, and through it DMS) live and looks the same
-over SSH. `options.conf` also enables kitty terminal-features and extended keys.
+over SSH. The fzf pickers do the same: they share one ANSI-slot `--color` spec
+(`AI_FZF_COLORS` in `scripts/ai-lib.sh`) with `bg:-1`, so kitty's opacity shows
+through. `options.conf` also enables kitty terminal-features and extended keys.
 
 ## Load order
 

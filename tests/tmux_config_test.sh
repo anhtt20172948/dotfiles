@@ -149,4 +149,25 @@ bound=$(tm list-keys -T prefix)
 for key in a A F N C g G b M f / s T Q E S m ','; do
   [[ $bound == *" $key "* ]] || fail "prefix $key is documented in the menu but not bound"
 done
+# --- picker colours ------------------------------------------------------------
+# Every fzf picker shares ONE ANSI-slot --color spec (AI_FZF_COLORS in ai-lib.sh),
+# so the popups follow the terminal palette and bg:-1 keeps kitty's opacity. No
+# picker may carry its own colour string, and no hex may sneak into the spec.
+# shellcheck source=/dev/null
+source "$ROOT/.config/tmux/scripts/ai-lib.sh"
+[[ $AI_FZF_COLORS == *'bg:-1'* ]] || fail "fzf spec must keep bg:-1 (transparent)"
+[[ $AI_FZF_COLORS != *'#'* ]] || fail "fzf spec must use ANSI slots, not hex"
+for f in ai-workflow ai-sessions ai-picker ai-location ai-account crew-view; do
+  script="$ROOT/.config/tmux/scripts/$f.sh"
+  # shellcheck disable=SC2016 # the literal text "$AI_FZF_COLORS" is the pattern
+  grep -qF -- '--color="$AI_FZF_COLORS"' "$script" || fail "$f.sh must use \$AI_FZF_COLORS"
+  if grep -nE -- "--color='" "$script"; then fail "$f.sh carries its own fzf colour string"; fi
+done
+if command -v fzf >/dev/null; then
+  printf 'a\n' | fzf --filter=a --color="$AI_FZF_COLORS" >/dev/null || fail "fzf rejects AI_FZF_COLORS"
+fi
+# yazi: ANSI colour names only, no catppuccin flavor.
+yz="$ROOT/.config/yazi/theme.toml"
+if grep -nE '^[^#]*("#[0-9a-fA-F]{6}"|\[flavor\])' "$yz"; then fail "yazi theme must use ANSI colour names and no flavor"; fi
+
 echo "tmux_config_test: OK"

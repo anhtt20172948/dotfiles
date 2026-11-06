@@ -44,7 +44,7 @@ pick() {
     --border-label=" Claude $label " --info=hidden \
     --header='Ctrl-j/k move  •  Enter select  •  Esc close' --prompt="$label › " \
     --pointer='' --bind='ctrl-j:down,ctrl-k:up' \
-    --color='bg+:#313244,bg:#1e1e2e,fg:#cdd6f4,header:#89b4fa,fg+:#cdd6f4,prompt:#cba6f7,border:#6c7086,label:#cba6f7')
+    --color="$AI_FZF_COLORS")
   status=$?
   case "$status" in 0) ;; 1|130) return 0 ;; *) return "$status" ;; esac
   while IFS=$'\t' read -r value _display; do
