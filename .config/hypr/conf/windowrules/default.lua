@@ -1,1 +1,1 @@
--- default.conf contains only commented examples; there are no active rules.
+-- No active rules; the previous default ruleset contained only commented examples.

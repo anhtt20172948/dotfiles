@@ -1,4 +1,4 @@
--- Keep this source order aligned with hyprland.conf for older hosts.
+-- Mirrors the former hyprland.conf source order.
 hl.env("QT_QPA_PLATFORM", "wayland")
 hl.env("ELECTRON_OZONE_PLATFORM_HINT", "auto")
 hl.env("QT_QPA_PLATFORMTHEME", "gtk3")
