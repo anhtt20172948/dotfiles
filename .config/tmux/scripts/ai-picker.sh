@@ -450,7 +450,7 @@ selection=$(
     --preview-window='right,60%,wrap,border-left' \
     --preview-label=' Details & Usage ' \
     --bind='ctrl-j:down,ctrl-k:up' \
-    --color='bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8,fg:#cdd6f4,header:#89b4fa,info:#cba6f7,pointer:#f5e0dc,marker:#a6e3a1,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8,border:#6c7086,label:#cba6f7' \
+    --color="$AI_FZF_COLORS" \
     --preview="$preview_command"
 ) || {
   fzf_status=$?

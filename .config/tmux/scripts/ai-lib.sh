@@ -29,6 +29,15 @@
 # picker's preview and the controller's launch always agree on the binary.
 export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$PATH"
 
+# --- fzf colours: ANSI slots only ---------------------------
+# The one --color spec every fzf picker under .config/tmux/scripts uses. It names
+# ANSI slots 0-15 and -1 (terminal default), never hex, so the pickers follow the
+# terminal palette (kitty, and through it DMS) and bg:-1 lets kitty's opacity show
+# through. Same mapping as the tmux theme in status.conf: cyan = DMS primary,
+# blue = header, magenta = pointer/spinner, red = match highlight, brightblack
+# (8) = border/info, black (0) = the subtle selected-row background.
+AI_FZF_COLORS='bg:-1,bg+:0,fg:-1,fg+:-1,hl:1,hl+:1,header:4,info:8,pointer:5,spinner:5,marker:2,prompt:6,label:6,border:8'
+
 # --- Colors (Catppuccin Mocha) ------------------------------
 AI_RESET=$'\033[0m'
 AI_BOLD=$'\033[1m'
