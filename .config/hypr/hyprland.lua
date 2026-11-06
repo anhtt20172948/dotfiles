@@ -15,8 +15,8 @@ require("binds")
 -- above. dms/outputs.lua is deliberately skipped: it would replace the
 -- monitor layout in monitors.lua.
 for _, name in ipairs({ "dms.colors", "dms.layout", "dms.input", "dms.windowrules" }) do
-    local ok, err = pcall(require, name)
-    if not ok and not tostring(err):find("module '" .. name .. "' not found", 1, true) then
-        hl.exec_cmd("notify-send -u critical 'Hyprland' " .. string.format("%q", name .. " failed to load"))
-    end
+	local ok, err = pcall(require, name)
+	if not ok and not tostring(err):find("module '" .. name .. "' not found", 1, true) then
+		hl.exec_cmd("notify-send -u critical 'Hyprland' " .. string.format("%q", name .. " failed to load"))
+	end
 end
