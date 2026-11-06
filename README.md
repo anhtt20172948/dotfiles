@@ -672,8 +672,27 @@ updated and may be stale, but a valid forwarded variable takes priority over
 these legacy files.
 Missing or incomplete file palettes fall back to plain Mocha.
 
-Neovim derives its Catppuccin palette from foreground/background and the 16 ANSI
-colours. Light backgrounds select Latte; dark backgrounds select Mocha. The workflow
+Neovim uses Kitty/DMS foreground and background for its neutral layers, keeping
+Catppuccin's own syntax accents. Light backgrounds select Latte; dark backgrounds
+select Mocha. All text colours (including comments and UI overlays) are adjusted
+toward the foreground to meet WCAG 4.5:1 contrast against the editor background;
+if the foreground is too dim, the adjustment uses black or white instead.
+The DMS cursor colour (or URL colour when available) supplies borders, cursor and
+active line accents. Neovim and its floating windows are opaque, leaving Kitty's
+transparency outside the editor unchanged. Because [Kitty applies opacity to
+cells matching its default background](https://sw.kovidgoyal.net/kitty/conf/#opt-kitty.background_opacity),
+the editor base differs from DMS by one blue-channel step, visually imperceptible.
+Contrast is measured against that actual rendered base.
+
+Comments alone are italic. Keywords, conditionals and loops are bold; functions,
+types, variables, operators and rainbow delimiters are plain. Document heading
+and emphasis styles retain their markup meaning. Constants and readonly LSP
+variables use peach, parameters maroon, properties/members teal, builtin variables
+red and builtin functions sapphire; ordinary variables use the foreground.
+Uppercase names depend on the Python parser/LSP classifying them as constants or
+readonly variables.
+
+The workflow
 repo manages a local watcher that pushes source-specific palettes to reachable
 servers. After a local theme change, quit and reopen remote Neovim in the same pane
 to read the latest pushed palette. Offline servers miss that push; the next SSH
