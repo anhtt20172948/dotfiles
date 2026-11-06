@@ -19,7 +19,11 @@ function M.read()
 	local config = vim.env.XDG_CONFIG_HOME
 	local dir = (config and config ~= "" and config or (vim.env.HOME .. "/.config")) .. "/kitty/"
 	local file
-	for _, name in ipairs({ "dank-theme.conf", "current-theme.conf" }) do
+	local names = { "dank-theme.conf", "current-theme.conf" }
+	if vim.env.SSH_CONNECTION and vim.env.SSH_CONNECTION ~= "" then
+		table.insert(names, 1, "remote-palette.conf")
+	end
+	for _, name in ipairs(names) do
 		local path = vim.uv.fs_realpath(dir .. name)
 		if path then
 			file = io.open(path, "r")

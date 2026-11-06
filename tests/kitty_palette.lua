@@ -1,5 +1,6 @@
 local root = assert(arg[1])
 vim.opt.rtp:prepend(root .. "/.config/nvim")
+vim.env.SSH_CONNECTION = nil
 local theme = require("customize.kitty_palette")
 local dir = vim.fn.fnamemodify(vim.fn.stdpath("config"), ":h") .. "/kitty"
 vim.fn.mkdir(dir, "p")
@@ -30,4 +31,13 @@ vim.fn.writefile({ "background invalid" }, dir .. "/light.conf")
 assert(theme.read() == nil, "incomplete palette must not partly override catppuccin")
 vim.fn.delete(dir .. "/dank-theme.conf")
 assert(theme.read().flavour == "mocha")
+-- A Mac snapshot must supersede a previous Arch/DMS connection on the server.
+vim.fn.writefile(fixture("#eeeeee"), dir .. "/dank-theme.conf")
+vim.fn.writefile(fixture("#222222"), dir .. "/remote-palette.conf")
+assert(theme.read().colors.base == "#eeeeee", "local DMS must ignore remote snapshots")
+vim.env.SSH_CONNECTION = "127.0.0.1 1234 127.0.0.1 22"
+assert(theme.read().colors.base == "#222222", "SSH snapshot must override stale DMS")
+vim.fn.delete(dir .. "/remote-palette.conf")
+assert(theme.read().colors.base == "#eeeeee", "plain SSH retains the existing fallback")
+vim.env.SSH_CONNECTION = nil
 print("kitty palette: OK")
