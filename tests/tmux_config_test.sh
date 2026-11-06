@@ -133,6 +133,9 @@ done
 for gone in tmux-battery tmux-online-status; do
   assert_lacks "plugin list drops $gone" "$gone" "$plugins"
 done
+# extrakto's default 'bg' mode runs xclip, which the servers lack; OSC 52 copies
+# through tmux instead, locally and over SSH.
+[[ $(tm show -gv @extrakto_clip_mode) == tmux_osc52 ]] || fail "extrakto must copy via tmux_osc52"
 
 # --- key-hint menu config ------------------------------------------------------
 # tmux-which-key pastes each command into a single-quoted tmux string without
