@@ -77,7 +77,7 @@ for f in data/captain.md; do p=~/.local/share/firstmate/$f; [ -L "$p" ] && cp --
 | `.config/nvim` | Neovim: Lua, lazy.nvim and `lazy-lock.json`; see [Neovim](#neovim). |
 | `.config/tmux` | Modular tmux config and persistent AI popups; see [tmux](#tmux). |
 | `.config/kitty` | Terminal font and themes; see [font configuration](.config/kitty/README.md). |
-| `.config/hypr` | Hyprland, lock screen, wallpaper and DankMaterialShell integration. |
+| `.config/hypr` | Hyprland Lua config and DankMaterialShell integration. |
 | `.config/yazi` | File manager settings and vendored color themes. |
 | `.config/btop` | Resource monitor settings and themes. |
 | `.config/atuin` | Shell history settings. |

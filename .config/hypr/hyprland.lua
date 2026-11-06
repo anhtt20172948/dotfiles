@@ -1,26 +1,22 @@
--- Keep this source order aligned with hyprland.conf for older hosts.
-hl.env("QT_QPA_PLATFORM", "wayland")
-hl.env("ELECTRON_OZONE_PLATFORM_HINT", "auto")
-hl.env("QT_QPA_PLATFORMTHEME", "gtk3")
-hl.env("QT_QPA_PLATFORMTHEME_QT6", "gtk3")
-hl.env("TERMINAL", "kitty")
-hl.env("AQ_DRM_DEVICES", "/dev/dri/card1")
-
-hl.on("hyprland.start", function()
-    hl.exec_cmd([[bash -c "wl-paste --watch cliphist store &"]])
-    hl.exec_cmd("dms run")
-    hl.exec_cmd("fcitx5 -d")
-    hl.exec_cmd("/usr/lib/mate-polkit/polkit-mate-authentication-agent-1")
-end)
-
-require("conf.windows.custom")
-require("conf.decorations.default")
-require("conf.animations.animations-moving")
-require("conf.layouts.default")
-require("conf.misc")
-require("conf.windowrules.default")
+-- Hyprland 0.57 Lua config entry point.
+-- Module order matters: DMS-generated overrides are loaded last.
+require("env")
+require("autostart")
 require("monitors")
-require("workspaces")
-require("keybindings_dms")
--- Other DMS modules override settings that the legacy source chain never loaded.
-require("dms.cursor")
+require("input")
+require("looknfeel")
+require("animations")
+require("rules")
+require("binds")
+
+-- DMS (DankMaterialShell) regenerates these files at runtime. They are not
+-- tracked, so each one is optional and a missing or broken file must never
+-- break startup. They load last, so DMS-managed values win over the baselines
+-- above. dms/outputs.lua is deliberately skipped: it would replace the
+-- monitor layout in monitors.lua.
+for _, name in ipairs({ "dms.colors", "dms.layout", "dms.input", "dms.windowrules" }) do
+    local ok, err = pcall(require, name)
+    if not ok and not tostring(err):find("module '" .. name .. "' not found", 1, true) then
+        hl.exec_cmd("notify-send -u critical 'Hyprland' " .. string.format("%q", name .. " failed to load"))
+    end
+end
