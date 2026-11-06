@@ -1,1 +1,0 @@
--- No active rules; the previous default ruleset contained only commented examples.
