@@ -133,7 +133,8 @@ bind_all({
 	{ key("End"), hl.dsp.focus({ window = "last" }) },
 })
 
--- Resize: percent binds, plus a resize mode (SUPER + R, leave with Escape)
+-- Resize: percent binds, SUPER + SHIFT + arrows for a fixed pixel step, plus a
+-- resize mode (SUPER + R, leave with Escape) that uses the same step
 bind_all({
 	{ key("minus"), resize_by_percent(-10, 0), { repeating = true } },
 	{ key("equal"), resize_by_percent(10, 0), { repeating = true } },
@@ -145,6 +146,15 @@ bind_all({
 local resize_step = 40
 local function resize_step_by(x, y)
 	return hl.dsp.window.resize({ x = x * resize_step, y = y * resize_step, relative = true })
+end
+local resize_arrows = {
+	right = { 1, 0 },
+	left = { -1, 0 },
+	down = { 0, 1 },
+	up = { 0, -1 },
+}
+for name, step in pairs(resize_arrows) do
+	hl.bind(key("SHIFT + " .. name), resize_step_by(step[1], step[2]), { repeating = true })
 end
 hl.define_submap("resize", "escape", function()
 	bind_all({
