@@ -30,3 +30,12 @@ hl.gesture({ fingers = 3, direction = "horizontal", action = "workspace" })
 hl.gesture({ fingers = 3, direction = "up", action = "fullscreen" })
 hl.gesture({ fingers = 4, direction = "down", action = "close" })
 hl.gesture({ fingers = 4, direction = "pinch", action = "cursorZoom", zoom_level = 2, mode = "live" })
+
+-- Everything defaults to a flat accel profile (external mice). Touchpads keep
+-- libinput's adaptive profile for precise small motions. hl.device matches the
+-- exact device name, so an unmatched name is a harmless no-op on other machines
+-- and those touchpads simply fall back to the flat default. Names come from
+-- `hyprctl devices -j`.
+for _, name in ipairs({ "syna8004:00-06cb:cd8b-touchpad" }) do
+	hl.device({ name = name, accel_profile = "adaptive" })
+end

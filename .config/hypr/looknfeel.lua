@@ -37,6 +37,8 @@ hl.config({
 			render_power = 3,
 			color = "rgba(00000055)",
 		},
+		-- Dim the background behind the special-workspace scratchpad (SUPER+grave).
+		dim_special = 0.3,
 		-- Subtle glow around the focused window only; DMS (dms.colors) supplies
 		-- the accent color, and hyprland.lua clears color_inactive after it loads.
 		glow = {
@@ -45,6 +47,26 @@ hl.config({
 			render_power = 4,
 			color = "rgba(bbc3ff99)",
 			color_inactive = "rgba(00000000)",
+		},
+	},
+	-- Tab bar for grouped windows (SUPER+G). DMS (dms.colors) supplies the bar
+	-- and border colors; these set shape, titles and scroll-to-switch.
+	group = {
+		groupbar = {
+			enabled = true,
+			font_size = 11,
+			height = 22,
+			gaps_in = 3,
+			gaps_out = 2,
+			indicator_height = 0,
+			gradients = true,
+			gradient_rounding = 8,
+			rounding = 8,
+			render_titles = true,
+			text_color = "rgb(ffffff)",
+			text_color_inactive = "rgb(d0d0d8)",
+			scrolling = true,
+			middle_click_close = true,
 		},
 	},
 	dwindle = {
@@ -66,6 +88,9 @@ hl.config({
 		enable_swallow = true,
 		swallow_regex = "^(kitty)$",
 		middle_click_paste = false,
+		-- A window requesting activation (e.g. a browser opened from a link)
+		-- takes focus instead of only flagging urgent.
+		focus_on_activate = true,
 	},
 	ecosystem = {
 		no_update_news = true,
@@ -73,6 +98,10 @@ hl.config({
 	},
 	render = {
 		new_render_scheduling = true,
+		-- 2 = direct scan-out only for fullscreen windows that report content
+		-- type "game"; video and everything else keep normal compositing, so
+		-- there is no risk of glitches or missed effects.
+		direct_scanout = 2,
 	},
 	-- Scrolling layout, used on the portrait workspaces (see rules.lua).
 	scrolling = {
