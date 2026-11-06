@@ -9,14 +9,19 @@ Nerd Font italic faces. Setting them to `style=Bold` made italics render bold.
 
 ## Theme
 
-- `current-theme.conf` (Catppuccin Mocha) is the fallback colour set.
-- `globinclude dank-theme.conf` layers the wallpaper colours that DMS generates
-  from its matugen template (`dank-theme.conf`) over it. If DMS has not
-  generated the file yet, the glob matches nothing and kitty keeps the fallback.
-- `dank-tabs.conf` is not included. DMS writes it with tab layout settings
-  (edge, style, alignment, title templates) that would override
-  [custom-tabs.conf](custom-tabs.conf). The `dank-*.conf` files are per host and
-  gitignored.
+Include order in [kitty.conf](kitty.conf), later files win:
+
+1. `current-theme.conf` - fallback terminal colours (Catppuccin Mocha).
+2. [custom-tabs-colors.conf](custom-tabs-colors.conf) - fallback tab bar colours.
+3. `globinclude dank-theme.conf` - wallpaper terminal colours from DMS.
+4. `globinclude dank-tabs.conf` - wallpaper tab bar colours from DMS.
+5. [custom-tabs.conf](custom-tabs.conf) - tab bar layout only (edge, style,
+   alignment, margins, title templates). It is last so the layout DMS writes
+   into `dank-tabs.conf` never overrides it.
+
+If DMS has not generated a `dank-*.conf` file yet, its glob matches nothing and
+kitty keeps the fallback colours. The `dank-*.conf` files are per host and
+gitignored.
 
 ## Icons
 
