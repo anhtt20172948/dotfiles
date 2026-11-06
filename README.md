@@ -648,6 +648,31 @@ from foreground/background and the 16 ANSI colours. Light backgrounds select
 Latte; dark backgrounds select Mocha. Missing or incomplete palettes fall back
 to plain Mocha. Restart Neovim after changing the kitty theme.
 
+Interactive zsh uses `kitten ssh` inside kitty (including tmux with
+`KITTY_WINDOW_ID`) when `kitten` is available. Scripts and subprocesses such as
+git, Ansible, and scp still use OpenSSH; `command ssh` also bypasses the alias.
+`~/.config/kitty/ssh.conf` generates one `copy` directive per connection,
+selecting readable `dank-theme.conf`, otherwise `current-theme.conf`, from
+`${XDG_CONFIG_HOME:-~/.config}/kitty`. It resolves symlinks and copies the file
+to the server's `~/.config/kitty/remote-palette.conf`. Neovim prefers that
+snapshot during SSH sessions, ahead of any old server DMS file; local Neovim
+keeps its existing precedence. A Mac connection therefore replaces an earlier
+Arch snapshot with Mocha. The server needs this Neovim configuration too.
+
+The snapshot updates on connection, so reconnect and restart remote Neovim
+after changing the wallpaper. Kitty shell integration, remote kitty installation,
+and connection sharing are disabled in `ssh.conf`; the server's account login
+shell and existing shell files remain in use. Kitty still bootstraps the file
+transfer and installs terminfo. In tmux, kitty's transfer requires escape-code
+passthrough and current `KITTY_PID`/`KITTY_WINDOW_ID` values.
+
+The [kitty SSH documentation](https://sw.kovidgoyal.net/kitty/kittens/ssh/)
+and [0.49 copy implementation](https://github.com/kovidgoyal/kitty/blob/v0.49.0/kittens/ssh/config.go)
+describe why this uses a generated single source: missing sources and unmatched
+`--glob` patterns are errors; `--dest` is relative to the remote home and
+`--symlink-strategy=resolve` sends file contents instead of local symlinks.
+No optional copy or order-dependent writes to the same destination are needed.
+
 Other terminal tools use ANSI colours, including btop's built-in `TTY` theme.
 Do not add hex colour literals to active tool configuration. Neovim highlights
 must use the active Catppuccin palette, preserving the existing highlight roles
