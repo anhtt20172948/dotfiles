@@ -1,0 +1,33 @@
+# Theme uses ANSI color names only, so lazygit inherits the palette that DMS
+# writes into kitty (~/.config/kitty/dank-theme.conf) instead of its green
+# defaults. Mapping from dank16 slots: cyan = color6 (DMS primary, also
+# url_color), blue = color4 (DMS secondary), red = color1, yellow = color3.
+# `default` keeps the terminal background and foreground.
+gui:
+  theme:
+    activeBorderColor:
+      - cyan
+      - bold
+    inactiveBorderColor:
+      - default
+    searchingActiveBorderColor:
+      - blue
+      - bold
+    optionsTextColor:
+      - blue
+    selectedLineBgColor:
+      - blue
+    inactiveViewSelectedLineBgColor:
+      - bold
+    cherryPickedCommitFgColor:
+      - blue
+    cherryPickedCommitBgColor:
+      - cyan
+    markedBaseCommitFgColor:
+      - blue
+    markedBaseCommitBgColor:
+      - yellow
+    unstagedChangesColor:
+      - red
+    defaultFgColor:
+      - default

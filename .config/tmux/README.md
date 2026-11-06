@@ -48,6 +48,11 @@ plugin and consumed directly in `status.conf`.
 options → keymaps → plugins → status → popup → hooks → navigation → TPM
 ```
 
+TPM runs in the foreground (`run`, not `run -b`) so that anything appended to
+`.tmux.conf` after it wins over plugin defaults. The popup colours at the end of
+`.tmux.conf` depend on this: catppuccin sets an opaque `popup-style`, and the
+override resets it to the terminal default.
+
 Two consequences worth remembering when editing:
 
 - **`popup.conf` wins over `keymaps.conf`** for any key bound in both. Check
