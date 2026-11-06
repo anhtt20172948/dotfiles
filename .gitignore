@@ -46,5 +46,8 @@ __pycache__/
 .env
 .env.*
 
+# DMS writes kitty theme files from the wallpaper at runtime (per host).
+.config/kitty/dank-*.conf
+
 # Firstmate captain preferences are per host: never track them.
 .local/share/firstmate/data/captain.md
