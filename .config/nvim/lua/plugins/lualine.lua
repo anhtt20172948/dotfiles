@@ -5,24 +5,15 @@ return {
 		local lualine = require("lualine")
 		local lazy_status = require("lazy.status") -- to configure lazy pending updates count
 
-		-- local colors = {
-		-- 	color0 = "#092236",
-		-- 	color1 = "#ff5874",
-		-- 	color2 = "#c3ccdc",
-		-- 	-- color3 = "#1c1e26",
-		-- 	color3 = "none",
-		-- 	color6 = "#a1aab8",
-		-- 	color7 = "#828697",
-		-- 	color8 = "#ae81ff",
-		-- }
+		local palette = require("customize.kitty_palette").palette()
 		local colors = {
-			color0 = "#14121E", -- deep purple-black (background)
-			color1 = "#FF2E88", -- ULTRA PINK (primary accent)
-			color2 = "#F8F8F2", -- bright foreground text
-			color3 = "none", -- transparent
-			color6 = "#C77DFF", -- neon lavender / purple
-			color7 = "#BFBFD5", -- soft light gray
-			color8 = "#AE81FF", -- Dracula purple (kept)
+			color0 = palette.base,
+			color1 = palette.pink,
+			color2 = palette.text,
+			color3 = "none",
+			color6 = palette.lavender,
+			color7 = palette.subtext1,
+			color8 = palette.mauve,
 		}
 		local my_lualine_theme = {
 			replace = {
@@ -73,7 +64,7 @@ return {
 				modified = "✥", -- Text that shows when the file is modified.
 				readonly = "", -- Text that shows when the file is non-modifiable or readonly.
 			},
-			color = { fg = "white", gui = "bold", bg = "#3d3d3d" }, -- Sets highlighting of component
+			color = { fg = palette.text, gui = "bold", bg = palette.surface1 }, -- Sets highlighting of component
 		}
 		local filetype = {
 			"filetype",
@@ -83,7 +74,7 @@ return {
 
 		local branch = {
 			"branch",
-			icon = { "", color = { fg = "#A6D4DE" } },
+			icon = { "", color = { fg = palette.teal } },
 			"|",
 			gui = "bold",
 		}
@@ -126,7 +117,7 @@ return {
 						-- cond = require("noice").api.statusline.mode.has,
 						lazy_status.updates,
 						cond = lazy_status.has_updates,
-						color = { fg = "#ff9e64" },
+						color = { fg = palette.peach },
 					},
 					{
 						"encoding",

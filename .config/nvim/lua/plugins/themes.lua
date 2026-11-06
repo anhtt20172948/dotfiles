@@ -1,4 +1,4 @@
-local lspsaga = require("lspsaga")
+local kitty = require("customize.kitty_palette")
 return {
 	{
 		"uloco/bluloco.nvim",
@@ -26,8 +26,9 @@ return {
 		priority = 1000,
 		config = function()
 			require("catppuccin").setup({
-				flavour = "mocha",
+				flavour = kitty.active and kitty.active.flavour or "mocha",
 				transparent_background = true, -- disables setting the background color.
+				kitty = false, -- Preserve exact kitty colours; transparency is already explicit.
 				float = {
 					transparent = true,
 					solid = false, -- to enable solid-window styling
@@ -87,115 +88,7 @@ return {
 						}
 					end,
 				},
-				-- color_overrides = {
-				-- 	mocha = {
-				-- 		rosewater = "#F5B8AB",
-				-- 		flamingo = "#F29D9D",
-				-- 		pink = "#AD6FF7",
-				-- 		mauve = "#FF8F40",
-				-- 		red = "#E66767",
-				-- 		maroon = "#EB788B",
-				-- 		peach = "#FAB770",
-				-- 		yellow = "#FACA64",
-				-- 		green = "#70CF67",
-				-- 		teal = "#4CD4BD",
-				-- 		sky = "#61BDFF",
-				-- 		sapphire = "#4BA8FA",
-				-- 		blue = "#00BFFF",
-				-- 		lavender = "#00BBCC",
-				-- 		text = "#C1C9E6",
-				-- 		subtext1 = "#A3AAC2",
-				-- 		subtext0 = "#8E94AB",
-				-- 		overlay2 = "#7D8296",
-				-- 		overlay1 = "#676B80",
-				-- 		overlay0 = "#464957",
-				-- 		surface2 = "#3A3D4A",
-				-- 		surface1 = "#2F313D",
-				-- 		surface0 = "#1D1E29",
-				-- 		base = "#0b0b12",
-				-- 		mantle = "#11111a",
-				-- 		crust = "#191926",
-				-- 	},
-				-- },
-				color_overrides = {
-					mocha = {
-						-- Core pink family
-						rosewater = "#F5C2E7",
-						flamingo = "#F2A2D4",
-						pink = "#FF79C6",
-						mauve = "#C77DFF",
-
-						-- Reds → rose tones
-						red = "#F38BA8",
-						maroon = "#E06C9F",
-
-						-- Warm accents (peach → blush)
-						peach = "#FFB4A2",
-						yellow = "#F9C784",
-
-						-- Greens & blues shifted toward pink/purple
-						green = "#B4F9C8", -- mint-pink balance
-						teal = "#8BD5CA",
-						sky = "#A6C8FF",
-						sapphire = "#8AA9FF",
-						blue = "#7AA2F7",
-						lavender = "#DDB6F2",
-
-						-- Text
-						text = "#E6E9FF",
-						subtext1 = "#C8CCE6",
-						subtext0 = "#B0B4CC",
-
-						-- UI layers (slightly purple-tinted)
-						overlay2 = "#8C8FA8",
-						overlay1 = "#70738C",
-						overlay0 = "#55576B",
-						surface2 = "#3E4058",
-						surface1 = "#2E3045",
-						surface0 = "#1F2033",
-
-						-- Backgrounds (deep mauve-black)
-						base = "#0E0B14",
-						mantle = "#141020",
-						crust = "#1B162A",
-					},
-				},
-				-- color_overrides = {
-				--     mocha = {
-				--         -- this 16 colors are changed to onedark
-				--         base = "#282c34",
-				--         mantle = "#353b45",
-				--         surface0 = "#3e4451",
-				--         surface1 = "#545862",
-				--         surface2 = "#565c64",
-				--         text = "#abb2bf",
-				--         rosewater = "#b6bdca",
-				--         lavender = "#c8ccd4",
-				--         red = "#e06c75",
-				--         peach = "#d19a66",
-				--         yellow = "#e5c07b",
-				--         green = "#98c379",
-				--         teal = "#56b6c2",
-				--         blue = "#61afef",
-				--         mauve = "#c678dd",
-				--         flamingo = "#be5046",
-				--
-				--         -- now patching extra palettes
-				--         maroon = "#e06c75",
-				--         sky = "#d19a66",
-				--
-				--         -- extra colors not decided what to do
-				--         pink = "#F5C2E7",
-				--         sapphire = "#74C7EC",
-				--
-				--         subtext1 = "#BAC2DE",
-				--         subtext0 = "#A6ADC8",
-				--         overlay2 = "#9399B2",
-				--         overlay1 = "#7F849C",
-				--         overlay0 = "#6C7086",
-				--         crust = "#11111B",
-				--     }
-				-- },
+				color_overrides = kitty.active and { [kitty.active.flavour] = kitty.active.colors } or {},
 				integrations = {
 					cmp = true,
 					gitsigns = true,
@@ -297,7 +190,7 @@ return {
 					--   * https://github.com/folke/tokyonight.nvim/tree/main/lua/tokyonight/groups
 				},
 				on_highlights = function(hl, c)
-					local prompt = "#2d3149"
+					local prompt = c.bg_highlight
 					hl.TelescopeNormal = {
 						bg = c.bg_dark,
 						fg = c.fg_dark,

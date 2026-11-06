@@ -41,7 +41,7 @@ return {
 		config = function()
 			require("notify").setup({
 				-- other stuff
-				background_colour = "#000000",
+				background_colour = require("customize.kitty_palette").palette().base,
 			})
 		end,
 	},
