@@ -89,22 +89,6 @@ hl.window_rule({ name = "video-idle-inhibit", match = { tag = "video" }, idle_in
 hl.window_rule({ name = "browser-idle-inhibit", match = { tag = "browser" }, idle_inhibit = "fullscreen" })
 hl.window_rule({ name = "video-opaque", match = { tag = "video" }, opaque = true, no_blur = true })
 
--- Smart gaps: a lone tiled window (or a fullscreen one) fills the monitor.
-hl.workspace_rule({ workspace = "w[tv1]", gaps_out = 0, gaps_in = 0 })
-hl.workspace_rule({ workspace = "f[1]", gaps_out = 0, gaps_in = 0 })
-hl.window_rule({
-	name = "no-gaps-wtv1",
-	match = { float = false, workspace = "w[tv1]" },
-	border_size = 0,
-	rounding = 0,
-})
-hl.window_rule({
-	name = "no-gaps-f1",
-	match = { float = false, workspace = "f[1]" },
-	border_size = 0,
-	rounding = 0,
-})
-
 -- Kitty scratchpad (SUPER + grave), launched from autostart.lua.
 hl.window_rule({
 	name = "scratch-term",
