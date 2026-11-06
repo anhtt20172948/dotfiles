@@ -8,6 +8,7 @@ require("looknfeel")
 require("animations")
 require("rules")
 require("binds")
+require("hooks")
 
 -- DMS (DankMaterialShell) regenerates these files at runtime. They are not
 -- tracked, so each one is optional and a missing or broken file must never
