@@ -30,13 +30,7 @@ hl.config({
 			noise = 0.02,
 			popups = true,
 			xray = true,
-			-- 8 = acrylic (frosted glass). Size and passes stay modest to keep
-			-- the iGPU cost low; video windows opt out of blur in rules.lua.
-			variant = 8,
-			-- Baseline tint; DMS (dms.colors) overrides it with the theme color.
-			acrylic = {
-				tint = "rgba(bdc4ee14)",
-			},
+			-- Acrylic (variant 8) removed: it lagged window switching on the Intel iGPU.
 		},
 		shadow = {
 			enabled = true,
