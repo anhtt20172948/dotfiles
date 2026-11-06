@@ -23,7 +23,5 @@ case ${count:-0} in
   ''|0|*[!0-9]*) exit 0 ;;
 esac
 
-# Catppuccin @thm_green / @thm_overlay0, hardcoded on purpose: tmux expands
-# #[...] styles inside #() output but NOT @user-options, and those only exist
-# once TPM has loaded anyway.
-printf '#[fg=#a6e3a1]󰘩 %d #[fg=#6c7086,none]|' "$count"
+# ANSI names, same as status.conf (green / brightblack), so it follows the terminal palette.
+printf '#[fg=green]󰘩 %d #[fg=brightblack,none]|' "$count"

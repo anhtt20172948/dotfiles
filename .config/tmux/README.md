@@ -12,7 +12,7 @@ configuration with `install.sh`.
 ├── options.conf                → terminal, history, base settings
 ├── keymaps.conf                → navigation, resize, copy-mode, utils
 ├── plugins.conf                → TPM plugin list (7 plugins)
-├── status.conf                 → status bar + Catppuccin palette usage
+├── status.conf                 → status bar + ANSI-colour theme
 ├── popup.conf                  → shared popup dimensions + keybinds
 ├── hooks.conf                  → pane-focus status refresh
 ├── navigation.conf             → vim-tmux-navigator mappings
@@ -37,8 +37,10 @@ configuration with `install.sh`.
     └── rename-window.sh        → popup window rename prompt
 ```
 
-There is no `theme.conf` — the Catppuccin palette (`@thm_*`) is provided by the
-plugin and consumed directly in `status.conf`.
+There is no `theme.conf` - the theme lives in `status.conf` and uses ANSI colour
+names only (`green`, `brightblack`, `default`, ...), never hex. tmux therefore
+follows the terminal palette (kitty, and through it DMS) live and looks the same
+over SSH. `options.conf` also enables kitty terminal-features and extended keys.
 
 ## Load order
 
@@ -48,18 +50,15 @@ plugin and consumed directly in `status.conf`.
 options → keymaps → plugins → status → popup → hooks → navigation → TPM
 ```
 
-TPM runs in the foreground (`run`, not `run -b`) so that anything appended to
-`.tmux.conf` after it wins over plugin defaults. The popup colours at the end of
-`.tmux.conf` depend on this: catppuccin sets an opaque `popup-style`, and the
-override resets it to the terminal default.
+TPM runs in the background (`run -b`); nothing in the config depends on plugin
+load order because no plugin owns styling.
 
 Two consequences worth remembering when editing:
 
 - **`popup.conf` wins over `keymaps.conf`** for any key bound in both. Check
   `tmux list-keys -T prefix` after adding a binding.
-- **`@thm_*` only exists after TPM runs.** Anything referencing the palette must
-  expand lazily, so use `set -g`, never `set -gF`. Options that plugins also set
-  (e.g. `status-style`, `copy-mode-vi y`) will be overwritten by the plugin.
+- **Plugins load last and in the background**, so options a plugin also sets
+  (e.g. `copy-mode-vi y` from tmux-yank) are overwritten by the plugin.
 
 ## Keybinds
 
@@ -271,7 +270,7 @@ Notes:
 ## Requirements
 
 - tmux ≥ 3.3 (`display-popup` needs 3.2, `allow-passthrough` needs 3.3,
-  Catppuccin v2 needs 3.3+). Developed against 3.7b.
+  `extended-keys-format csi-u` needs 3.5, guarded so older servers still load). Developed against 3.8.
 - `fzf` ≥ 0.56 (`--accept-nth`), `fd`, `rg`, `bat`, `jq`, `sqlite3`, `sesh` —
   for the finder/picker scripts
 - `lazygit`, `lazydocker`, `btop` (or `htop`) — for the popups
