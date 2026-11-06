@@ -23,5 +23,5 @@ case ${count:-0} in
   ''|0|*[!0-9]*) exit 0 ;;
 esac
 
-# ANSI names, same as status.conf (green / brightblack), so it follows the terminal palette.
-printf '#[fg=green]󰘩 %d #[fg=brightblack,none]|' "$count"
+# ANSI names, same as status.conf (green), so it follows the terminal palette.
+printf '#[fg=green]󰘩 %d ' "$count"
