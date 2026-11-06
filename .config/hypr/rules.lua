@@ -71,6 +71,19 @@ hl.window_rule({
 	tag = "+browser",
 })
 
+-- Screen-share privacy: windows tagged "private" are hidden from screencasts
+-- (Meet, OBS, ...) only; they stay fully visible on the local screen, and
+-- sharing needs no state tracking. To protect another app, add its window
+-- class (find it with `hyprctl clients`) to the pattern below.
+hl.window_rule({
+	name = "tag-private",
+	match = {
+		class = "^(org\\.keepassxc\\.KeePassXC|keepassxc|Bitwarden|1Password|1password|Proton Pass|proton-pass|Slack|slack|org\\.telegram\\.desktop|telegram-desktop|TelegramDesktop|Signal|signal|discord|Discord|thunderbird|org\\.mozilla\\.Thunderbird|net\\.thunderbird\\.Thunderbird)$",
+	},
+	tag = "+private",
+})
+hl.window_rule({ name = "private-no-screen-share", match = { tag = "private" }, no_screen_share = true })
+
 -- Do not let the screen idle while video plays or a browser is fullscreen.
 hl.window_rule({ name = "video-idle-inhibit", match = { tag = "video" }, idle_inhibit = "focus" })
 hl.window_rule({ name = "browser-idle-inhibit", match = { tag = "browser" }, idle_inhibit = "fullscreen" })
