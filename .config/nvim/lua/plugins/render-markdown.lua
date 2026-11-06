@@ -9,13 +9,14 @@ return {
 	-- ft = { "markdown", "norg", "rmd", "org" },
 	init = function()
 		-- Define colors
-		local color1_bg = "#ff757f"
-		local color2_bg = "#4fd6be"
-		local color3_bg = "#7dcfff"
-		local color4_bg = "#ff9e64"
-		local color5_bg = "#7aa2f7"
-		local color6_bg = "#c0caf5"
-		local color_fg = "#1F2335"
+		local palette = require("customize.kitty_palette").palette()
+		local color1_bg = palette.red
+		local color2_bg = palette.teal
+		local color3_bg = palette.sky
+		local color4_bg = palette.peach
+		local color5_bg = palette.blue
+		local color6_bg = palette.text
+		local color_fg = palette.base
 		-- -- Heading background
 		vim.cmd(string.format([[highlight Headline1Bg guifg=%s guibg=%s gui=bold]], color_fg, color1_bg))
 		vim.cmd(string.format([[highlight Headline2Bg guifg=%s guibg=%s gui=bold]], color_fg, color2_bg))

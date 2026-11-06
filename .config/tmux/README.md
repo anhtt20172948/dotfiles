@@ -335,7 +335,9 @@ Notes:
 - TPM (auto-bootstrapped on first launch)
 - `python3` for the key-hint menu (tmux-which-key builds it from YAML with its own
   vendored pyyaml) and for extrakto (with `fzf`). In XDG mode the which-key plugin
-  calls `realpath --relative-to`, so stock macOS needs GNU coreutils on `PATH`.
+  calls `realpath --relative-to`. On macOS, `install.sh` installs Homebrew
+  coreutils and tmux adds its `libexec/gnubin` to the plugin environment. The
+  workflow-only `install_agent_workflow` setup installs the same prerequisite.
   extrakto was picked over tmux-fingers because fingers 2.x ships a prebuilt
   binary with no linux aarch64 build.
 - Neither new plugin publishes release tags, so TPM tracks their default branch

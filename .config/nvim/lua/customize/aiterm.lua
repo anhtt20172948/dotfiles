@@ -1094,11 +1094,7 @@ local LEAD_W = 2 + TOOL_W + 1
 
 -- Màu riêng cho từng tool. Dùng LINK tới nhóm ngữ nghĩa chứ không hardcode hex:
 -- đổi colorscheme là tự đúng theo theme mới.
--- Đã đo dưới catppuccin mocha + color_overrides của repo: Constant/String/Keyword
--- ra 3 màu khác hẳn nhau (peach / mint / mauve). CẨN THẬN khi đổi - rất nhiều
--- nhóm trông có vẻ khác nhau nhưng lại trùng màu: GitBranch, Cmd, Directory,
--- Function, Title đều ra #7aa2f8; Time, Label, Special đều ra #ff79c7; còn
--- SnacksPickerBold thì không có fg nên không dùng làm màu được.
+-- Constant/String/Keyword giữ vai trò ngữ nghĩa qua cả palette sáng và tối.
 local TOOL_HL = { claude = "AitermClaude", codex = "AitermCodex", opencode = "AitermOpencode" }
 
 -- Snacks.util.set_hl tự đăng ký augroup ColorScheme để set lại nên KHÔNG cần tự

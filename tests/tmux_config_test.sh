@@ -54,6 +54,14 @@ tm -f /dev/null new-session -d -x 200 -y 40 -s main
 errors=$(tm source-file "$HOME/.tmux.conf" 2>&1) || fail "config failed to load: $errors"
 [[ -z $errors ]] || fail "config printed errors: $errors"
 
+# The macOS job starts with stock tools on PATH. The loaded config must make
+# GNU realpath available to plugin subprocesses, not just this test's shell.
+if [[ $(uname -s) == Darwin ]]; then
+  # shellcheck disable=SC2016 # Expand HOME in the tmux subprocess.
+  tm run-shell 'realpath --relative-to="$HOME" "$HOME/.config" >"$HOME/which-key-relative"'
+  [[ $(cat "$HOME/which-key-relative") == .config ]] || fail "which-key cannot resolve XDG paths from tmux on macOS"
+fi
+
 # --- status bar position and content -----------------------------------------
 [[ $(tm show -gv status-position) == top ]] || fail "status bar is not at the top"
 left=$(tm show -gv status-left)

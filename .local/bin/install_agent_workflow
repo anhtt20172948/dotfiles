@@ -88,6 +88,15 @@ check_deps() {
 	*) die "chỉ hỗ trợ Linux/macOS x86_64/arm64 (đang chạy $platform)" ;;
 	esac
 
+	if [[ "$platform" == Darwin-* ]]; then
+		export PATH="/opt/homebrew/opt/coreutils/libexec/gnubin:/usr/local/opt/coreutils/libexec/gnubin:$PATH"
+		if ! realpath --relative-to=/ / >/dev/null 2>&1; then
+			have brew || die "tmux-which-key requires GNU realpath: install Homebrew, then brew install coreutils"
+			brew install coreutils
+			realpath --relative-to=/ / >/dev/null 2>&1 || die "GNU realpath missing; add coreutils libexec/gnubin to PATH"
+		fi
+	fi
+
 	# gh không chặn việc cài, nhưng no-mistakes / firstmate cần nó để mở PR.
 	if ! have gh; then
 		if [[ "$platform" == Darwin-* ]]; then

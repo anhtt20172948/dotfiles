@@ -94,7 +94,8 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: '1'
         working-directory: ${{ runner.temp }}
         run: |
-          brew install jq tmux lua python@3.12
+          # tmux_config_test exercises which-key realpath from tmux with stock PATH.
+          brew install jq tmux lua python@3.12 coreutils
           curl -fsSL https://github.com/neovim/neovim/releases/download/v0.11.7/nvim-macos-arm64.tar.gz -o nvim.tar.gz
           echo '9c84686ce84bbab725ff3d88ca3ac1d6da5a72128b68d9dd8094e34d4049a126  nvim.tar.gz' | shasum -a 256 -c -
           tar -xzf nvim.tar.gz

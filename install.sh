@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Link dotfiles vào $HOME, không cần sudo hay stow (chỉ ln/mkdir/mv/readlink).
+# Link dotfiles vào $HOME, không cần sudo hay stow.
+# macOS: cài Homebrew coreutils nếu thiếu (tmux-which-key cần GNU realpath).
 #
 #   ./install.sh            tạo symlink
 #   ./install.sh -n         dry-run: chỉ in việc sẽ làm
@@ -208,6 +209,25 @@ main() {
 	done
 
 	[[ $DRY_RUN -eq 1 ]] && echo "(dry-run: không thay đổi gì)"
+	# The which-key plugin uses GNU realpath, including --relative-to.
+	# Homebrew keeps it keg-only under gnubin; use the same paths as tmux.
+	if [[ $(uname -s) == Darwin ]]; then
+		export PATH="/opt/homebrew/opt/coreutils/libexec/gnubin:/usr/local/opt/coreutils/libexec/gnubin:$PATH"
+		if ! realpath --relative-to=/ / >/dev/null 2>&1; then
+			if [[ $DRY_RUN -eq 1 ]]; then
+				echo "prerequisite: brew install coreutils (required by tmux-which-key)"
+			elif command -v brew >/dev/null; then
+				brew install coreutils
+				realpath --relative-to=/ / >/dev/null 2>&1 || {
+					echo "GNU realpath missing after installing coreutils; add its libexec/gnubin to PATH" >&2
+					return 1
+				}
+			else
+				echo "tmux-which-key requires GNU realpath: install Homebrew, then brew install coreutils" >&2
+				return 1
+			fi
+		fi
+	fi
 	load_tracked
 	link_children ""
 	# Global Claude instructions live outside the repo-only .claude directory.

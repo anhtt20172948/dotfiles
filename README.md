@@ -637,3 +637,26 @@ provisioning path.
 ## License
 
 [MIT](LICENSE). Vendored components retain their own license notices.
+
+### Colour consistency
+
+Kitty's active palette is the colour source on both platforms. DMS writes
+`~/.config/kitty/dank-theme.conf` only on Arch Linux with Hyprland. macOS uses
+`current-theme.conf` (Catppuccin Mocha) without DMS. Neovim reads the first
+available file at startup, resolves symlinks, and derives its Catppuccin palette
+from foreground/background and the 16 ANSI colours. Light backgrounds select
+Latte; dark backgrounds select Mocha. Missing or incomplete palettes fall back
+to plain Mocha. Restart Neovim after changing the kitty theme.
+
+Other terminal tools use ANSI colours, including btop's built-in `TTY` theme.
+Do not add hex colour literals to active tool configuration. Neovim highlights
+must use the active Catppuccin palette, preserving the existing highlight roles
+without retaining an independent fixed palette. `tests/palette_consistency_test.sh`
+enforces this for tracked files. Its commented exceptions cover kitty palettes,
+vendored Yazi flavour assets (the active Yazi theme uses ANSI), crew-watch named
+palettes, pixel-pet sprite artwork, test fixtures/assertions, documentation, and
+generated dependency locks.
+
+On macOS, `install.sh` installs Homebrew coreutils for tmux-which-key's GNU
+`realpath --relative-to`; tmux includes Homebrew's GNU tools in the plugin
+environment. The workflow-only `install_agent_workflow` setup installs the same prerequisite.
