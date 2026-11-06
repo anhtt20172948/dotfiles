@@ -73,6 +73,9 @@ assert_lacks "status-left drops the duplicated command" "pane_current_command" "
 assert_contains "status-right keeps ai-status" "ai-status.sh" "$right"
 assert_contains "status-right shows git and ssh context" "status-context.sh" "$right"
 
+# Re-attaching must refresh the palette inherited by subsequent panes.
+assert_contains "reattach refreshes kitty palette" "LC_KITTY_PALETTE" "$(tm show -gv update-environment)"
+
 # --- dangerous-mode indicators ------------------------------------------------
 rendered=$(tm display -p '#{T:status-left}')
 assert_lacks "idle: no COPY flag" "COPY" "$rendered"

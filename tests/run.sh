@@ -18,7 +18,6 @@ export PATH="$HOME/.local/bin:$PATH"
 # Chỉ các script đang qua shellcheck. Script cũ ở .local/bin (download, show,
 # install_neovim) và hypr chưa sạch -> thêm vào khi sửa.
 LINT_FILES=(
-	.config/kitty/ssh-palette.sh
 	.config/tmux/scripts/*.sh
 	.local/bin/ai-acct
 	.local/bin/ai-acct-claude

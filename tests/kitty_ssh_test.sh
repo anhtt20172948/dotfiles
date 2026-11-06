@@ -19,26 +19,16 @@ check_shell() {
         "$ZSH" -f "$mode" 'PATH=$TEST_PATH; source "$1/.zshenv"; source "$2"' test "$ROOT" "$TMP/invoke.zsh")
     [[ $actual == "$expected" ]] || { echo "unexpected ssh dispatch: $actual"; exit 1; }
 }
-check_shell 'kitten:<ssh><example><two words>' xterm-kitty '' -ic
-check_shell 'kitten:<ssh><example><two words>' tmux-256color 42 -ic
+check_shell 'ssh:<example><two words>' xterm-kitty '' -ic
+check_shell 'ssh:<example><two words>' tmux-256color 42 -ic
 check_shell 'ssh:<example><two words>' xterm-256color '' -ic
 check_shell 'ssh:<example><two words>' xterm-kitty 42 -c
 rm "$TMP/bin/kitten"
 check_shell 'ssh:<example><two words>' xterm-kitty 42 -ic
 
-# The generator must emit exactly one copy, including when DMS is absent.
-copy_line() { "$ROOT/.config/kitty/ssh-palette.sh"; }
-mac=$(copy_line)
-[[ $mac == *'--dest=.config/kitty/remote-palette.conf'*'current-theme.conf'* ]]
-[[ $(printf '%s\n' "$mac" | wc -l) -eq 1 ]]
-ln -s "$XDG_CONFIG_HOME/kitty/current-theme.conf" "$XDG_CONFIG_HOME/kitty/dank-theme.conf"
-[[ $(copy_line) == *'dank-theme.conf'* ]]
-rm "$XDG_CONFIG_HOME/kitty/dank-theme.conf"
-[[ $(copy_line) == "$mac" ]]
-# Missing optional DMS is fine; no palette at all must fail visibly.
-rm "$XDG_CONFIG_HOME/kitty/current-theme.conf"
-if copy_line >"$TMP/out" 2>"$TMP/err"; then
-    echo 'missing palette unexpectedly succeeded'; exit 1
+# Palette transport belongs to the workflow-managed shell and OpenSSH config.
+[[ ! -e "$ROOT/.config/kitty/ssh-palette.sh" ]]
+if grep -Eq '^[[:space:]]*(copy|geninclude)[[:space:]]' "$ROOT/.config/kitty/ssh.conf"; then
+    echo 'kitty ssh must not copy a palette'; exit 1
 fi
-[[ -s $TMP/err ]]
 echo 'kitty ssh: OK'

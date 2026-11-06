@@ -21,9 +21,3 @@
   fp=$(print -rn -- "ai-acct-statusline:$token" | { sha256sum 2>/dev/null || shasum -a 256 })
   export AI_ACCT_FINGERPRINT=${fp%% *}
 }
-
-# Aliases stay in interactive zsh; subprocesses (git, scp, ansible) use OpenSSH.
-# KITTY_WINDOW_ID survives tmux's TERM=tmux-256color.
-if [[ -o interactive && ( $TERM == xterm-kitty || -n $KITTY_WINDOW_ID ) ]] && (( $+commands[kitten] )); then
-  alias ssh='kitten ssh'
-fi
