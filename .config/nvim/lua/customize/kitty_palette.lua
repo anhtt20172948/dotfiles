@@ -64,11 +64,11 @@ function M.colors(stock)
 end
 
 local function parse_encoded(encoded)
-	if not encoded or #encoded ~= 125 then
+	if not encoded or (#encoded ~= 125 and #encoded ~= 132) then
 		return nil
 	end
 	local entries = vim.split(encoded, ":", { plain = true })
-	if #entries ~= 18 then
+	if #entries ~= 18 and #entries ~= 19 then
 		return nil
 	end
 	local values = {}
@@ -76,7 +76,7 @@ local function parse_encoded(encoded)
 		if #color ~= 6 or not color:match("^[0-9a-f]+$") then
 			return nil
 		end
-		local key = i == 1 and "background" or (i == 2 and "foreground" or "color" .. (i - 3))
+		local key = i == 19 and "cursor" or (i == 1 and "background" or (i == 2 and "foreground" or "color" .. (i - 3)))
 		values[key] = "#" .. color
 	end
 	return values
@@ -95,9 +95,9 @@ local function read_remote()
 		return nil
 	end
 	-- Bound reads and require exactly one encoded line, with an optional final newline.
-	local encoded = file:read(127)
+	local encoded = file:read(134)
 	file:close()
-	if encoded and #encoded == 126 and encoded:sub(-1) == "\n" then
+	if encoded and (#encoded == 126 or #encoded == 133) and encoded:sub(-1) == "\n" then
 		encoded = encoded:sub(1, -2)
 	end
 	return parse_encoded(encoded)

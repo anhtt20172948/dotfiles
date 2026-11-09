@@ -18,6 +18,10 @@ vim.env.LC_KITTY_PALETTE = env_palette("123456")
 local env_only = assert(theme.read(), "forwarded palette must work without any kitty files")
 assert(env_only.colors.base == "#123456" and env_only.flavour == "mocha")
 assert(env_only.colors.red == nil, "ANSI slots must not replace syntax accents")
+assert(env_only.primary == nil and env_only.cursor == nil, "18 entries must retain the lavender fallback")
+vim.env.LC_KITTY_PALETTE = env_palette("123456") .. ":abcdef"
+local with_cursor = assert(theme.read(), "19-entry env palette must work")
+assert(with_cursor.primary == "#abcdef" and with_cursor.cursor == "#abcdef")
 vim.env.LC_KITTY_PALETTE = nil
 local function fixture(bg)
 	local lines = {
@@ -67,6 +71,14 @@ vim.env.LC_KITTY_PALETTE_SRC = "arch-local"
 vim.fn.writefile({ env_palette("333333") }, remote_dir .. "/remote-palette-arch-local.conf")
 vim.fn.writefile({ env_palette("444444") }, remote_dir .. "/remote-palette-mac-local.conf")
 assert(theme.read().colors.base == "#333333", "matching source file must override env")
+assert(theme.read().primary == nil, "18-entry pushed palette must retain lavender fallback")
+for _, newline in ipairs({ "", "\n" }) do
+	local file = assert(io.open(remote_dir .. "/remote-palette-arch-local.conf", "w"))
+	file:write(env_palette("333333") .. ":abcdef" .. newline)
+	file:close()
+	local pushed = assert(theme.read(), "19-entry pushed palette must work")
+	assert(pushed.colors.base == "#333333" and pushed.primary == "#abcdef" and pushed.cursor == "#abcdef")
+end
 vim.fn.writefile({ env_palette("555555") }, remote_dir .. "/remote-palette-arch-local.conf")
 package.loaded["customize.kitty_palette"] = nil
 assert(require("customize.kitty_palette").active.colors.base == "#555555", "restart must read fresh file")
@@ -85,7 +97,13 @@ for _, source in ipairs({ "", "../arch-local", "Arch-local", "arch_local", strin
 	io.open = original_open
 end
 vim.env.LC_KITTY_PALETTE_SRC = "arch-local"
-for _, lines in ipairs({ { "invalid" }, { env_palette("333333"), "extra" }, { env_palette("333333") .. " " } }) do
+for _, lines in ipairs({
+	{ "invalid" },
+	{ env_palette("333333"), "extra" },
+	{ env_palette("333333") .. " " },
+	{ env_palette("333333") .. ":abcdef", "extra" },
+	{ env_palette("333333") .. ":abcdef:123456" },
+}) do
 	vim.fn.writefile(lines, remote_dir .. "/remote-palette-arch-local.conf")
 	assert(theme.read().colors.base == "#fafafa", "malformed pushed file must fall back to env")
 end
@@ -99,7 +117,11 @@ for _, invalid in ipairs({
 	valid .. " ",
 	valid .. "\n",
 	valid .. "\r",
-	valid .. ":000000",
+	valid .. ":000000:111111",
+	valid .. ":ABCDEF",
+	valid .. ":abcdeg",
+	valid .. ":abcde",
+	valid .. ":abcdef0",
 	valid:sub(1, -8),
 	":" .. valid,
 	valid .. ":",
