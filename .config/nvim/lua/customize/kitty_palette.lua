@@ -101,6 +101,12 @@ function M.selection_background(colors, primary)
 	return colors.base
 end
 
+-- Half the Visual tint keeps ordinary matches subordinate to the current match.
+function M.search_background(colors, primary)
+	local visual = M.selection_background(colors, primary)
+	return blend(colors.base, visual, 0.5)
+end
+
 local function parse_encoded(encoded)
 	if not encoded or (#encoded ~= 125 and #encoded ~= 132) then
 		return nil

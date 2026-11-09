@@ -56,6 +56,20 @@ for _, case in ipairs({
 		end
 	end
 	local function check()
+		local search = vim.api.nvim_get_hl(0, { name = "Search", link = false })
+		local visual = vim.api.nvim_get_hl(0, { name = "Visual", link = false })
+		local background = ("#%06x"):format(assert(search.bg))
+		assert(background ~= case.base and search.bg ~= visual.bg, "search needs its own subtle tint")
+		assert(kitty.contrast(("#%06x"):format(assert(search.fg)), background) >= 4.5)
+		for _, name in ipairs({ "CurSearch", "IncSearch" }) do
+			local hl = vim.api.nvim_get_hl(0, { name = name, link = false })
+			assert(
+				("#%06x"):format(assert(hl.bg))
+					== (plugin and kitty.ensure_contrast(case.primary, colors.base, colors.text, 4.5) or case.primary),
+				name .. " must use DMS primary"
+			)
+			assert(kitty.contrast(("#%06x"):format(assert(hl.fg)), ("#%06x"):format(hl.bg)) >= 4.5)
+		end
 		for _, name in ipairs({ "Visual", "VisualNOS" }) do
 			local hl = vim.api.nvim_get_hl(0, { name = name, link = false })
 			assert(hl.fg == nil and hl.bg ~= nil and not hl.reverse, name .. " must preserve syntax")
@@ -96,7 +110,11 @@ assert(reduced ~= constrained.base and reduced ~= "#585858", "reduce the tint fo
 assert(kitty.contrast(constrained.red, reduced) >= 3)
 assert(constrained.red == "#777777", "never recolour syntax to accommodate selection")
 kitty.active = nil
-local fallback = require("customize.transparent").highlights({ surface2 = "#585b70" }, "#b4befe")
+local fallback =
+	require("customize.transparent").highlights({ base = "#1e1e2e", text = "#cdd6f4", surface2 = "#585b70" }, "#b4befe")
 assert(fallback.Visual.bg == "#585b70" and fallback.VisualNOS.bg == "#585b70")
 assert(fallback.Visual.fg == "NONE" and fallback.VisualNOS.fg == "NONE")
-print("visual selection: OK" .. (plugin and " (Catppuccin startup and reload)" or " (offline)"))
+for _, group in ipairs({ "Search", "CurSearch", "IncSearch" }) do
+	assert(kitty.contrast(fallback[group].fg, fallback[group].bg) >= 4.5, group .. " fallback contrast")
+end
+print("visual and search highlights: OK" .. (plugin and " (Catppuccin startup and reload)" or " (offline)"))

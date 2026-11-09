@@ -136,9 +136,18 @@ function M.highlights(colors, primary)
 	for _, group in ipairs(selections) do
 		highlights[group] = { bg = colors.surface0 }
 	end
-	local background = require("customize.kitty_palette").selection_background(colors, primary)
+	local kitty = require("customize.kitty_palette")
+	local background = kitty.selection_background(colors, primary)
 	for _, group in ipairs({ "Visual", "VisualNOS" }) do
 		highlights[group] = { fg = "NONE", bg = background }
+	end
+	local search = kitty.search_background(colors, primary)
+	highlights.Search = { bg = search, fg = kitty.ensure_contrast(colors.text, search, colors.text, 4.5) }
+	local black = string.format("#%06x", 0)
+	local dark = kitty.contrast(colors.base, black) < 4.5 and colors.base or black
+	local foreground = kitty.ensure_contrast(dark, primary, black, 4.5)
+	for _, group in ipairs({ "CurSearch", "IncSearch" }) do
+		highlights[group] = { bg = primary, fg = foreground }
 	end
 	return highlights
 end
