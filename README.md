@@ -651,9 +651,12 @@ malformed files and invalid sources fall back to the forwarded environment value
 then the existing file fallbacks. Files for other sources are ignored, and local
 sessions ignore pushed files.
 
-`LC_KITTY_PALETTE` contains exactly 18 colon-separated colours, ordered background,
-foreground, then color0 through color15. Each entry must be six lowercase hex
-digits without `#`, whitespace, or newlines. A malformed value is ignored.
+`LC_KITTY_PALETTE` contains 18 or 19 colon-separated colours, ordered background,
+foreground, then color0 through color15, with an optional cursor colour as entry 19.
+The cursor supplies the primary UI accent on servers; 18-entry palettes retain
+the Catppuccin lavender fallback. Each entry must be six lowercase hex digits
+without `#`, whitespace, or newlines. Any other entry count or malformed value
+is ignored. Pushed files use the same format with an optional final newline.
 
 The workflow repo manages the local shell export and SSH `SendEnv` configuration;
 servers must accept `LC_KITTY_PALETTE` and `LC_KITTY_PALETTE_SRC` (for example
