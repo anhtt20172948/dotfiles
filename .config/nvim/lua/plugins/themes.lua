@@ -71,8 +71,6 @@ return {
 				highlight_overrides = {
 					all = function(colors)
 						return vim.tbl_deep_extend("force", {
-							CurSearch = { bg = colors.sky },
-							IncSearch = { bg = colors.sky },
 							CursorLineNr = { fg = primary },
 							Cursor = { fg = colors.base, bg = primary },
 							FloatBorder = { fg = primary, bg = "NONE" },

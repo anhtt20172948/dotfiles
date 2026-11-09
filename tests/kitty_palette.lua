@@ -43,6 +43,30 @@ assert(dark.flavour == "mocha" and dark.colors.base == "#111111")
 assert(dark.colors.red == nil, "syntax accents come from Catppuccin at setup")
 assert(dark.primary == "#abcdef", "cursor must provide the primary UI accent")
 assert(dark.selection_background == "#123456" and dark.cursor == "#abcdef")
+-- Identical terminal inputs must produce identical search groups on every transport.
+local function search_groups(active)
+	theme.active = active
+	local colors = theme.colors({})
+	local highlights = require("customize.transparent").highlights(colors, active.primary)
+	return { highlights.Search, highlights.CurSearch, highlights.IncSearch }
+end
+local local_search = search_groups(dark)
+local encoded = env_palette("111111") .. ":abcdef"
+vim.env.LC_KITTY_PALETTE = encoded
+assert(vim.deep_equal(local_search, search_groups(assert(theme.read()))), "local/env search parity")
+vim.env.SSH_CONNECTION = "127.0.0.1 1234 127.0.0.1 22"
+assert(vim.deep_equal(local_search, search_groups(assert(theme.read()))), "SSH env search parity")
+local search_remote_dir = vim.env.HOME .. "/.config/kitty"
+vim.fn.mkdir(search_remote_dir, "p")
+local search_remote_file = search_remote_dir .. "/remote-palette-search-test.conf"
+vim.fn.writefile({ encoded }, search_remote_file)
+vim.env.LC_KITTY_PALETTE_SRC = "search-test"
+vim.env.LC_KITTY_PALETTE = env_palette("222222")
+assert(vim.deep_equal(local_search, search_groups(assert(theme.read()))), "pushed file search parity")
+vim.fn.delete(search_remote_file)
+vim.env.LC_KITTY_PALETTE_SRC = nil
+vim.env.LC_KITTY_PALETTE = nil
+vim.env.SSH_CONNECTION = nil
 vim.fn.writefile(fixture("#eeeeee"), dir .. "/light.conf")
 assert(vim.uv.fs_symlink(dir .. "/light.conf", dir .. "/dank-theme.conf"))
 local light = assert(theme.read())
