@@ -97,6 +97,16 @@ assert(select(2, util.icon("cpp", "extension")) == "DevIconFile")
 assert(calls[#calls].name == nil and calls[#calls].ext == "cpp")
 assert(select(2, util.icon("cpp", "filetype")) == "DevIconCpp")
 local statusline
+palette = vim.tbl_extend("force", palette, {
+	subtext0 = "#a6adc8",
+	green = "#a6e3a1",
+	mauve = "#cba6f7",
+	red = "#f38ba8",
+	peach = "#fab387",
+	yellow = "#f9e2af",
+	blue = "#89b4fa",
+	teal = "#94e2d5",
+})
 package.loaded["lualine"] = {
 	setup = function(config)
 		statusline = config
