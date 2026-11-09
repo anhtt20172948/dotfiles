@@ -144,9 +144,11 @@ return {
 				enabled = true,
 			},
 			styles = {
+				float = { backdrop = false, wo = { winblend = 0 } },
 				notification = {
 					wo = {
 						wrap = true,
+						winblend = 0,
 					}, -- Wrap notifications
 				},
 			},

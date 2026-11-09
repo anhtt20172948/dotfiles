@@ -36,19 +36,19 @@ package.preload.catppuccin = function()
 	}
 end
 local spec = require("plugins.themes")[2]
-for _, bg in ipairs({ "#111111", "#eeeeee", "missing" }) do
+for _, bg in ipairs({ "#0d0e12", "#eeeeee", "missing" }) do
 	kitty.active = bg ~= "missing"
 			and {
-				flavour = bg == "#111111" and "mocha" or "latte",
+				flavour = bg == "#0d0e12" and "mocha" or "latte",
 				colors = { base = bg, text = "#dddddd", overlay0 = "#2e576b" },
 				primary = "#2e576b",
 			}
 		or nil
 	spec.config()
-	assert(not options.transparent_background and not options.float.transparent)
-	assert(options.float.solid)
+	assert(options.transparent_background and options.float.transparent, "editor and floats must be transparent")
+	assert(not options.float.solid)
 	local colors = options.color_overrides[options.flavour]
-	assert(colors.base ~= (bg == "missing" and stock.base or bg), "Kitty background must be opaque")
+	assert(colors.base == (bg == "missing" and stock.base or bg), "contrast must use the unmodified Kitty background")
 	for key, color in pairs(colors) do
 		if not vim.tbl_contains({ "base", "mantle", "crust", "surface0", "surface1", "surface2" }, key) then
 			assert(kitty.contrast(color, colors.base) >= 4.5, key)

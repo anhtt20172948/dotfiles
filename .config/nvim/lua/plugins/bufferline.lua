@@ -50,23 +50,17 @@ return {
 	},
 	config = function(_, opts)
 		local mocha = require("customize.kitty_palette").palette()
-		require("bufferline").setup({
-			highlights = require("catppuccin.groups.integrations.bufferline").get({
+		require("bufferline").setup(vim.tbl_deep_extend("force", {}, opts, {
+			highlights = require("catppuccin.special.bufferline").get_theme({
 				styles = { "italic", "bold" },
 				custom = {
 					all = {
-						fill = { bg = mocha.base },
-					},
-					mocha = {
+						fill = { bg = "NONE" },
 						background = { fg = mocha.text },
-					},
-					latte = {
-						background = { fg = mocha.base },
 					},
 				},
 			}),
-		})
-		require("bufferline").setup(opts)
+		}))
 		-- Fix bufferline when restoring a session
 		vim.api.nvim_create_autocmd({ "BufAdd", "BufDelete" }, {
 			callback = function()

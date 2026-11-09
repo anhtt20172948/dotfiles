@@ -31,11 +31,11 @@ return {
 			primary = kitty.ensure_contrast(primary or palette.lavender, palette.base, palette.text, 4.5)
 			require("catppuccin").setup({
 				flavour = kitty.active and kitty.active.flavour or "mocha",
-				transparent_background = false,
+				transparent_background = true,
 				kitty = false,
 				float = {
-					transparent = false,
-					solid = true,
+					transparent = true,
+					solid = false,
 				},
 				styles = {
 					comments = { "italic" },
@@ -70,12 +70,12 @@ return {
 				},
 				highlight_overrides = {
 					all = function(colors)
-						return {
+						return vim.tbl_deep_extend("force", {
 							CurSearch = { bg = colors.sky },
 							IncSearch = { bg = colors.sky },
 							CursorLineNr = { fg = primary },
 							Cursor = { fg = colors.base, bg = primary },
-							FloatBorder = { fg = primary, bg = colors.mantle },
+							FloatBorder = { fg = primary, bg = "NONE" },
 							DashboardFooter = { fg = colors.overlay0 },
 							TreesitterContextBottom = { style = {} },
 							WinSeparator = { fg = primary },
@@ -108,7 +108,7 @@ return {
 							rainbow4 = { fg = colors.green },
 							rainbow5 = { fg = colors.peach },
 							rainbow6 = { fg = colors.flamingo },
-						}
+						}, require("customize.transparent").highlights(colors, primary))
 					end,
 				},
 				color_overrides = { [flavour] = palette },
@@ -134,7 +134,7 @@ return {
 					window_picker = true,
 					mason = true,
 					snacks = {
-						enabled = false,
+						enabled = true,
 						indent_scope_color = "", -- catppuccin color (eg. `lavender`) Default: text
 					},
 					telescope = {

@@ -7,7 +7,6 @@ return {
 
 		local palette = require("customize.kitty_palette").palette()
 		local colors = {
-			color0 = palette.base,
 			color1 = palette.pink,
 			color2 = palette.text,
 			color3 = "none",
@@ -17,7 +16,7 @@ return {
 		}
 		local my_lualine_theme = {
 			replace = {
-				a = { fg = colors.color0, bg = colors.color1, gui = "bold" },
+				a = { fg = colors.color1, bg = colors.color3, gui = "bold" },
 				b = { fg = colors.color2, bg = colors.color3 },
 			},
 			inactive = {
@@ -26,16 +25,16 @@ return {
 				c = { fg = colors.color6, bg = colors.color3 },
 			},
 			normal = {
-				a = { fg = colors.color0, bg = colors.color7, gui = "bold" },
+				a = { fg = colors.color7, bg = colors.color3, gui = "bold" },
 				b = { fg = colors.color2, bg = colors.color3 },
 				c = { fg = colors.color2, bg = colors.color3 },
 			},
 			visual = {
-				a = { fg = colors.color0, bg = colors.color8, gui = "bold" },
+				a = { fg = colors.color8, bg = colors.color3, gui = "bold" },
 				b = { fg = colors.color2, bg = colors.color3 },
 			},
 			insert = {
-				a = { fg = colors.color0, bg = colors.color2, gui = "bold" },
+				a = { fg = colors.color2, bg = colors.color3, gui = "bold" },
 				b = { fg = colors.color2, bg = colors.color3 },
 			},
 		}
@@ -64,7 +63,7 @@ return {
 				modified = "✥", -- Text that shows when the file is modified.
 				readonly = "", -- Text that shows when the file is non-modifiable or readonly.
 			},
-			color = { fg = palette.text, gui = "bold", bg = palette.surface1 }, -- Sets highlighting of component
+			color = { fg = palette.text, gui = "bold", bg = "NONE" }, -- Sets highlighting of component
 		}
 		local filetype = {
 			"filetype",

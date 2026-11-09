@@ -678,11 +678,11 @@ select Mocha. All text colours (including comments and UI overlays) are adjusted
 toward the foreground to meet WCAG 4.5:1 contrast against the editor background;
 if the foreground is too dim, the adjustment uses black or white instead.
 The DMS cursor colour (or URL colour when available) supplies borders, cursor and
-active line accents. Neovim and its floating windows are opaque, leaving Kitty's
-transparency outside the editor unchanged. Because [Kitty applies opacity to
-cells matching its default background](https://sw.kovidgoyal.net/kitty/conf/#opt-kitty.background_opacity),
-the editor base differs from DMS by one blue-channel step, visually imperceptible.
-Contrast is measured against that actual rendered base.
+active line accents. Neovim, sidebars, status lines and all popup surfaces use
+transparent backgrounds, sharing Kitty's terminal opacity. Popup borders remain
+visible, while cursor lines, visual selections and selected menu entries keep a
+subtle surface fill. Contrast is measured against the unmodified Kitty/DMS
+background behind the transparent window.
 
 Comments alone are italic. Keywords, conditionals and loops are bold; functions,
 types, variables, operators and rainbow delimiters are plain. Document heading

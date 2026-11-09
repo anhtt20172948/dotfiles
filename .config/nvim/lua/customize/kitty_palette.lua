@@ -54,10 +54,6 @@ end
 -- plugin while reading the plugin specs, or startup depends on load order.
 function M.colors(stock)
 	local colors = vim.tbl_extend("force", {}, stock, M.active and M.active.colors or {})
-	-- Kitty applies terminal opacity to cells matching its default background.
-	-- One blue-channel step preserves the perceived DMS colour but makes code opaque.
-	local r, g, b = rgb(colors.base)
-	colors.base = ("#%02x%02x%02x"):format(r, g, b == 255 and b - 1 or b + 1)
 	local foreground = colors.text
 	for key, color in pairs(colors) do
 		if not vim.tbl_contains({ "base", "mantle", "crust", "surface0", "surface1", "surface2" }, key) then

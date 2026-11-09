@@ -40,7 +40,8 @@ return {
 		"rcarriga/nvim-notify",
 		config = function()
 			require("notify").setup({
-				-- other stuff
+				-- Static notifications preserve terminal transparency without opacity blending.
+				stages = "static",
 				background_colour = require("customize.kitty_palette").palette().base,
 			})
 		end,
