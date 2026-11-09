@@ -1,4 +1,4 @@
-return {
+local icons = {
 	diagnostics = {
 		Error = " ",
 		Hint = "󰠠 ",
@@ -216,3 +216,19 @@ return {
 		BladeNav = "",
 	},
 }
+
+-- Font support belongs to the client terminal, including over SSH.
+if vim.env.NVIM_ASCII == "1" then
+	local function ascii(groups)
+		local result = {}
+		for key, value in pairs(groups) do
+			result[key] = type(value) == "table" and ascii(value) or key:sub(1, 1)
+		end
+		return result
+	end
+	return vim.tbl_deep_extend("force", ascii(icons), {
+		diagnostics = { Error = "E", Warn = "W", Warning = "W", Info = "I", Information = "I", Hint = "H" },
+		git = { Add = "+", Mod = "~", Remove = "-", Branch = "git" },
+	})
+end
+return icons

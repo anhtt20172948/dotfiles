@@ -3,10 +3,16 @@
 return {
 	-- nvzone/menu is only declared here (it has no separate spec file).
 	{ "nvzone/menu", enabled = true },
+	-- Retired UI recipes live only as explicit disables, without dormant setup.
+	{ "akinsho/bufferline.nvim", enabled = false },
+	{ "rasulomaroff/reactive.nvim", enabled = false },
+	{ "nvim-zh/colorful-winsep.nvim", enabled = false },
+	{ "nvim-tree/nvim-tree.lua", enabled = false },
+	{ "folke/persistence.nvim", enabled = false },
 
 	-- Retired completion / copilot stack: kept installed but OFF.
 	-- The active completion stack is blink.cmp + supermaven.
-	{ "github/copilot.vim", enabled = true },
+	{ "github/copilot.vim", enabled = false },
 	{ "hrsh7th/nvim-cmp", enabled = false },
 	{ "hrsh7th/cmp-nvim-lsp", enabled = false },
 	{ "hrsh7th/cmp-buffer", enabled = false },

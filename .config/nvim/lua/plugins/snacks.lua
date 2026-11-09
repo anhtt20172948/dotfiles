@@ -21,27 +21,26 @@ return {
 			},
 			indent = {
 				enabled = true,
-				priority = 1,
-				char = icons.ui.SeparatorLight,
-				only_scope = true,
-				only_current = true,
-				hl = {
-					"SnacksIndent1",
-					"SnacksIndent2",
-					"SnacksIndent3",
-					"SnacksIndent4",
-					"SnacksIndent5",
-					"SnacksIndent6",
-					"SnacksIndent7",
-					"SnacksIndent8",
+				filter = function(buf)
+					return vim.g.snacks_indent ~= false
+						and vim.b[buf].snacks_indent ~= false
+						and vim.bo[buf].buftype == ""
+						and vim.bo[buf].filetype ~= "bigfile"
+				end,
+				indent = {
+					priority = 1,
+					char = "│",
+					only_scope = true,
+					only_current = true,
+					hl = "SnacksIndent",
 				},
 				scope = {
 					enabled = true, -- enable highlighting the current scope
 					priority = 200,
 					char = "│",
 					underline = false, -- underline the start of the scope
-					only_current = false, -- only show scope in the current window
-					hl = "SnacksPickerDelim", ---@type string|string[] hl group for scopes
+					only_current = true,
+					hl = "SnacksIndentScope",
 				},
 				chunk = {
 					-- when enabled, scopes will be rendered as chunks, except for the
@@ -50,7 +49,7 @@ return {
 					-- only show chunk scopes in the current window
 					only_current = true,
 					priority = 200,
-					hl = "SnacksPickerDelim", ---@type string|string[] hl group for chunk scopes
+					hl = "SnacksIndentChunk",
 					char = {
 						corner_top = "┌ ",
 						corner_bottom = "└",
@@ -88,6 +87,41 @@ return {
 			},
 			picker = {
 				enabled = true,
+				prompt = vim.env.NVIM_ASCII == "1" and "> " or " ",
+				layout = {
+					preset = function()
+						return vim.o.columns < 110 and "vertical" or "default"
+					end,
+				},
+				layouts = {
+					default = {
+						layout = {
+							border = "none",
+							backdrop = false,
+							min_width = 0,
+							width = 0.9,
+							[2] = { width = 0.45 },
+						},
+					},
+					vertical = {
+						layout = { backdrop = false, min_width = 0, width = 0.95, min_height = 0 },
+					},
+				},
+				icons = {
+					files = { enabled = vim.env.NVIM_ASCII ~= "1" },
+					git = {
+						added = icons.git.Add,
+						modified = icons.git.Mod,
+						deleted = icons.git.Remove,
+						renamed = icons.git.Rename,
+					},
+					diagnostics = {
+						Error = icons.diagnostics.Error,
+						Warn = icons.diagnostics.Warn,
+						Info = icons.diagnostics.Info,
+						Hint = icons.diagnostics.Hint,
+					},
+				},
 				sources = {
 					explorer = {
 						enabled = true,
@@ -138,19 +172,24 @@ return {
 				},
 			},
 			statuscolumn = {
-				enabled = false,
+				enabled = true,
+				left = { "sign", "git" },
+				right = { "fold" },
+				folds = { open = true, git_hl = false },
 			},
 			words = {
 				enabled = true,
 			},
 			styles = {
-				float = { backdrop = false, wo = { winblend = 0 } },
+				float = { border = "rounded", backdrop = false, wo = { winblend = 0 } },
 				notification = {
+					border = "rounded",
 					wo = {
 						wrap = true,
 						winblend = 0,
 					}, -- Wrap notifications
 				},
+				notification_history = { border = "rounded", backdrop = false, wo = { winblend = 0 } },
 			},
 			image = {
 				enabled = true,
@@ -270,6 +309,7 @@ return {
 				},
 			},
 			dashboard = {
+				width = math.min(56, vim.o.columns - 4),
 				preset = {
 					pick = function(cmd, opts)
 						return Snacks.dashboard.pick(cmd, opts)
@@ -285,29 +325,30 @@ return {
                     -- stylua: ignore
                     ---@type snacks.dashboard.Item[]
                     keys = {
-                        { icon = " ", key = "f", desc = "Find File", action = ":lua Snacks.dashboard.pick('files')" },
-                        { icon = " ", key = "n", desc = "New File", action = ":ene | startinsert" },
-                        { icon = " ", key = "g", desc = "Find Text", action = ":lua Snacks.dashboard.pick('live_grep')" },
-                        { icon = " ", key = "r", desc = "Recent Files", action = ":lua Snacks.dashboard.pick('oldfiles')" },
-                        { icon = " ", key = "c", desc = "Config", action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})" },
-                        { icon = " ", key = "s", desc = "Restore Session", section = "session" },
+                        { icon = icons.ui.Search, key = "f", desc = "Find File", action = ":lua Snacks.dashboard.pick('files')" },
+                        { icon = icons.ui.NewFile, key = "n", desc = "New File", action = ":ene | startinsert" },
+                        { icon = icons.ui.List, key = "g", desc = "Find Text", action = ":lua Snacks.dashboard.pick('live_grep')" },
+                        { icon = icons.documents.Files, key = "r", desc = "Recent Files", action = ":lua Snacks.dashboard.pick('oldfiles')" },
+                        { icon = icons.ui.Gear, key = "c", desc = "Config", action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})" },
+                        { icon = icons.ui.History, key = "s", desc = "Select Session", action = ":SessionSearch" },
                         { icon = " ", key = "a", desc = "AI Sessions", action = ":lua require('customize.aiterm').pick()" },
-                        { icon = " ", key = "x", desc = "Lazy Extras", action = ":LazyExtras" },
-                        { icon = "󰒲 ", key = "l", desc = "Lazy", action = ":Lazy" },
-                        { icon = " ", key = "q", desc = "Quit", action = ":qa" },
+                        { icon = icons.documents.Folder, key = "e", desc = "File Explorer", action = ":Neotree filesystem reveal" },
+                        { icon = icons.ui.Sleep, key = "l", desc = "Lazy", action = ":Lazy" },
+                        { icon = icons.ui.SignOut, key = "q", desc = "Quit", action = ":qa" },
                     },
 				},
 				-- Phải khai sections tường minh mới chèn được mục AI (default chỉ
 				-- gồm header / keys / startup).
 				sections = {
-					{ section = "header" },
-					{ section = "keys", gap = 1, padding = 1 },
+					function(self)
+						local compact = vim.api.nvim_win_get_width(self.win) < 90 or vim.env.NVIM_ASCII == "1"
+						return { header = compact and "MAI ANH" or self.opts.preset.header, padding = 1 }
+					end,
+					{ section = "keys", gap = 0, padding = 1 },
 					{
 						title = "  AI Sessions",
 						padding = 1,
-						-- 3 session AI gần nhất của cwd, bấm 1/2/3 để resume ngay.
-						-- limit=3 là giới hạn MỖI TOOL nên chỉ parse 3 file jsonl
-						-- (~12ms lúc mở nvim). pcall để dashboard không bao giờ vỡ.
+						-- Bound history per tool, then display at most three sessions.
 						function()
 							local ok, h = pcall(require, "customize.aiterm_history")
 							if not ok then
@@ -315,13 +356,11 @@ return {
 							end
 							local items = {}
 							for i, e in ipairs(h.list(h.project_cwd(), 3)) do
-								-- Cắt title cho khớp bề rộng các mục keys ở trên,
-								-- nếu không dòng dài sẽ đẩy lệch cột phím tắt.
-								-- strcharpart chứ không sub: tránh cắt giữa UTF-8.
-								local t = e.title or e.id
-								if vim.api.nvim_strwidth(t) > 34 then
-									t = vim.fn.strcharpart(t, 0, 33) .. "…"
+								if i > 3 then
+									break
 								end
+								local width = math.max(1, math.min(34, vim.o.columns - 30))
+								local t = require("customize.ui").truncate(e.title or e.id, width)
 								items[#items + 1] = {
 									icon = " ",
 									key = tostring(i),

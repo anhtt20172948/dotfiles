@@ -1,6 +1,7 @@
 return {
 	{
 		"neovim/nvim-lspconfig",
+		event = { "BufReadPre", "BufNewFile" },
 		dependencies = {
 			"saghen/blink.cmp",
 			{
@@ -11,7 +12,7 @@ return {
 				},
 				opts = {
 					lsp = { auto_attach = true },
-					window = { sections = { right = { preview = "always" } }, border = "double" },
+					window = { sections = { right = { preview = "always" } }, border = "rounded" },
 					size = "80%",
 				},
 				keys = {

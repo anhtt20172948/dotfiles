@@ -8,12 +8,13 @@ vim.keymap.set("n", "<leader>ca", function()
 end, { noremap = true, silent = true })
 
 local x = vim.diagnostic.severity
+local icons = require("lib.icons").diagnostics
 
 vim.diagnostic.config({
 	virtual_text = { prefix = "" },
-	signs = { text = { [x.ERROR] = "󰅙", [x.WARN] = "", [x.INFO] = "󰋼", [x.HINT] = "󰌵" } },
+	signs = { text = { [x.ERROR] = icons.Error, [x.WARN] = icons.Warn, [x.INFO] = icons.Info, [x.HINT] = icons.Hint } },
 	underline = true,
-	float = { border = "single" },
+	float = { border = "rounded" },
 })
 
 local capabilities = require("blink.cmp").get_lsp_capabilities()

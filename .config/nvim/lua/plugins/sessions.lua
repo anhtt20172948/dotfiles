@@ -1,28 +1,25 @@
 return {
 	{
-		"folke/persistence.nvim",
-		enabled = false,
-		event = "BufReadPre",
-		opts = {},
-        -- stylua: ignore
-        keys = {
-            { "<leader>qs", function() require("persistence").load() end,                desc = "Restore Session" },
-            { "<leader>qS", function() require("persistence").select() end,              desc = "Select Session" },
-            { "<leader>ql", function() require("persistence").load({ last = true }) end, desc = "Restore Last Session" },
-            { "<leader>qd", function() require("persistence").stop() end,                desc = "Don't Save Current Session" },
-        },
+		"nvim-telescope/telescope.nvim",
+		branch = "0.1.x",
+		lazy = true,
+		cmd = "Telescope",
+		dependencies = { "nvim-lua/plenary.nvim" },
+		opts = {
+			defaults = {
+				borderchars = { "─", "│", "─", "│", "╭", "╮", "╯", "╰" },
+				winblend = 0,
+			},
+		},
 	},
 	{
 		"rmagatti/auto-session",
 		---enables autocomplete for opts
 		---@module "auto-session"
 		---@type AutoSession.Config
-		dependencies = { "nvim-telescope/telescope.nvim" },
 		tag = "v2.5.1",
 		lazy = false,
 		opts = {
-			-- ⚠️ This will only work if Telescope.nvim is installed
-			-- The following are already the default values, no need to provide them if these are already the settings you want.
 			-- false: chỉ restore session của ĐÚNG cwd nếu có; thư mục chưa có session
 			-- thì để trống (true sẽ fallback nạp session cuối cùng -> mở dir nào cũng ra
 			-- session của dir khác).
@@ -31,7 +28,9 @@ return {
 			lsp_stop_on_restore = true, -- Should language servers be stopped when restoring a session. Can also be a function that will be called if set. Not called on autorestore from startup
 			session_lens = {
 				-- If load_on_setup is false, make sure you use `:SessionSearch` to open the picker as it will initialize everything first
-				load_on_setup = true,
+				-- v2.5.1 only supports Telescope here. Preserve its delete/copy/
+				-- alternate actions, but load it only when selecting a session.
+				load_on_setup = false,
 				previewer = false,
 				mappings = {
 					-- Mode can be a string or a table, e.g. {"i", "n"} for both insert and normal mode
@@ -43,10 +42,9 @@ return {
 				-- For all options, see: https://github.com/nvim-telescope/telescope.nvim/blob/master/doc/telescope.txt#L112
 				theme_conf = {
 					border = true,
-					-- layout_config = {
-					--   width = 0.8, -- Can set width and height as percent of window
-					--   height = 0.5,
-					-- },
+					borderchars = { "─", "│", "─", "│", "╭", "╮", "╯", "╰" },
+					winblend = 0,
+					layout_config = { width = 0.85, height = 0.6 },
 				},
 			},
 		},
@@ -54,7 +52,9 @@ return {
 			-- BỎ "terminal": mksession ghi buffer terminal của pane AI -> lúc restore
 			-- chạy `setlocal buftype=terminal` (E474) làm hỏng cả session + tắt auto-save.
 			vim.o.sessionoptions = "blank,buffers,curdir,folds,help,tabpages,winsize,winpos,localoptions"
-			vim.keymap.set("n", "<leader>P", require("auto-session.session-lens").search_session)
+			vim.keymap.set("n", "<leader>P", function()
+				require("auto-session.session-lens").search_session()
+			end, { desc = "Select Session" })
 			-- Dùng lại khối `opts` của spec (trước đây bị bỏ quên vì setup gọi thiếu),
 			-- rồi bổ sung pre/post cmds. Đóng pane AI trước khi lưu, giống pattern Neotree.
 			opts.pre_save_cmds = {

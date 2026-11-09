@@ -23,6 +23,7 @@ vim.g.maplocalleader = "\\"
 
 -- Setup lazy.nvim
 require("lazy").setup({
+	ui = { border = "rounded", backdrop = 100 },
 	spec = {
 		-- import your plugins
 		{ import = "plugins" },

@@ -12,32 +12,12 @@ return {
 			lightbulb = {
 				enable = false,
 			},
-			debug = false,
-			use_saga_diagnostic_sign = true,
-			-- diagnostic sign
-			error_sign = "",
-			warn_sign = "",
-			hint_sign = "",
-			infor_sign = "",
-			diagnostic_header_icon = "   ",
-			-- code action title icon
-			code_action_icon = " ",
-			code_action_prompt = { enable = true, sign = true, sign_priority = 40, virtual_text = true },
-			finder_definition_icon = "  ",
-			finder_reference_icon = "  ",
-			max_preview_lines = 10,
-
-			finder_action_keys = {
-				open = "o",
-				vsplit = "s",
-				split = "i",
-				quit = "q",
-				scroll_down = "<C-f>",
-				scroll_up = "<C-b>",
-			},
+			finder = { keys = { toggle_or_open = "o", vsplit = "s", split = "i", quit = "q" } },
 			ui = {
+				border = "rounded",
+				use_nerd = vim.env.NVIM_ASCII ~= "1",
 				kind = require("catppuccin.groups.integrations.lsp_saga").custom_kind(),
-				code_action = "💡",
+				code_action = require("lib.icons").diagnostics.Hint,
 				lines = { "┗", "┣", "┃", "━", "┏" },
 			},
 
@@ -46,26 +26,16 @@ return {
 				max_height = 0.8,
 			},
 			diagnostic = {
-				show_code_action = true,
-				show_source = true,
 				jump_num_shortcut = true,
 				max_width = 0.7,
-				custom_fix = nil,
-				custom_msg = nil,
-				text_hl_follow = false,
 				keys = { exec_action = "o", quit = "q", go_action = "g" },
 			},
 
-			code_action_keys = { quit = "q", exec = "<CR>" },
-			rename_action_keys = { quit = "<C-c>", exec = "<CR>" },
-			definition_preview_icon = "  ",
-			border_style = "single",
-			rename_prompt_prefix = "➤",
-			server_filetype_map = {},
-			diagnostic_prefix_format = "%d. ",
+			code_action = { keys = { quit = "q", exec = "<CR>" } },
+			rename = { keys = { quit = "<C-c>", exec = "<CR>" } },
 		})
 		-- keymaps
-		map("n", "<leader>lk", ":Lspsaga hover_doc<cr>", { desc = "Hover Docs", noremap = true, silent = true })
+		map("n", "<leader>lk", vim.lsp.buf.hover, { desc = "Hover Docs", noremap = true, silent = true })
 		map("n", "<leader>lf", ":Lspsaga finder<cr>", { desc = "LSP Finder", noremap = true, silent = true })
 		map(
 			"n",

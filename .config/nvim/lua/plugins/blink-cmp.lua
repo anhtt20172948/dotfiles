@@ -3,9 +3,10 @@ local icons = require("lib.icons")
 
 return {
 	"saghen/blink.cmp",
-	event = "InsertEnter",
+	event = { "InsertEnter", "CmdlineEnter" },
 	version = "1.*",
 	dependencies = {
+		"xzbdmw/colorful-menu.nvim",
 		"moyiz/blink-emoji.nvim",
 		"Kaiser-Yang/blink-cmp-dictionary",
 		"L3MON4D3/LuaSnip",
@@ -56,7 +57,6 @@ return {
 				},
 				supermaven = {
 					name = "supermaven", -- compat name
-					kind = "Supermaven", -- for icon kind
 					score_offset = 101, -- the higher the number, the higher the priority
 					module = "blink-cmp-supermaven",
 					async = true,
@@ -65,7 +65,6 @@ return {
 					name = "lsp",
 					enabled = true,
 					module = "blink.cmp.sources.lsp",
-					kind = "LSP",
 					-- min_keyword_length = 0,
 					-- fallbacks = { "snippets", "buffer" },
 					score_offset = 90, -- the higher the number, the higher the priority
@@ -303,7 +302,7 @@ return {
 			preset = "luasnip", -- Choose LuaSnip as the snippet engine
 		}
 		opts.signature = {
-			enabled = true,
+			enabled = false, -- Native LSP owns hover and signature help.
 			window = { border = "rounded" },
 		}
 		opts.keymap = {

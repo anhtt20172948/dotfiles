@@ -111,16 +111,16 @@ return {
 				},
 				color_overrides = { [flavour] = palette },
 				integrations = {
-					cmp = true,
+					cmp = false,
+					nvimtree = false,
+					indent_blankline = { enabled = false },
+					colorful_winsep = { enabled = false },
 					gitsigns = true,
-					nvimtree = true,
 					neotree = true,
 					-- treesitter = true, -- remove from: v2.0.0
 					blink_cmp = true,
 					noice = true,
 					harpoon = true,
-					copilot_vim = true,
-					notify = true,
 					lsp_trouble = true,
 					which_key = true,
 					lsp_saga = true,
@@ -137,15 +137,6 @@ return {
 					},
 					telescope = {
 						enabled = true,
-					},
-					indent_blankline = {
-						enabled = true,
-						scope_color = "lavender", -- catppuccin color (eg. `lavender`) Default: text
-						colored_indent_levels = false,
-					},
-					colorful_winsep = {
-						enabled = true,
-						color = "lavender",
 					},
 					-- remove from: v2.0.0
 					-- native_lsp = {

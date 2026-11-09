@@ -97,7 +97,9 @@ class MaterialFolderIconsTest(unittest.TestCase):
         self.assertEqual("󰝰", config["folder_open"])
         self.assertEqual("󰉖", config["folder_empty"])
         self.assertEqual("󰷏", config["folder_empty_open"])
-        self.assertEqual({"error": "", "warn": "", "info": "", "hint": "󰌵"}, config["diagnostics"])
+        shared = config["shared_diagnostics"]
+        self.assertEqual({"error": shared["Error"], "warn": shared["Warn"],
+                          "info": shared["Info"], "hint": shared["Hint"]}, config["diagnostics"])
 
     def test_neo_tree_does_not_globally_configure_diagnostics_and_is_valid_lua(self):
         self.assertEqual(0, inspect_neo_tree()["diagnostic_config_calls"])
