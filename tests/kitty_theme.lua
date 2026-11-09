@@ -9,6 +9,7 @@ local stock = {
 	mantle = "#181825",
 	crust = "#11111b",
 	text = "#cdd6f4",
+	surface2 = "#585b70",
 	peach = "#fab387",
 	maroon = "#eba0ac",
 	teal = "#94e2d5",
@@ -85,5 +86,10 @@ for _, bg in ipairs({ "#0d0e12", "#eeeeee", "missing" }) do
 	assert(highlights["@lsp.type.parameter"].fg == colors.maroon)
 	assert(highlights["@lsp.type.property"].fg == colors.teal)
 	assert(kitty.contrast(highlights.FloatBorder.fg, colors.base) >= 4.5)
+	for _, group in ipairs({ "Search", "CurSearch", "IncSearch" }) do
+		local hl = highlights[group]
+		assert(hl.bg and hl.fg, group .. " must resolve in DMS and Mocha fallback modes")
+		assert(kitty.contrast(hl.fg, hl.bg) >= 4.5, group .. " contrast")
+	end
 end
 print("kitty theme: OK")
