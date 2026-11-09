@@ -612,10 +612,16 @@ SSH_CONFIG=~/.ssh/config.work show /path/to/file
 Hosts come from non-wildcard aliases on `Host` lines in `~/.ssh/config`.
 `Include` directives are not followed. Both helpers prompt when multiple hosts
 match. `download` defaults to the remote basename in the current directory.
+`SSH_CONFIG` selects the configuration for discovery and all connections,
+including SSHFS and rsync. Quote its value when the config path contains spaces.
+`download` requires Python 3 to resolve destinations that do not exist yet.
+
+Both helpers support macOS's stock Bash 3.2. `show` uses macOS `open` for files
+and directories; on Linux it keeps the file-type-specific application choices.
 
 `show` schedules an unmount after ten minutes. The mount path is
 `/tmp/mnt_show_<host>` with `@` and `.` replaced by `_`; to unmount early, use
-`fusermount3 -u` with that path. Failures are logged to
+`fusermount3 -u` on Linux or `umount` on macOS with that path. Failures are logged to
 `${TMPDIR:-/tmp}/show-unmount.log`.
 
 ## Bootstrap scripts
