@@ -104,6 +104,19 @@ bootstrap for other installations.
 setup and helpers in `lua/core`, `lua/configs`, `lua/customize` and `lua/lib`.
 The leader key is Space.
 
+Floats use rounded borders and transparent surfaces. The fold/sign gutter uses
+native Tree-sitter folds when a parser and fold query are available, otherwise
+manual folds; files start unfolded and big files skip automatic folding.
+Lualine stays under each split, with extra details at wider widths. Snacks owns
+pickers, input and notifications; Noice owns command messages, Blink completion,
+and native LSP owns hover/signature help. Session selection retains Telescope
+on demand to preserve auto-session's delete/copy/alternate actions.
+
+Set `NVIM_ASCII=1` before launching Neovim for ASCII diagnostic/git symbols,
+file icons and dashboard actions, and mini.icons' ASCII folder style. This is a
+manual client-font choice and is independent of SSH. File icons use the resolved
+palette's text color; named folder icons keep their mini.icons identities.
+
 | Binding | Action |
 |---------|--------|
 | `<leader>gw` | Pick a Git or treehouse worktree. |

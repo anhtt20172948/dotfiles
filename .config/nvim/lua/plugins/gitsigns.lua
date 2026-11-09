@@ -4,7 +4,15 @@ return {
 		"nvim-lua/plenary.nvim",
 	},
 	config = function()
+		local icons = require("lib.icons").git
 		require("gitsigns").setup({
+			signs = {
+				add = { text = icons.Add },
+				change = { text = icons.Mod },
+				delete = { text = icons.Remove },
+				topdelete = { text = icons.Remove },
+				changedelete = { text = icons.Mod },
+			},
 			on_attach = function(bufnr)
 				local gitsigns = require("gitsigns")
 

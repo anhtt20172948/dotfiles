@@ -1,4 +1,5 @@
 local plugin_path = assert(arg[1], "neo-tree plugin path is required")
+vim.opt.rtp:prepend(vim.fn.fnamemodify(plugin_path, ":h:h:h"))
 local setup_calls = {}
 
 package.preload["neo-tree"] = function()
@@ -71,6 +72,7 @@ print(vim.json.encode({
 	folder_empty = icon.folder_empty,
 	folder_empty_open = icon.folder_empty_open,
 	diagnostics = diagnostics.symbols,
+	shared_diagnostics = require("lib.icons").diagnostics,
 	diagnostic_config_calls = diagnostic_config_calls,
 	directory_glyphs = directory_glyphs,
 }))

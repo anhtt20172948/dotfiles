@@ -83,8 +83,31 @@ for _, name in ipairs({
 	"NvimTreeNormalNC",
 	"NeoTreeStatusLineNC",
 	"NvimTreeStatuslineNc",
+	"SnacksIndent",
+	"SnacksIndentScope",
+	"SnacksIndentChunk",
+	"Folded",
+	"FoldColumn",
+	"NoiceSplitBorder",
+	"NoiceCmdlinePopupTitle",
+	"SnacksNotifierBorderError",
+	"SnacksNotifierBorderWarn",
+	"SnacksDashboardHeader",
+	"Headline1Bg",
+	"Headline6Fg",
+	"TinyInlineDiagnosticVirtualTextError",
+	"TinyInlineDiagnosticVirtualTextBg",
+	"TinyInlineDiagnosticVirtualTextArrow",
+	"InclineNormal",
+	"InclineNormalNC",
+	"NeoTreeTabActive",
+	"NeoTreeTabInactive",
+	"NeoTreeTabSeparatorActive",
+	"NeoTreeTabSeparatorInactive",
+	"SnacksNotifierHistory",
 }) do
 	assert(highlight(name).bg == nil, name .. " must have no background")
+	assert(highlight(name).fg ~= nil, name .. " must have a visible foreground")
 end
 for _, name in ipairs({ "CursorLine", "Visual", "PmenuSel", "BlinkCmpMenuSelection", "SnacksPickerSelected" }) do
 	assert(highlight(name).bg ~= nil, name .. " must retain a visible selection background")
@@ -119,6 +142,7 @@ package.loaded["catppuccin.palettes"] = {
 	end,
 }
 require("plugins.lualine").config()
+assert(options.options.globalstatus == false, "filenames must stay with each split")
 for _, mode in pairs(options.options.theme) do
 	for _, section in pairs(mode) do
 		assert(section.bg:upper() == "NONE", "every lualine section must be transparent")

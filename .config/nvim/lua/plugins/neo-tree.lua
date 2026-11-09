@@ -16,6 +16,7 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 			{ -- named directory icons (distinct Material Design folder-* variants; verified render in kitty)
 				"echasnovski/mini.icons",
 				opts = {
+					style = vim.env.NVIM_ASCII == "1" and "ascii" or "glyph",
 					directory = {
 						src = { glyph = "󰝰", hl = "MiniIconsPurple" },
 						components = { glyph = "󰉓", hl = "MiniIconsAzure" },
@@ -209,7 +210,7 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 
 			local local_opts = {
 				close_if_last_window = false, -- Close Neo-tree if it is the last window left in the tab
-				popup_border_style = "NC", -- or "" to use 'winborder' on Neovim v0.11+
+				popup_border_style = "rounded",
 				enable_git_status = true,
 				enable_diagnostics = true,
 				open_files_do_not_replace_types = { "terminal", "trouble", "qf" }, -- when opening files, do not use windows containing these filetypes or buftypes
@@ -226,12 +227,13 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 				--   end , -- this sorts files and directories descendantly
 				source_selector = {
 					winbar = true, -- toggle to show,
+					separator = " ",
 					show_scrolled_off_parent_node = true,
 					padding = { left = 1, right = 0 },
 					sources = {
-						{ source = "filesystem", display_name = "  Files" }, --      
-						{ source = "buffers", display_name = "  Buffers" }, --      
-						{ source = "git_status", display_name = " 󰊢 Git" }, -- 󰊢      
+						{ source = "filesystem", display_name = "Files" },
+						{ source = "buffers", display_name = "Buffers" },
+						{ source = "git_status", display_name = "Git" },
 					},
 				},
 
@@ -249,8 +251,8 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 						highlight = "NeoTreeIndentMarker",
 						-- expander config, needed for nesting files
 						with_expanders = true, -- if nil and file nesting is enabled, will enable expanders
-						expander_collapsed = "",
-						expander_expanded = "",
+						expander_collapsed = vim.env.NVIM_ASCII == "1" and "+" or "",
+						expander_expanded = vim.env.NVIM_ASCII == "1" and "-" or "",
 						expander_highlight = "NeoTreeExpander",
 					},
 					modified = {
@@ -259,17 +261,17 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 					},
 					diagnostics = {
 						symbols = {
-							error = "",
-							warn = "",
-							info = "",
-							hint = "󰌵",
+							error = require("lib.icons").diagnostics.Error,
+							warn = require("lib.icons").diagnostics.Warn,
+							info = require("lib.icons").diagnostics.Info,
+							hint = require("lib.icons").diagnostics.Hint,
 						},
 					},
 					icon = {
-						folder_closed = "󰉋",
-						folder_open = "󰝰",
-						folder_empty = "󰉖",
-						folder_empty_open = "󰷏",
+						folder_closed = vim.env.NVIM_ASCII == "1" and "+" or "󰉋",
+						folder_open = vim.env.NVIM_ASCII == "1" and "-" or "󰝰",
+						folder_empty = vim.env.NVIM_ASCII == "1" and "+" or "󰉖",
+						folder_empty_open = vim.env.NVIM_ASCII == "1" and "-" or "󰷏",
 						-- Custom folder icons based on name
 						provider = function(icon, node, state) -- default icon provider utilizes nvim-web-devicons if available
 							if node.type == "directory" then

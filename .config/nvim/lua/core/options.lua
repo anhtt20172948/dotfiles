@@ -1,4 +1,12 @@
 vim.opt.fillchars = { eob = " " }
+vim.opt.fillchars:append({ foldopen = "-", foldclose = "+", foldsep = " " })
+vim.opt.signcolumn = "yes:1"
+vim.opt.foldcolumn = "1"
+vim.opt.foldlevelstart = 99
+if vim.fn.exists("+winborder") == 1 then
+	vim.opt.winborder = "rounded"
+end
+require("customize.ui").setup()
 
 -- undo history
 vim.opt.undofile = true
