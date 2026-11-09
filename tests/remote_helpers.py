@@ -67,7 +67,7 @@ class HelperTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="remote-helpers-")
         self.addCleanup(self.temp.cleanup)
-        self.base = Path(self.temp.name)
+        self.base = Path(self.temp.name).resolve()
         self.bin = self.base / "bin"
         self.bin.mkdir()
         for name in ("ssh", "sshfs", "rsync", "uname", "mountpoint", "mount",
