@@ -1,5 +1,6 @@
 local root = assert(arg[1])
 vim.opt.rtp:prepend(root .. "/.config/nvim")
+vim.env.TMUX = nil
 vim.env.SSH_CONNECTION = nil
 vim.env.LC_KITTY_PALETTE = nil
 vim.env.LC_KITTY_PALETTE_SRC = nil
@@ -85,17 +86,47 @@ assert(require("customize.kitty_palette").active.colors.base == "#555555", "rest
 vim.env.SSH_CONNECTION = nil
 assert(theme.read().colors.base == "#fafafa", "local sessions must ignore pushed files")
 vim.env.SSH_CONNECTION = "127.0.0.1 1234 127.0.0.1 22"
-vim.env.LC_KITTY_PALETTE_SRC = "missing"
-assert(theme.read().colors.base == "#fafafa", "other source files must be ignored")
-for _, source in ipairs({ "", "../arch-local", "Arch-local", "arch_local", string.rep("a", 33), "arch-local\n" }) do
+-- A pane with no source and an old 18-entry environment must use the last push.
+vim.env.LC_KITTY_PALETTE_SRC = nil
+assert(vim.uv.fs_utime(remote_dir .. "/remote-palette-arch-local.conf", 100, 100))
+assert(vim.uv.fs_utime(remote_dir .. "/remote-palette-mac-local.conf", 200, 200))
+package.loaded["customize.kitty_palette"] = nil
+assert(require("customize.kitty_palette").active.colors.base == "#444444", "restart in stale pane must use newest push")
+for _, source in ipairs({
+	"missing",
+	"",
+	"../arch-local",
+	"Arch-local",
+	"arch_local",
+	string.rep("a", 33),
+	"arch-local\n",
+}) do
 	vim.env.LC_KITTY_PALETTE_SRC = source
-	local original_open = io.open
-	io.open = function()
-		error("invalid source must be rejected before opening a file")
-	end
-	assert(theme.read().colors.base == "#fafafa", "invalid source must fall back to env")
-	io.open = original_open
+	assert(theme.read().colors.base == "#444444", "missing or invalid source must use newest valid push")
 end
+local original_system = vim.system
+local session_output = "LC_KITTY_PALETTE_SRC=mac-local\n"
+local session_code = 0
+local calls = 0
+vim.system = function(command, options)
+	calls = calls + 1
+	assert(vim.deep_equal(command, { "tmux", "show-environment" }), "read session environment in one invocation")
+	assert(options.timeout > 0 and options.timeout <= 200, "tmux must have a short timeout")
+	return {
+		wait = function()
+			return { code = session_code, stdout = session_output }
+		end,
+	}
+end
+vim.env.TMUX = "/tmp/test-tmux,123,0"
+vim.env.LC_KITTY_PALETTE_SRC = "arch-local"
+assert(theme.read().colors.base == "#444444", "tmux source must override stale process source")
+assert(calls == 1, "one tmux invocation per read")
+for _, output in ipairs({ "-LC_KITTY_PALETTE_SRC\n", "LC_KITTY_PALETTE_SRC=../bad\n" }) do
+	session_output = output
+	assert(theme.read().colors.base == "#555555", "removed or invalid tmux source must fall back to process source")
+end
+vim.fn.delete(remote_dir .. "/remote-palette-mac-local.conf")
 vim.env.LC_KITTY_PALETTE_SRC = "arch-local"
 for _, lines in ipairs({
 	{ "invalid" },
@@ -105,9 +136,37 @@ for _, lines in ipairs({
 	{ env_palette("333333") .. ":abcdef:123456" },
 }) do
 	vim.fn.writefile(lines, remote_dir .. "/remote-palette-arch-local.conf")
-	assert(theme.read().colors.base == "#fafafa", "malformed pushed file must fall back to env")
+	vim.fn.writefile({ env_palette("666666") .. ":abcdef" }, remote_dir .. "/remote-palette-valid.conf")
+	assert(vim.uv.fs_utime(remote_dir .. "/remote-palette-valid.conf", 50, 50))
+	assert(theme.read().colors.base == "#666666", "malformed newer files must be skipped")
+	vim.fn.delete(remote_dir .. "/remote-palette-valid.conf")
+	assert(theme.read().colors.base == "#fafafa", "malformed pushed files must fall back to env")
 end
+vim.fn.delete(remote_dir .. "/remote-palette-arch-local.conf")
 vim.env.LC_KITTY_PALETTE_SRC = nil
+session_output = "-LC_KITTY_PALETTE_SRC\nLC_KITTY_PALETTE=" .. env_palette("777777") .. ":abcdef\n"
+assert(
+	theme.read().primary == "#abcdef" and theme.read().colors.base == "#777777",
+	"tmux palette must override process palette"
+)
+for _, output in ipairs({ "-LC_KITTY_PALETTE\n", "LC_KITTY_PALETTE=invalid\n" }) do
+	session_output = output
+	assert(theme.read().colors.base == "#fafafa", "removed or malformed tmux palette must fall back to process env")
+end
+session_code = 124
+assert(theme.read().colors.base == "#fafafa", "tmux timeout must fall back")
+vim.system = function()
+	error("tmux unavailable")
+end
+assert(theme.read().colors.base == "#fafafa", "spawn failure must fall back")
+vim.env.TMUX = nil
+assert(theme.read().colors.base == "#fafafa", "skip tmux outside tmux")
+vim.env.TMUX = "/tmp/test-tmux,123,0"
+vim.env.SSH_CONNECTION = nil
+assert(theme.read().colors.base == "#fafafa", "skip tmux in local sessions")
+vim.env.TMUX = nil
+vim.env.SSH_CONNECTION = "127.0.0.1 1234 127.0.0.1 22"
+vim.system = original_system
 local valid = env_palette("abcdef")
 for _, invalid in ipairs({
 	"",
