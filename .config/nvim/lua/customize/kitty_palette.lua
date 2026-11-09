@@ -63,6 +63,44 @@ function M.colors(stock)
 	return colors
 end
 
+-- Keep syntax colours intact: reduce the selection tint, never recolour tokens.
+function M.selection_background(colors, primary)
+	if not M.active then
+		return colors.surface2
+	end
+	local amount = 0.3
+	while amount > 0 do
+		local background = blend(colors.base, primary, amount)
+		local readable = M.contrast(colors.text, background) >= 4.5
+		for _, key in ipairs({
+			"rosewater",
+			"flamingo",
+			"pink",
+			"mauve",
+			"red",
+			"maroon",
+			"peach",
+			"yellow",
+			"green",
+			"teal",
+			"sky",
+			"sapphire",
+			"blue",
+			"lavender",
+		}) do
+			-- Syntax uses a 3:1 floor; normal text retains its 4.5:1 floor.
+			if colors[key] and M.contrast(colors[key], background) < 3 then
+				readable = false
+			end
+		end
+		if readable then
+			return background
+		end
+		amount = math.max(0, amount - 0.01)
+	end
+	return colors.base
+end
+
 local function parse_encoded(encoded)
 	if not encoded or (#encoded ~= 125 and #encoded ~= 132) then
 		return nil
