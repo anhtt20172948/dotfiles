@@ -44,7 +44,7 @@ return {
 							cond = wide,
 							symbols = { added = icons.git.Add, modified = icons.git.Mod, removed = icons.git.Remove },
 						},
-						{ "filetype", cond = wide, colored = false },
+						{ "filetype", cond = wide, colored = true },
 						{ "filename", path = 0, color = { fg = palette.text, bg = "NONE", gui = "bold" } },
 					},
 					lualine_x = {

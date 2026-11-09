@@ -6,6 +6,10 @@ return {
 		tag = "v2.31.0",
 		priority = 1000,
 		lazy = false,
+		config = function(_, opts)
+			require("snacks").setup(opts)
+			require("customize.ui").snacks_icons()
+		end,
 		---@type snacks.Config
 		opts = {
 			bigfile = {
