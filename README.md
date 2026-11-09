@@ -643,13 +643,19 @@ provisioning path.
 Kitty's active palette is the colour source on both platforms. DMS writes
 `~/.config/kitty/dank-theme.conf` on Arch Linux with Hyprland; macOS uses
 `current-theme.conf` (Catppuccin Mocha) without DMS. In SSH sessions, Neovim first
-reads the pushed file
-`~/.config/kitty/remote-palette-<src>.conf` for `LC_KITTY_PALETTE_SRC`. The source
+resolves `LC_KITTY_PALETTE_SRC` from the tmux session environment before the
+process environment, then reads the matching pushed file
+`~/.config/kitty/remote-palette-<src>.conf`. The source
 must contain only lowercase letters, digits and hyphens, with 1 to 32 characters.
 The file must contain exactly one palette line in the format below. Missing or
-malformed files and invalid sources fall back to the forwarded environment value,
-then the existing file fallbacks. Files for other sources are ignored, and local
-sessions ignore pushed files.
+malformed matching files and invalid or absent sources fall back to the most
+recently modified valid `remote-palette-*.conf` file, using the last machine
+that pushed. If no pushed file is valid, Neovim tries `LC_KITTY_PALETTE` from
+the tmux session environment, then the process environment, then the existing
+file fallbacks. Removed tmux variables (`-NAME`) and malformed values are ignored.
+The tmux environment is read once with a 100 ms timeout during SSH startup only;
+failures fall back without interrupting startup. Local sessions ignore pushed files
+and the tmux environment.
 
 `LC_KITTY_PALETTE` contains 18 or 19 colon-separated colours, ordered background,
 foreground, then color0 through color15, with an optional cursor colour as entry 19.
@@ -666,7 +672,7 @@ from the client. This carries the palette over plain `ssh`, lazyssh's direct
 `/usr/bin/ssh`, and `kitten ssh`. These dotfiles do not alias `ssh` or copy palettes.
 The server needs this Neovim configuration too.
 
-If neither the source-specific file nor the variable is valid, Neovim reads the
+If neither a pushed file nor an environment palette is valid, Neovim reads the
 first available legacy file:
 `remote-palette.conf` during SSH sessions only, then `dank-theme.conf`, then
 `current-theme.conf`. It resolves symlinks. Existing remote snapshots remain a
@@ -700,8 +706,10 @@ repo manages a local watcher that pushes source-specific palettes to reachable
 servers. After a local theme change, quit and reopen remote Neovim in the same pane
 to read the latest pushed palette. Offline servers miss that push; the next SSH
 connection still forwards the current palette, and the next theme change pushes
-again. tmux refreshes both palette variables on attach so newly created panes
-inherit them; existing panes retain their source identity and environment.
+again. tmux refreshes both palette variables on attach. Neovim reads that session
+environment even in existing panes. Panes without a source id use the newest valid
+pushed file, so reopening Neovim picks up theme changes without a new pane,
+re-attach, or reconnect.
 
 Kitty shell integration, remote kitty installation, and connection sharing remain
 disabled in `ssh.conf`, preserving the server's account login shell and existing

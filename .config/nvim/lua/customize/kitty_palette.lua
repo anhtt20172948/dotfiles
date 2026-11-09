@@ -120,15 +120,33 @@ local function parse_encoded(encoded)
 	return values
 end
 
-local function read_remote()
-	local source = vim.env.LC_KITTY_PALETTE_SRC
-	if not vim.env.SSH_CONNECTION or vim.env.SSH_CONNECTION == "" then
-		return nil
+local function valid_source(source)
+	return source and #source > 0 and #source <= 32 and source:match("^[a-z0-9-]+$")
+end
+
+local function tmux_environment()
+	if not vim.env.TMUX or vim.env.TMUX == "" then
+		return {}
 	end
-	if not source or #source == 0 or #source > 32 or not source:match("^[a-z0-9-]+$") then
-		return nil
+	-- Existing panes keep stale process variables; the session is refreshed on attach.
+	local ok, result = pcall(function()
+		return vim.system({ "tmux", "show-environment" }, { text = true, timeout = 100 }):wait()
+	end)
+	if not ok or result.code ~= 0 then
+		return {}
 	end
-	local file = io.open(vim.env.HOME .. "/.config/kitty/remote-palette-" .. source .. ".conf", "r")
+	local environment = {}
+	for line in (result.stdout or ""):gmatch("[^\n]+") do
+		local name, value = line:match("^(LC_KITTY_PALETTE[^=]*)=(.*)$")
+		if name == "LC_KITTY_PALETTE_SRC" or name == "LC_KITTY_PALETTE" then
+			environment[name] = value
+		end
+	end
+	return environment
+end
+
+local function read_encoded_file(path)
+	local file = io.open(path, "r")
 	if not file then
 		return nil
 	end
@@ -139,6 +157,39 @@ local function read_remote()
 		encoded = encoded:sub(1, -2)
 	end
 	return parse_encoded(encoded)
+end
+
+local function read_remote(environment)
+	local source = environment.LC_KITTY_PALETTE_SRC
+	if not valid_source(source) then
+		source = vim.env.LC_KITTY_PALETTE_SRC
+	end
+	local dir = vim.env.HOME .. "/.config/kitty/"
+	if valid_source(source) then
+		local values = read_encoded_file(dir .. "remote-palette-" .. source .. ".conf")
+		if values then
+			return values
+		end
+	end
+	local newest, newest_time
+	for _, path in ipairs(vim.fn.glob(dir .. "remote-palette-*.conf", false, true)) do
+		local candidate = vim.fn.fnamemodify(path, ":t"):match("^remote%-palette%-(.*)%.conf$")
+		local stat = valid_source(candidate) and vim.uv.fs_stat(path)
+		if stat and stat.type == "file" then
+			local mtime = stat.mtime
+			if
+				not newest_time
+				or mtime.sec > newest_time.sec
+				or (mtime.sec == newest_time.sec and mtime.nsec > newest_time.nsec)
+			then
+				local values = read_encoded_file(path)
+				if values then
+					newest, newest_time = values, mtime
+				end
+			end
+		end
+	end
+	return newest
 end
 
 -- Resolve symlinks: install.sh links the kitty directory into this checkout.
@@ -185,7 +236,12 @@ local function read_file()
 end
 
 function M.read()
-	local values = read_remote() or parse_encoded(vim.env.LC_KITTY_PALETTE) or read_file()
+	local remote, environment
+	if vim.env.SSH_CONNECTION and vim.env.SSH_CONNECTION ~= "" then
+		environment = tmux_environment()
+		remote = read_remote(environment) or parse_encoded(environment.LC_KITTY_PALETTE)
+	end
+	local values = remote or parse_encoded(vim.env.LC_KITTY_PALETTE) or read_file()
 	if not values then
 		return nil
 	end
