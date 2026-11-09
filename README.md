@@ -734,6 +734,15 @@ Kitty shell integration, remote kitty installation, and connection sharing remai
 disabled in `ssh.conf`, preserving the server's account login shell and existing
 connection policy when explicitly using `kitten ssh`.
 
+File icons retain nvim-web-devicons' per-filetype colours, adjusted to at least
+4.5:1 contrast against the resolved terminal background, including the generic
+file icon. Neo-tree, Snacks file pickers and Lualine use these colours;
+mini.icons folder icons keep their existing appearance. `NVIM_ASCII=1` retains
+the ASCII fallback. Theme reloads recompute from the original icon colours.
+`tests/nvim_icons.lua` covers palette changes without plugins; with the installed
+plugins, run `nvim --headless -u NONE -i NONE -l tests/helpers/check_devicon_colors.lua "$PWD"`
+(and repeat with `NVIM_ASCII=1`) to check the providers and picker formatter.
+
 Other terminal tools use ANSI colours, including btop's built-in `TTY` theme.
 Do not add hex colour literals to active tool configuration. Neovim highlights
 must use the active Catppuccin palette, preserving the existing highlight roles

@@ -63,22 +63,49 @@ function M.folds()
 	end
 end
 
+local icon_sources, default_icon_source
+
 function M.icons()
 	local devicons = package.loaded["nvim-web-devicons"]
 	if not devicons then
 		return
 	end
-	local text = require("customize.kitty_palette").palette().text
+	local kitty = require("customize.kitty_palette")
+	local colors = kitty.palette()
+	-- Always start from the provider colours, not a previous palette's adjustment.
+	icon_sources = icon_sources or vim.deepcopy(devicons.get_icons())
+	default_icon_source = default_icon_source or vim.deepcopy(devicons.get_default_icon())
 	local overrides = {}
-	for key, icon in pairs(devicons.get_icons()) do
+	for key, icon in pairs(icon_sources) do
 		overrides[key] = vim.tbl_extend("force", icon, {
-			color = text,
+			color = kitty.ensure_contrast(icon.color, colors.base, colors.text, 4.5),
 			icon = vim.env.NVIM_ASCII == "1" and "." or icon.icon,
 		})
 	end
 	devicons.set_icon(overrides)
-	local default = devicons.get_default_icon()
-	devicons.set_default_icon(vim.env.NVIM_ASCII == "1" and "." or default.icon, text, default.cterm_color)
+	local default = default_icon_source
+	devicons.set_default_icon(
+		vim.env.NVIM_ASCII == "1" and "." or default.icon,
+		kitty.ensure_contrast(default.color, colors.base, colors.text, 4.5),
+		default.cterm_color
+	)
+end
+
+function M.snacks_icons()
+	local util = require("snacks.util")
+	local fallback = util.icon
+	util.icon = function(name, category, opts)
+		if category == "directory" then
+			return fallback(name, category, opts)
+		end
+		local devicons = require("nvim-web-devicons")
+		if category == "filetype" then
+			return devicons.get_icon_by_filetype(name, { default = true })
+		elseif category == "extension" then
+			return devicons.get_icon(nil, name, { default = true })
+		end
+		return devicons.get_icon(vim.fn.fnamemodify(name, ":t"), nil, { default = true })
+	end
 end
 
 function M.decorations()
