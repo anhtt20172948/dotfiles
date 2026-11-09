@@ -28,7 +28,6 @@ ICON_FILE="📄"
 ICON_FOLDER="📁"
 ICON_DOWNLOAD="⬇️ "
 ICON_ROCKET="🚀"
-ICON_PROGRESS="⏳"
 
 # Print helpers
 print_header() {
@@ -76,6 +75,11 @@ fi
 # Single source of truth — no separate host list to keep in sync. Every
 # non-wildcard name on a `Host` line is probed. Override for one-off runs with
 #   REMOTE_HOSTS="rack jupiter" download <path>
+# REMOTE_HOSTS also works without a user config; let SSH use its defaults then.
+SSH_CONFIG_ARGS=()
+if [[ -n "${SSH_CONFIG:-}" || -r "$HOME/.ssh/config" ]]; then
+  SSH_CONFIG_ARGS=(-F "${SSH_CONFIG:-$HOME/.ssh/config}")
+fi
 SSH_CONFIG="${SSH_CONFIG:-$HOME/.ssh/config}"
 
 if [[ -n "${REMOTE_HOSTS:-}" ]]; then
@@ -91,7 +95,10 @@ else
   # de-duplicate while preserving file order.
   # Note: `Include` directives are not followed — add hosts to this file or use
   # REMOTE_HOSTS if you split your ssh config.
-  mapfile -t SERVERS < <(
+  SERVERS=()
+  while IFS= read -r server; do
+    SERVERS+=("$server")
+  done < <(
     awk '
       { sub(/#.*/, "") }
       tolower($1) == "host" {
@@ -121,11 +128,8 @@ if [[ -z "$LOCAL_PATH" ]]; then
   print_info "No local path specified, using: ${CYAN}$BASENAME${RESET} (current directory)"
 fi
 
-# Convert to absolute path. realpath -m does not require the path to exist —
-# the previous 'cd $(dirname ...) && pwd' silently produced "/basename" when the
-# target directory did not exist yet, and the later mkdir -p could not recover
-# the lost prefix.
-LOCAL_PATH=$(realpath -m -- "$LOCAL_PATH")
+# Resolve missing destination parents with the same behavior on BSD and GNU.
+LOCAL_PATH=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$LOCAL_PATH")
 
 print_step "Remote path: ${MAGENTA}$REMOTE_PATH${RESET}"
 print_step "Local path: ${CYAN}$LOCAL_PATH${RESET}"
@@ -145,7 +149,7 @@ for i in "${!SERVERS[@]}"; do
   (
     # printf %q so a path containing quotes, $ or backticks is not evaluated
     # by the remote shell.
-    if ssh -o ConnectTimeout=3 -o LogLevel=ERROR "$SERVER" \
+    if ssh "${SSH_CONFIG_ARGS[@]}" -o ConnectTimeout=3 -o LogLevel=ERROR "$SERVER" \
          "test -e $(printf '%q' "$REMOTE_PATH")" 2>/dev/null; then
       echo "$SERVER" > "$TEMP_DIR/$i"
     fi
@@ -203,9 +207,11 @@ print_separator
 # --- Get remote file/folder info ---
 print_step "Getting remote file information..."
 QPATH=$(printf '%q' "$REMOTE_PATH")
-REMOTE_SIZE=$(ssh "$FOUND_SERVER" "du -sh $QPATH 2>/dev/null | cut -f1" 2>/dev/null || echo "unknown")
+# shellcheck disable=SC2029 # QPATH is deliberately quoted for the remote shell.
+REMOTE_SIZE=$(ssh "${SSH_CONFIG_ARGS[@]}" "$FOUND_SERVER" "du -sh $QPATH 2>/dev/null | cut -f1" 2>/dev/null || echo "unknown")
 [[ -z "$REMOTE_SIZE" ]] && REMOTE_SIZE="unknown"
-IS_DIR=$(ssh "$FOUND_SERVER" "test -d $QPATH && echo 1 || echo 0")
+# shellcheck disable=SC2029 # QPATH is deliberately quoted for the remote shell.
+IS_DIR=$(ssh "${SSH_CONFIG_ARGS[@]}" "$FOUND_SERVER" "test -d $QPATH && echo 1 || echo 0")
 
 if [[ "$IS_DIR" == "1" ]]; then
   print_info "Type: ${ICON_FOLDER} Directory"
@@ -243,8 +249,14 @@ fi
 # Helper to run rsync with chosen progress option and minimal noise
 run_rsync() {
   local src="$1" dest="$2"
-  # Use -e to silence ssh output and let rsync print progress
-  rsync -avzh "${RSYNC_PROGRESS_OPTS[@]}" -e "ssh -o LogLevel=ERROR" "$src" "$dest"
+  # rsync parses -e itself: doubled quotes escape quotes inside a quoted word.
+  local quote="'" doubled_quote="''"
+  local config="${SSH_CONFIG//"$quote"/$doubled_quote}"
+  local transport="ssh -o LogLevel=ERROR"
+  if [[ ${#SSH_CONFIG_ARGS[@]} -gt 0 ]]; then
+    transport="ssh -F '$config' -o LogLevel=ERROR"
+  fi
+  rsync -avzh "${RSYNC_PROGRESS_OPTS[@]}" -e "$transport" "$src" "$dest"
 }
 
 # Checked with `if ! run_rsync`, not a trailing `[[ $? -eq 0 ]]`: `set -e` above

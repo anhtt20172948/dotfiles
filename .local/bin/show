@@ -25,7 +25,6 @@ ICON_SEARCH="🔍"
 ICON_SERVER="🖥️ "
 ICON_FILE="📄"
 ICON_FOLDER="📁"
-ICON_MOUNT="🔗"
 ICON_ROCKET="🚀"
 
 # Print helpers
@@ -72,6 +71,11 @@ fi
 # Single source of truth — no separate host list to keep in sync. Every
 # non-wildcard name on a `Host` line is probed. Override for one-off runs with
 #   REMOTE_HOSTS="rack jupiter" show <path>
+# REMOTE_HOSTS also works without a user config; let SSH use its defaults then.
+SSH_CONFIG_ARGS=()
+if [[ -n "${SSH_CONFIG:-}" || -r "$HOME/.ssh/config" ]]; then
+  SSH_CONFIG_ARGS=(-F "${SSH_CONFIG:-$HOME/.ssh/config}")
+fi
 SSH_CONFIG="${SSH_CONFIG:-$HOME/.ssh/config}"
 
 if [[ -n "${REMOTE_HOSTS:-}" ]]; then
@@ -87,7 +91,10 @@ else
   # de-duplicate while preserving file order.
   # Note: `Include` directives are not followed — add hosts to this file or use
   # REMOTE_HOSTS if you split your ssh config.
-  mapfile -t SERVERS < <(
+  SERVERS=()
+  while IFS= read -r server; do
+    SERVERS+=("$server")
+  done < <(
     awk '
       { sub(/#.*/, "") }
       tolower($1) == "host" {
@@ -104,6 +111,7 @@ if [[ ${#SERVERS[@]} -eq 0 ]]; then
 fi
 
 MOUNT_BASE="/tmp/mnt_show"
+PLATFORM=$(uname -s)
 
 # Show supported servers
 print_step "Supported servers (${#SERVERS[@]} total):"
@@ -133,7 +141,7 @@ for i in "${!SERVERS[@]}"; do
   (
     # printf %q so a path containing quotes, $ or backticks is not evaluated
     # by the remote shell.
-    if ssh -o ConnectTimeout=3 -o LogLevel=ERROR "$SERVER" \
+    if ssh "${SSH_CONFIG_ARGS[@]}" -o ConnectTimeout=3 -o LogLevel=ERROR "$SERVER" \
          "test -e $(printf '%q' "$REMOTE_PATH")" 2>/dev/null; then
       echo "$SERVER" > "$TEMP_DIR/$i"
     fi
@@ -194,9 +202,20 @@ MOUNT_POINT="${MOUNT_BASE}_${SAFE_NAME}"
 mkdir -p "$MOUNT_POINT"
 
 # --- Mount if needed ---
-if ! mountpoint -q "$MOUNT_POINT"; then
+is_mounted() {
+  if [[ "$PLATFORM" == Darwin ]]; then
+    # macOS may report /tmp mounts under its physical path, /private/tmp.
+    local physical_mount
+    physical_mount=$( ( cd "$MOUNT_POINT" && pwd -P ) )
+    mount | grep -Fq -e " on $MOUNT_POINT (" -e " on $physical_mount ("
+  else
+    mountpoint -q "$MOUNT_POINT"
+  fi
+}
+
+if ! is_mounted; then
   print_step "Mounting ${FOUND_SERVER}..."
-  sshfs "$FOUND_SERVER":/ "$MOUNT_POINT" -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3 || {
+  sshfs "${SSH_CONFIG_ARGS[@]}" "$FOUND_SERVER":/ "$MOUNT_POINT" -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3 || {
     print_error "Failed to mount $FOUND_SERVER"
     exit 1
   }
@@ -217,6 +236,10 @@ print_separator
 
 # --- Open function ---
 open_item() {
+  if [[ "$PLATFORM" == Darwin ]]; then
+    open "$LOCAL_PATH" >/dev/null 2>&1 &
+    return
+  fi
   if [[ -d "$LOCAL_PATH" ]]; then
     print_step "Opening directory ${ICON_FOLDER}"
     print_info "Path: ${CYAN}$LOCAL_PATH${RESET}"
@@ -258,18 +281,25 @@ open_item
 UNMOUNT_LOG="${TMPDIR:-/tmp}/show-unmount.log"
 (
   sleep 600
-  for unmounter in fusermount3 fusermount umount; do
-    command -v "$unmounter" >/dev/null 2>&1 || continue
-    if "$unmounter" -u "$MOUNT_POINT" 2>>"$UNMOUNT_LOG"; then
-      exit 0
-    fi
-  done
-  printf '%s: failed to unmount %s\n' "$(date -Is)" "$MOUNT_POINT" >>"$UNMOUNT_LOG"
+  if [[ "$PLATFORM" != Darwin ]]; then
+    for unmounter in fusermount3 fusermount; do
+      command -v "$unmounter" >/dev/null 2>&1 || continue
+      if "$unmounter" -u "$MOUNT_POINT" 2>>"$UNMOUNT_LOG"; then
+        exit 0
+      fi
+    done
+  fi
+  umount "$MOUNT_POINT" 2>>"$UNMOUNT_LOG" && exit 0
+  printf '%s: failed to unmount %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$MOUNT_POINT" >>"$UNMOUNT_LOG"
 ) &
 disown 2>/dev/null || true
 
 print_separator
 print_success "${ICON_ROCKET} Successfully opened!"
 print_info "Auto-unmount in ${YELLOW}10 minutes${RESET}"
-print_info "Unmount manually: ${CYAN}fusermount3 -u $MOUNT_POINT${RESET}"
+if [[ "$PLATFORM" == Darwin ]]; then
+  print_info "Unmount manually: ${CYAN}umount $MOUNT_POINT${RESET}"
+else
+  print_info "Unmount manually: ${CYAN}fusermount3 -u $MOUNT_POINT${RESET}"
+fi
 echo ""

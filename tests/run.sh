@@ -15,8 +15,8 @@ cd "$ROOT"
 # Daemon no-mistakes không đọc .zshrc: nvim (install_neovim) nằm ở ~/.local/bin.
 export PATH="$HOME/.local/bin:$PATH"
 
-# Chỉ các script đang qua shellcheck. Script cũ ở .local/bin (download, show,
-# install_neovim) và hypr chưa sạch -> thêm vào khi sửa.
+# Chỉ các script đang qua shellcheck. Script cũ install_neovim và hypr
+# chưa sạch -> thêm vào khi sửa.
 LINT_FILES=(
 	.config/tmux/scripts/*.sh
 	.local/bin/ai-acct
@@ -24,6 +24,8 @@ LINT_FILES=(
 	.local/bin/agent-statusline-claude
 	.local/bin/install_agent_workflow
 	.local/bin/install_zsh
+	.local/bin/show
+	.local/bin/download
 	install.sh
 	tests/*_test.sh
 	tests/run.sh
