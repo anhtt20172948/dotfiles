@@ -116,8 +116,6 @@ local borders = {
 local selections = {
 	"CursorLine",
 	"CursorColumn",
-	"Visual",
-	"VisualNOS",
 	"PmenuSel",
 	"BlinkCmpMenuSelection",
 	"NoicePopupmenuSelected",
@@ -137,6 +135,10 @@ function M.highlights(colors, primary)
 	end
 	for _, group in ipairs(selections) do
 		highlights[group] = { bg = colors.surface0 }
+	end
+	local background = require("customize.kitty_palette").selection_background(colors, primary)
+	for _, group in ipairs({ "Visual", "VisualNOS" }) do
+		highlights[group] = { fg = "NONE", bg = background }
 	end
 	return highlights
 end

@@ -8,6 +8,7 @@ for i = 0, 15 do
 end
 vim.env.LC_KITTY_PALETTE = table.concat(entries, ":")
 local kitty = require("customize.kitty_palette")
+assert(kitty.selection_background({ base = "#101010", text = "#ffffff" }, "#ffffff") ~= "#101010")
 local plugin = vim.env.CATPPUCCIN_TEST_RTP
 if plugin then
 	vim.opt.rtp:prepend(plugin)
@@ -19,6 +20,9 @@ else
 	for name, hl in pairs(require("customize.transparent").highlights(colors, colors.text)) do
 		vim.api.nvim_set_hl(0, name, hl)
 	end
+end
+for _, name in ipairs({ "Visual", "VisualNOS" }) do
+	assert(vim.api.nvim_get_hl(0, { name = name, link = false }).fg == nil, name .. " must preserve syntax colours")
 end
 local function highlight(name)
 	return vim.api.nvim_get_hl(0, { name = name, link = false })
