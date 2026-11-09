@@ -138,14 +138,26 @@ package.loaded["lazy.status"] = {}
 package.loaded["customize.aiterm_ecc"] = {}
 package.loaded["catppuccin.palettes"] = {
 	get_palette = function()
-		return kitty.colors({})
+		return kitty.colors({
+			green = "#a6e3a1",
+			mauve = "#cba6f7",
+			red = "#f38ba8",
+			peach = "#fab387",
+			yellow = "#f9e2af",
+			blue = "#89b4fa",
+			teal = "#94e2d5",
+		})
 	end,
 }
 require("plugins.lualine").config()
 assert(options.options.globalstatus == false, "filenames must stay with each split")
-for _, mode in pairs(options.options.theme) do
-	for _, section in pairs(mode) do
-		assert(section.bg:upper() == "NONE", "every lualine section must be transparent")
+for name, mode in pairs(options.options.theme) do
+	for section, hl in pairs(mode) do
+		if name ~= "inactive" and (section == "a" or section == "z") then
+			assert(kitty.contrast(hl.fg, hl.bg) >= 4.5, "pill labels must stay readable")
+		else
+			assert(hl.bg:upper() == "NONE", "lualine outside the mode/location pills must be transparent")
+		end
 	end
 end
 assert(options.sections.lualine_c[3].color.bg == "NONE", "filename component must be transparent")
