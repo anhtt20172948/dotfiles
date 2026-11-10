@@ -163,21 +163,16 @@ local benign_errmsg = {
 local files_mode = os.getenv("SMOKE_FILES") == "1"
 local light_mode = os.getenv("SMOKE_LIGHT") == "1"
 
--- SMOKE_LIGHT=1: the light palette applies, and no text group is below 4.5:1
--- (customize.ui.low_contrast) or syntax below the light muted floor.
+-- SMOKE_LIGHT=1: the light palette applies, and no text group is below the
+-- light muted floor against its background or the backdrop (customize.ui.low_contrast).
 local function check_light()
 	local kitty = require("customize.kitty_palette")
 	if kitty.background() ~= "light" or vim.o.background ~= "light" then
 		record("light", ("palette %s, background=%s"):format(kitty.background(), vim.o.background))
 		return
 	end
-	for _, low in ipairs(require("customize.ui").low_contrast(kitty.TEXT_FLOOR)) do
+	for _, low in ipairs(require("customize.ui").low_contrast(kitty.text_floor(true))) do
 		record("light", ("%s %s on %s is %.2f:1"):format(low.name, low.fg, low.bg, low.ratio))
-	end
-	for _, low in ipairs(require("customize.ui").low_contrast(kitty.LIGHT_MUTED_FLOOR - 0.01)) do
-		if low.name:sub(1, 1) == "@" or low.name == "Comment" then
-			record("light", ("syntax %s %s is %.2f:1"):format(low.name, low.fg, low.ratio))
-		end
 	end
 end
 

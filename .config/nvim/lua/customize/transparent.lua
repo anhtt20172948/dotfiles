@@ -147,10 +147,11 @@ function M.highlights(colors, primary)
 		highlights[group] = { fg = "NONE", bg = background }
 	end
 	local search = kitty.search_background(colors, primary)
-	highlights.Search = { bg = search, fg = kitty.ensure_contrast(colors.text, search, colors.text, 4.5) }
+	highlights.Search =
+		{ bg = search, fg = kitty.ensure_contrast(colors.text, search, colors.text, kitty.text_floor()) }
 	local black = string.format("#%06x", 0)
 	local dark = kitty.contrast(colors.base, black) < 4.5 and colors.base or black
-	local foreground = kitty.ensure_contrast(dark, primary, black, 4.5)
+	local foreground = kitty.ensure_contrast(dark, primary, black, kitty.text_floor())
 	for _, group in ipairs({ "CurSearch", "IncSearch" }) do
 		highlights[group] = { bg = primary, fg = foreground }
 	end

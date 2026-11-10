@@ -51,15 +51,24 @@ for _, ascii in ipairs({ "0", "1", "0" }) do
 			local colors = {}
 			for key, source in pairs(sources) do
 				local icon = icons[key]
-				assert(icon.color == kitty.ensure_contrast(source.color, palette.base, palette.text, 4.5))
-				assert(kitty.contrast(icon.color, palette.base) >= 4.5)
+				local backdrop, floor = kitty.backdrop(palette.base), kitty.text_floor(true)
+				assert(icon.color == kitty.ensure_contrast(source.color, backdrop, palette.text, floor))
+				assert(kitty.contrast(icon.color, backdrop) >= floor)
 				assert(icon.icon == (ascii == "1" and "." or source.icon))
 				assert(icon.cterm_color == source.cterm_color)
 				colors[icon.color] = true
 			end
 			assert(vim.tbl_count(colors) > 1, "file icons must retain distinct colours")
 			assert(icons.cpp.color ~= icons.h.color, "C++ blue and header purple must differ")
-			assert(default.color == kitty.ensure_contrast(default_source.color, palette.base, palette.text, 4.5))
+			assert(
+				default.color
+					== kitty.ensure_contrast(
+						default_source.color,
+						kitty.backdrop(palette.base),
+						palette.text,
+						kitty.text_floor(true)
+					)
+			)
 			assert(default.icon == (ascii == "1" and "." or default_source.icon))
 		end
 	end

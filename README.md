@@ -11,8 +11,8 @@ CI from the palette fixtures ([docs/demo](docs/demo/README.md)).</sub>
 An Arch Linux + Hyprland workstation whose colours come from the wallpaper and
 follow you everywhere. DMS derives a palette from the wallpaper, kitty applies
 it, and tmux, Neovim, yazi, lazygit and the rest follow it, including Neovim on
-remote servers over SSH. Neovim keeps every text colour at WCAG 4.5:1 contrast
-against the real background. The same configuration runs on macOS (with a
+remote servers over SSH. Neovim keeps every text colour at least at WCAG 4.5:1
+contrast against the real background (7:1 for light palettes). The same configuration runs on macOS (with a
 Catppuccin Mocha fallback palette) and on Linux servers provisioned by the
 [workflow](https://github.com/anhtt20172948/workflow) repository, and CI tests
 it on Ubuntu, Arch Linux and stock macOS.
@@ -311,14 +311,17 @@ server whose tmux server was started outside SSH (tmux panes keep the
 Neovim uses Kitty/DMS foreground and background for its neutral layers, keeping
 Catppuccin's own syntax accents. Light backgrounds select Latte; dark backgrounds
 select Mocha. All text colours (including comments and UI overlays) are adjusted
-toward the foreground to meet WCAG 4.5:1 contrast against the editor background;
-if the foreground is too dim, the adjustment uses black or white instead.
+to meet WCAG 4.5:1 contrast against the editor background: on dark backgrounds
+toward the foreground (white if the foreground is too dim), on light ones
+darkened along OKLab lightness with their hue kept, to the higher light floors
+below.
 The DMS cursor colour (or URL colour when available) supplies borders, cursor and
 active line accents. Neovim, sidebars, status lines and all popup surfaces use
 transparent backgrounds, sharing Kitty's terminal opacity. Popup borders remain
 visible, while cursor lines, visual selections and selected menu entries keep a
-subtle surface fill. Contrast is measured against the unmodified Kitty/DMS
-background behind the transparent window.
+subtle surface fill. Contrast is measured against the Kitty/DMS background
+behind the transparent window; for light palettes, that background as kitty
+draws it at 0.8 opacity over the wallpaper.
 
 Comments alone are italic. Keywords, conditionals and loops are bold; functions,
 types, variables, operators and rainbow delimiters are plain. Document heading
@@ -424,11 +427,15 @@ rebuilds lualine, devicons and the decoration groups. A `background` set by
 anything else (the terminal's theme notification, `:set bg`) re-applies the
 palette instead of loading stock Latte or Mocha.
 
-Light palettes keep syntax colours at 6:1 and muted text (comments, line
-numbers, punctuation, inlay hints) at 5:1 against the background, since Latte's
-accents at the 4.5:1 floor read faint at kitty's 9pt font; every other text
-highlight group, including those plugins define later, is lifted to 4.5:1.
-Dark palettes keep their colours (4.5:1).
+Light palettes keep normal text and syntax at 7:1 (WCAG AAA) and muted text
+(comments, line numbers, punctuation, inlay hints, neo-tree's dim and
+git-ignored entries) at 6:1; every other text highlight group, including those
+plugins define later, is lifted to 6:1. Contrast is measured against the
+backdrop kitty actually shows: `background_opacity 0.8` lets the wallpaper
+through, so the palette background is blended 20% with a mid grey first.
+Colours are darkened along OKLab lightness, keeping their hue. The floors and
+the backdrop are tunable constants in `customize/kitty_palette.lua`. Dark
+palettes keep their colours (4.5:1).
 
 The workflow
 repo manages a local watcher that pushes source-specific palettes to reachable
