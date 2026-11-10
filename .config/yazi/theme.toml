@@ -4,7 +4,7 @@
 # The hovered row is the accent: ANSI cyan (DMS primary), the same marker as the
 # tmux current window and the fzf pointer. Upstream reverses the row's colours.
 [indicator]
-parent  = { fg = "black", bg = "cyan" }
+parent = { fg = "black", bg = "cyan" }
 current = { fg = "black", bg = "cyan", bold = true }
 
 # Named directory icons (synced with neo-tree/mini.icons): distinct Material Design
@@ -159,4 +159,3 @@ prepend_dirs = [
   { name = "migrations", text = "󰴋", fg = "lightmagenta" },
   { name = "seeders", text = "󰉙", fg = "green" },
 ]
-
