@@ -131,6 +131,27 @@ assert(attempts == 2 and warnings[1]:find("compile cache busy", 1, true), vim.in
 vim.notify = notify
 kitty.unfollow()
 
+-- A kitty directory created after startup (a server's first palette push) is
+-- still seen: its nearest existing ancestor is watched, then the directory.
+vim.fn.delete(dir, "rf")
+kitty.active = kitty.read()
+local pushes = 0
+kitty.follow(function()
+	pushes = pushes + 1
+end)
+vim.fn.mkdir(dir, "p")
+settle()
+vim.fn.writefile(light, file .. ".tmp")
+assert(vim.uv.fs_rename(file .. ".tmp", file))
+assert(
+	vim.wait(3000, function()
+		return pushes == 1
+	end, 20),
+	"a palette in a kitty directory created after startup must re-theme"
+)
+assert(kitty.active.flavour == "latte")
+kitty.unfollow()
+
 local plugin = vim.env.CATPPUCCIN_TEST_RTP
 if not plugin then
 	print("skip: Catppuccin reload needs CATPPUCCIN_TEST_RTP")
@@ -138,12 +159,20 @@ if not plugin then
 	return
 end
 vim.opt.rtp:prepend(plugin)
+local function catppuccin_spec()
+	for _, spec in ipairs(require("plugins.themes")) do
+		if spec.name == "catppuccin" then
+			return spec
+		end
+	end
+	error("plugins.themes has no catppuccin spec")
+end
 -- Real reload through current-theme.lua and the ColorScheme hooks in ui.lua.
 vim.fn.writefile(dark, file)
 kitty.active = kitty.read()
 require("customize.ui").setup()
 -- lazy.nvim runs the spec's config when `colorscheme catppuccin` loads it.
-require("plugins.themes")[2].config()
+catppuccin_spec().config()
 dofile(root .. "/.config/nvim/lua/current-theme.lua")
 local function normal_fg()
 	return ("#%06x"):format(vim.api.nvim_get_hl(0, { name = "Normal", link = false }).fg)

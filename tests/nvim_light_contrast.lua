@@ -175,9 +175,17 @@ local strong = {
 local function hex(value)
 	return ("#%06x"):format(value)
 end
-local function apply()
+local function catppuccin_spec()
 	package.loaded["plugins.themes"] = nil
-	require("plugins.themes")[2].config()
+	for _, spec in ipairs(require("plugins.themes")) do
+		if spec.name == "catppuccin" then
+			return spec
+		end
+	end
+	error("plugins.themes has no catppuccin spec")
+end
+local function apply()
+	catppuccin_spec().config()
 	vim.cmd.colorscheme("catppuccin")
 	ui.decorations()
 	ui.light_contrast()
@@ -268,8 +276,7 @@ assert(
 
 -- The light-mode lift must leave dark highlight groups untouched.
 use("dms-dark.conf")
-package.loaded["plugins.themes"] = nil
-require("plugins.themes")[2].config()
+catppuccin_spec().config()
 vim.cmd.colorscheme("catppuccin")
 ui.decorations()
 assert(vim.o.background == "dark")

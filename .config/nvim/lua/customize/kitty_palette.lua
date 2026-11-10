@@ -348,8 +348,12 @@ function M.from_values(values)
 	}
 end
 
+-- The resolved palette's file, if any (watched for in-place rewrites).
+local source_path
+
 function M.read()
-	local values = M.resolve()
+	local values, _, path = M.resolve()
+	source_path = path
 	return values and M.from_values(values) or nil
 end
 
@@ -365,20 +369,32 @@ function M.refresh()
 	return true
 end
 
+-- The directory itself, or its nearest existing ancestor: a server whose kitty
+-- directory the first palette push creates must still see that push.
+local function existing(dir)
+	local current = vim.fs.normalize(dir)
+	while current do
+		local real = vim.uv.fs_realpath(current)
+		if real then
+			return real
+		end
+		local parent = vim.fs.dirname(current)
+		current = parent ~= current and parent or nil
+	end
+end
+
 -- DMS rewrites dank-theme.conf and the workflow push replaces
 -- remote-palette-<src>.conf by rename, so watch their directories, not files.
 local function watch_dirs()
 	local dirs = { kitty_dir(), vim.env.HOME .. "/.config/kitty/" }
-	local _, _, path = M.resolve()
-	if path then
-		dirs[#dirs + 1] = vim.fs.dirname(path) .. "/"
+	if source_path then
+		dirs[#dirs + 1] = vim.fs.dirname(source_path)
 	end
-	local unique, seen = {}, {}
+	local unique = {}
 	for _, dir in ipairs(dirs) do
-		local real = vim.uv.fs_realpath(dir)
-		if real and not seen[real] then
-			seen[real] = true
-			unique[#unique + 1] = real
+		local real = existing(dir)
+		if real then
+			unique[real] = true
 		end
 	end
 	return unique
@@ -386,15 +402,46 @@ end
 
 -- One burst of writes (DMS writes several kitty files) becomes one refresh.
 M.FOLLOW_DEBOUNCE_MS = 150
-local following = { handles = {} }
+local following = { watchers = {} }
 
-function M.unfollow()
-	for _, handle in ipairs(following.handles) do
-		if not handle:is_closing() then
-			handle:close()
+local function close(handle)
+	if handle and not handle:is_closing() then
+		handle:close()
+	end
+end
+
+-- Watch exactly the current directories: a directory created since, or a
+-- symlink pointing somewhere new, gets a watcher on the next check.
+local function sync_watchers(on_event)
+	local wanted = watch_dirs()
+	for dir, handle in pairs(following.watchers) do
+		if not wanted[dir] then
+			close(handle)
+			following.watchers[dir] = nil
 		end
 	end
-	following.handles = {}
+	for dir in pairs(wanted) do
+		if not following.watchers[dir] then
+			local handle = vim.uv.new_fs_event()
+			if handle and handle:start(dir, {}, function(err)
+				if not err then
+					on_event()
+				end
+			end) then
+				following.watchers[dir] = handle
+			else
+				close(handle)
+			end
+		end
+	end
+end
+
+function M.unfollow()
+	close(following.timer)
+	for _, handle in pairs(following.watchers) do
+		close(handle)
+	end
+	following = { watchers = {} }
 	pcall(vim.api.nvim_del_augroup_by_name, "DotfilesKittyPalette")
 end
 
@@ -415,7 +462,7 @@ end
 function M.follow(on_change)
 	M.unfollow()
 	local timer = assert(vim.uv.new_timer())
-	following.handles[1] = timer
+	following.timer = timer
 	-- reapply: run on_change on the next check even if the palette is unchanged.
 	local reapply, retried, asserted = false, false, false
 	local check
@@ -424,7 +471,13 @@ function M.follow(on_change)
 		timer:start(M.FOLLOW_DEBOUNCE_MS, 0, vim.schedule_wrap(check))
 	end
 	check = function()
-		if M.refresh() then
+		-- A check scheduled before unfollow (or a newer follow) must not revive watchers.
+		if following.timer ~= timer then
+			return
+		end
+		local changed = M.refresh()
+		sync_watchers(queue)
+		if changed then
 			asserted = false
 		elseif not reapply then
 			return
@@ -443,21 +496,7 @@ function M.follow(on_change)
 			vim.notify("kitty palette: re-theming failed: " .. tostring(err), vim.log.levels.WARN)
 		end
 	end
-	for _, dir in ipairs(watch_dirs()) do
-		local handle = vim.uv.new_fs_event()
-		if handle then
-			local ok = handle:start(dir, {}, function(err)
-				if not err then
-					queue()
-				end
-			end)
-			if ok then
-				following.handles[#following.handles + 1] = handle
-			else
-				handle:close()
-			end
-		end
-	end
+	sync_watchers(queue)
 	local group = vim.api.nvim_create_augroup("DotfilesKittyPalette", { clear = true })
 	vim.api.nvim_create_autocmd("FocusGained", { group = group, callback = queue })
 	vim.api.nvim_create_autocmd("OptionSet", {
