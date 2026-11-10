@@ -18,7 +18,7 @@ remote servers over SSH. Neovim keeps every text colour at WCAG 4.5:1 contrast
 against the real background. The same configuration runs on macOS (with a
 Catppuccin Mocha fallback palette) and on Linux servers provisioned by the
 [workflow](https://github.com/anhtt20172948/workflow) repository, and CI tests
-it on Ubuntu and on stock macOS.
+it on Ubuntu, Arch Linux and stock macOS.
 
 ## Design principles
 
@@ -554,27 +554,49 @@ provisioning path.
 ## Testing and CI
 
 ```bash
-tests/run.sh lint   # ShellCheck on the scripts in tests/run.sh's LINT_FILES
+tests/run.sh lint   # ShellCheck (LINT_FILES), actionlint, taplo (TOML), yamllint
 tests/run.sh test   # tests/*.lua in headless Neovim, tests/*_test.sh, test_material_folder_icons.py
 tests/run.sh        # both
+tests/smoke/nvim_plugins.sh   # real plugins from lazy-lock.json; needs network
 ```
 
 Tests use stubs instead of downloaded plugins and need no network or display;
 a case that needs a missing tool (Python 3.11+, `luac`) is skipped with a clear
 message. Each case gets 300 s (`TEST_CASE_TIMEOUT` overrides it) and a timeout
 is reported as one. `TEST_LOG_DIR` keeps each case's log. The same entry point is the
-no-mistakes gate (`.no-mistakes.yaml`).
+no-mistakes gate (`.no-mistakes.yaml`). Lint SKIPs a linter that is not
+installed; `LINT_STRICT=1` (set in CI) fails instead. TOML formatting follows
+`.taplo.toml` (`taplo fmt`), YAML rules `.yamllint.yaml`.
+
+`tests/smoke/nvim_plugins.sh` installs the plugins pinned in `lazy-lock.json`
+into a scratch `HOME`, boots the full config headless and fails on any error
+message, then reports the median lazy.nvim startup time over five boots against
+`SMOKE_BUDGET_MS`. `tests/smoke/nvim_plugins.sh update` does the same after
+`Lazy! update` and writes the new `lazy-lock.json` back.
 
 [CI](.github/workflows/ci.yml) runs on pull requests and pushes to `main`, with
-pinned action SHAs and checksummed tool downloads:
+pinned action SHAs and checksummed tool downloads. Tool versions and checksums
+live in [`.github/ci-tools.txt`](.github/ci-tools.txt) (installed by
+`.github/install-ci-tools.sh`) and the hash-pinned `.github/requirements/`.
 
-- **lint**: ShellCheck 0.11.0 through `tests/run.sh lint`.
-- **stylua**: StyLua 2.5.2 over the Neovim and Hyprland Lua.
-- **test**: the full suite on Ubuntu 24.04 with Neovim 0.11.7 and Starship
-  1.27.0, in a scratch `HOME`.
+- **lint**: `tests/run.sh lint` with every linter required.
+- **stylua**: StyLua over the Neovim and Hyprland Lua.
+- **test**: the full suite on Ubuntu 24.04 with the pinned Neovim and Starship,
+  in a scratch `HOME`.
+- **arch**: lint and tests in an `archlinux` container with Arch's current
+  tmux, Neovim and Starship, as an unprivileged user.
+- **nvim-plugins**: the real-plugin smoke test and startup budget; it does not
+  block merging yet (`continue-on-error`).
 - **macos**: lint and tests on macOS 15 with stock `/bin/bash` 3.2 and BSD
   tools (plus Neovim and Starship), with GNU `timeout` kept off `PATH`.
 - **secrets**: gitleaks over the full history.
+
+[Renovate](.github/renovate.json5) proposes updates to the action SHAs, the
+container digest, `ci-tools.txt` (version and checksum together) and the Python
+linters, weekly and after a release is a week old. Neovim stays on its minor
+release until the config moves on deliberately. The
+[lazy-lock update](.github/workflows/lazy-lock.yml) workflow runs `Lazy! update`
+weekly and opens a pull request when the updated plugins boot cleanly.
 
 ## License
 

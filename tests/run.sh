@@ -2,7 +2,10 @@
 # Lint + test for dotfiles. One entry point for humans and the no-mistakes gate
 # (.no-mistakes.yaml calls `tests/run.sh lint` / `tests/run.sh test`).
 #
-#   tests/run.sh lint   shellcheck the clean scripts (LINT_FILES list)
+#   tests/run.sh lint   shellcheck the clean scripts (LINT_FILES list), then
+#                       actionlint, taplo and yamllint on every tracked workflow,
+#                       TOML and YAML file. A linter that is not installed is
+#                       SKIPped; LINT_STRICT=1 (CI) makes it fail instead.
 #   tests/run.sh test   run every tests/*.lua in headless nvim, tests/*_test.sh and
 #                       tests/test_material_folder_icons.py (explicit SKIP when
 #                       python 3.11+/luac is missing). Failing cases print their log;
@@ -19,6 +22,7 @@ export PATH="$HOME/.local/bin:$PATH"
 # Only scripts that pass shellcheck. The legacy install_neovim and hypr scripts
 # are not clean yet -> add them when they are fixed.
 LINT_FILES=(
+	.github/install-ci-tools.sh
 	.config/tmux/scripts/*.sh
 	.local/bin/ai-acct
 	.local/bin/ai-acct-claude
@@ -30,20 +34,38 @@ LINT_FILES=(
 	install.sh
 	tests/*_test.sh
 	tests/run.sh
+	tests/smoke/*.sh
 )
 
-# Often only mason ships shellcheck, and it is not on PATH.
-find_shellcheck() {
-	command -v shellcheck 2>/dev/null && return
-	local mason="$HOME/.local/share/nvim/mason/bin/shellcheck"
+# Often only mason ships the linters, and they are not on PATH.
+# Prints the path of a linter from PATH or Mason's bin directory.
+find_tool() {
+	command -v "$1" 2>/dev/null && return
+	local mason="$HOME/.local/share/nvim/mason/bin/$1"
 	[[ -x "$mason" ]] && printf '%s\n' "$mason" && return
-	echo "shellcheck not found (pacman -S shellcheck)" >&2
 	return 1
+}
+
+# A missing optional linter: SKIP locally, fail under LINT_STRICT=1.
+missing_linter() {
+	if [[ "${LINT_STRICT:-0}" == 1 ]]; then
+		echo "lint: $1 not found (LINT_STRICT=1)" >&2
+		return 1
+	fi
+	echo "SKIP $1 (not installed: $2)"
+}
+
+# Tracked files matching the git pathspecs, NUL-separated.
+tracked() {
+	git ls-files -z -- "$@"
 }
 
 run_lint() {
 	local sc
-	sc=$(find_shellcheck) || return 1
+	sc=$(find_tool shellcheck) || {
+		echo "shellcheck not found (pacman -S shellcheck)" >&2
+		return 1
+	}
 	# Skip missing files (older branch / unmatched glob) instead of letting shellcheck error.
 	local -a files=()
 	local f
@@ -53,7 +75,51 @@ run_lint() {
 	# Do not rely on set -e: in `run_lint && run_test` bash disables errexit for the whole
 	# function body, so a failing lint would still print OK.
 	"$sc" --severity=style -x "${files[@]}" || return 1
-	echo "lint: OK (${#files[@]} files)"
+	echo "lint: shellcheck OK (${#files[@]} files)"
+	run_actionlint "$sc" && run_taplo && run_yamllint
+}
+
+# Workflows, with shellcheck on their run: scripts.
+run_actionlint() {
+	local tool
+	tool=$(find_tool actionlint) || {
+		missing_linter actionlint "pacman -S actionlint"
+		return
+	}
+	"$tool" -shellcheck "$1" -pyflakes= || return 1
+	echo "lint: actionlint OK"
+}
+
+# TOML syntax and formatting (.taplo.toml). Schemas are skipped: they are
+# fetched from the network and track upstream's latest release.
+run_taplo() {
+	local tool
+	tool=$(find_tool taplo) || {
+		missing_linter taplo "pacman -S taplo-cli"
+		return
+	}
+	local -a files=()
+	local f
+	while IFS= read -r -d '' f; do files+=("$f"); done < <(tracked '*.toml')
+	RUST_LOG=warn "$tool" fmt --check "${files[@]}" || {
+		echo "lint: run \`taplo fmt\` on the files above" >&2
+		return 1
+	}
+	RUST_LOG=warn "$tool" lint --no-schema "${files[@]}" || return 1
+	echo "lint: taplo OK (${#files[@]} files)"
+}
+
+run_yamllint() {
+	local tool
+	tool=$(find_tool yamllint) || {
+		missing_linter yamllint "pacman -S yamllint"
+		return
+	}
+	local -a files=()
+	local f
+	while IFS= read -r -d '' f; do files+=("$f"); done < <(tracked '*.yml' '*.yaml')
+	"$tool" --strict "${files[@]}" || return 1
+	echo "lint: yamllint OK (${#files[@]} files)"
 }
 
 # macOS has no GNU timeout: perl's alarm (always present) does the same job.

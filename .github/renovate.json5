@@ -1,0 +1,42 @@
+// Renovate keeps the CI pins current. Neovim plugins (lazy-lock.json) are
+// updated by .github/workflows/lazy-lock.yml instead.
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'config:recommended',
+    // Actions stay pinned to a commit SHA with the version in a comment.
+    'helpers:pinGitHubActionDigests',
+  ],
+  semanticCommits: 'enabled',
+  semanticCommitType: 'ci',
+  schedule: ['before 6am on monday'],
+  // Supply-chain buffer: let a release age a week before proposing it.
+  minimumReleaseAge: '7 days',
+  // Hash-pinned Python linters, compiled by `uv pip compile` (see the .in files).
+  'pip-compile': {
+    managerFilePatterns: ['/^\\.github/requirements/[^/]+\\.txt$/'],
+  },
+  customManagers: [
+    {
+      // .github/ci-tools.txt: one release binary per line. Renovate bumps the
+      // tag and recomputes the sha256 of the same asset in the new release;
+      // the lines of one tool share a branch, so all platforms move together.
+      customType: 'regex',
+      description: 'CI release binaries installed by .github/install-ci-tools.sh',
+      managerFilePatterns: ['/^\\.github/ci-tools\\.txt$/'],
+      matchStrings: [
+        '[\\w-]+\\s+[\\w-]+\\s+(?<depName>[\\w.-]+/[\\w.-]+)\\s+(?<currentValue>\\S+)\\s+(?<currentDigest>[0-9a-f]{64})\\s',
+      ],
+      datasourceTemplate: 'github-release-attachments',
+    },
+  ],
+  packageRules: [
+    {
+      // Neovim 0.12 is a deliberate migration of the config, not a pin bump.
+      description: 'Neovim: patch releases only',
+      matchPackageNames: ['neovim/neovim'],
+      matchUpdateTypes: ['major', 'minor'],
+      enabled: false,
+    },
+  ],
+}

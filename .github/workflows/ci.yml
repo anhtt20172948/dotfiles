@@ -18,27 +18,30 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Install ShellCheck 0.11.0
-        working-directory: ${{ runner.temp }}
+      # Pinned versions and checksums live in .github/ci-tools.txt and
+      # .github/requirements/ (both kept current by Renovate).
+      - name: Install linters
         run: |
-          curl -fsSL https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz -o shellcheck.tar.xz
-          echo '8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  shellcheck.tar.xz' | sha256sum -c -
-          tar -xJf shellcheck.tar.xz
-          echo "$PWD/shellcheck-v0.11.0" >> "$GITHUB_PATH"
-      - name: ShellCheck (repository lint entry point)
+          bash .github/install-ci-tools.sh "$RUNNER_TEMP/ci-bin" shellcheck actionlint taplo
+          python3 -m venv "$RUNNER_TEMP/yamllint"
+          "$RUNNER_TEMP/yamllint/bin/pip" install --quiet --require-hashes --no-deps -r .github/requirements/yamllint.txt
+          ln -s "$RUNNER_TEMP/yamllint/bin/yamllint" "$RUNNER_TEMP/ci-bin/"
+          echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
+      # shellcheck, actionlint, taplo and yamllint; LINT_STRICT turns a missing
+      # linter into a failure instead of a SKIP.
+      - name: Lint (repository lint entry point)
+        env:
+          LINT_STRICT: '1'
         run: HOME="$(mktemp -d)" bash tests/run.sh lint
 
   stylua:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Install StyLua 2.5.2
-        working-directory: ${{ runner.temp }}
+      - name: Install StyLua
         run: |
-          curl -fsSL https://github.com/JohnnyMorganz/StyLua/releases/download/v2.5.2/stylua-linux-x86_64.zip -o stylua.zip
-          echo 'bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab  stylua.zip' | sha256sum -c -
-          unzip -q stylua.zip -d stylua-bin
-          echo "$PWD/stylua-bin" >> "$GITHUB_PATH"
+          bash .github/install-ci-tools.sh "$RUNNER_TEMP/ci-bin" stylua
+          echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
       - run: HOME="$(mktemp -d)" stylua --check .config/nvim .config/hypr
 
   test:
@@ -48,23 +51,12 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       # lua5.4 provides luac for tests/test_material_folder_icons.py.
       - run: sudo apt-get update && sudo apt-get install -y jq tmux python3 zsh lua5.4 rsync
-      # The Lua tests need newer Neovim APIs than stock Ubuntu ships.
-      - name: Install Neovim 0.11.7
-        working-directory: ${{ runner.temp }}
+      # The Lua tests need newer Neovim APIs than stock Ubuntu ships;
+      # tests/starship_config_test.sh renders the tracked prompt with Starship.
+      - name: Install Neovim and Starship
         run: |
-          curl -fsSL https://github.com/neovim/neovim/releases/download/v0.11.7/nvim-linux-x86_64.tar.gz -o nvim.tar.gz
-          echo '38a7c6317f94503841096c00e8fde05ef04b9472fc9d7d62b6e033cecd6f7991  nvim.tar.gz' | sha256sum -c -
-          tar -xzf nvim.tar.gz
-          echo "$PWD/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
-      # tests/starship_config_test.sh renders the tracked prompt with it.
-      - name: Install Starship 1.27.0
-        working-directory: ${{ runner.temp }}
-        run: |
-          curl -fsSL https://github.com/starship/starship/releases/download/v1.27.0/starship-x86_64-unknown-linux-musl.tar.gz -o starship.tar.gz
-          echo '10c8eb4cb3b761d9bf59ea828444c2dab36c900b7d69a69e08814b286969df89  starship.tar.gz' | sha256sum -c -
-          mkdir starship-bin
-          tar -xzf starship.tar.gz -C starship-bin
-          echo "$PWD/starship-bin" >> "$GITHUB_PATH"
+          bash .github/install-ci-tools.sh "$RUNNER_TEMP/ci-bin" nvim starship
+          echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
       # Complete test entry point (Lua, shell and Python cases). No plugin
       # downloads, network-dependent tests or display are used.
       - name: Tests
@@ -89,6 +81,87 @@ jobs:
           path: ${{ runner.temp }}/test-logs
           if-no-files-found: ignore
 
+  # Arch Linux is the primary workstation: run the suite against Arch's own
+  # (rolling) tmux, Neovim, Starship and ShellCheck. Tests run as a normal user.
+  arch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: archlinux:latest@sha256:d4594bb2300cba11f41c2f27923eb56f63d9988909c402f9c95517d1e362c899
+      # An init process reaps killed children; without it ai_run_limited_test
+      # sees the zombie of the process it killed as still alive.
+      options: --init
+    steps:
+      - name: Install Arch packages
+        run: |
+          pacman -Syu --noconfirm --needed git neovim tmux jq python python-yaml zsh lua rsync starship shellcheck perl
+          useradd --create-home ci
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Lint and tests
+        run: |
+          nvim --version | head -n 1
+          tmux -V
+          starship --version | head -n 1
+          shellcheck --version | sed -n 2p
+          python --version
+          chown -R ci: "$GITHUB_WORKSPACE"
+          # shellcheck disable=SC2016 # expanded by the inner shell, as user ci
+          runuser -u ci -- bash -c '
+            set -eo pipefail
+            HOME=$(mktemp -d)
+            export HOME TMUX=
+            export XDG_CONFIG_HOME="$HOME/.config" XDG_CACHE_HOME="$HOME/.cache"
+            export XDG_DATA_HOME="$HOME/.local/share" XDG_STATE_HOME="$HOME/.local/state"
+            export CODEX_HOME="$HOME/.codex" TEST_LOG_DIR=/tmp/test-logs
+            bash tests/run.sh lint
+            bash tests/run.sh test
+          '
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-logs-arch
+          path: /tmp/test-logs
+          if-no-files-found: ignore
+
+  # Boots the full Neovim config with the plugins pinned in lazy-lock.json
+  # (tests/smoke/nvim_plugins.sh) and records the startup time. Non-blocking
+  # while it proves itself: it clones ~80 plugins from GitHub on every run.
+  nvim-plugins:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    continue-on-error: true
+    env:
+      SMOKE_BUDGET_MS: '250'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install Neovim
+        run: |
+          bash .github/install-ci-tools.sh "$RUNNER_TEMP/ci-bin" nvim
+          echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
+      - name: Boot the full config with locked plugins
+        env:
+          SMOKE_OUT: ${{ runner.temp }}/smoke
+        run: |
+          bash tests/smoke/nvim_plugins.sh check
+          cat "$SMOKE_OUT/summary.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Startup budget
+        env:
+          SMOKE_OUT: ${{ runner.temp }}/smoke
+        run: |
+          jq . "$SMOKE_OUT/startup.json"
+          jq -e .within_budget "$SMOKE_OUT/startup.json" >/dev/null || {
+            echo "::warning::median startup $(jq .median_ms "$SMOKE_OUT/startup.json") ms is over the ${SMOKE_BUDGET_MS} ms budget"
+            exit 1
+          }
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nvim-plugins-smoke
+          path: ${{ runner.temp }}/smoke
+          if-no-files-found: ignore
+
   # Stock macOS: /bin/bash 3.2, BSD tools and no GNU timeout. PATH is curated so
   # Homebrew's GNU tools cannot mask the compatibility paths this job exists to test.
   macos:
@@ -106,18 +179,7 @@ jobs:
         run: |
           # tmux_config_test exercises which-key realpath from tmux with stock PATH.
           brew install jq tmux lua python@3.12 coreutils
-          curl -fsSL https://github.com/neovim/neovim/releases/download/v0.11.7/nvim-macos-arm64.tar.gz -o nvim.tar.gz
-          echo '9c84686ce84bbab725ff3d88ca3ac1d6da5a72128b68d9dd8094e34d4049a126  nvim.tar.gz' | shasum -a 256 -c -
-          tar -xzf nvim.tar.gz
-          curl -fsSL https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz -o shellcheck.tar.xz
-          echo '56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79  shellcheck.tar.xz' | shasum -a 256 -c -
-          tar -xJf shellcheck.tar.xz
-          curl -fsSL https://github.com/starship/starship/releases/download/v1.27.0/starship-aarch64-apple-darwin.tar.gz -o starship.tar.gz
-          echo '5362da8cb2928f98f3ce0ffda697cf0f8de70081db000dae316d6d3a404f6cf0  starship.tar.gz' | shasum -a 256 -c -
-          mkdir starship-bin
-          tar -xzf starship.tar.gz -C starship-bin
-          mkdir ci-bin
-          ln -s "$PWD/nvim-macos-arm64/bin/nvim" "$PWD/shellcheck-v0.11.0/shellcheck" "$PWD/starship-bin/starship" ci-bin/
+          /bin/bash "$GITHUB_WORKSPACE/.github/install-ci-tools.sh" ci-bin nvim shellcheck starship
           ln -s "$(brew --prefix jq)/bin/jq" "$(brew --prefix tmux)/bin/tmux" "$(brew --prefix lua)/bin/luac" ci-bin/
           ln -s "$(brew --prefix python@3.12)/bin/python3.12" ci-bin/python3
       - name: Stock-shell lint and tests
@@ -157,12 +219,8 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-      - name: Install gitleaks 8.24.3
-        working-directory: ${{ runner.temp }}
+      - name: Install gitleaks
         run: |
-          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz -o gitleaks.tar.gz
-          echo '9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c  gitleaks.tar.gz' | sha256sum -c -
-          mkdir gitleaks-bin
-          tar -xzf gitleaks.tar.gz -C gitleaks-bin gitleaks
-          echo "$PWD/gitleaks-bin" >> "$GITHUB_PATH"
+          bash .github/install-ci-tools.sh "$RUNNER_TEMP/ci-bin" gitleaks
+          echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
       - run: HOME="$(mktemp -d)" gitleaks git --log-opts=--all --redact
