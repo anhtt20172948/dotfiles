@@ -409,15 +409,10 @@ local function win_valid()
 	return win ~= nil and vim.api.nvim_win_is_valid(win)
 end
 
--- 0.11-safe: prefer jobstart{term=true}, fall back to termopen on older versions.
 -- cmd is a LIST (no shell) -> session ids / paths with spaces or quotes are safe.
 local function start_term(buf, cmd, cwd)
 	return vim.api.nvim_buf_call(buf, function()
-		local o = { term = true, cwd = cwd }
-		if vim.fn.has("nvim-0.11") == 1 then
-			return vim.fn.jobstart(cmd, o)
-		end
-		return vim.fn.termopen(cmd, o)
+		return vim.fn.jobstart(cmd, { term = true, cwd = cwd })
 	end)
 end
 

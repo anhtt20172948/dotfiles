@@ -7,7 +7,9 @@
 #   check   Install the plugins pinned in .config/nvim/lazy-lock.json into a
 #           throwaway HOME/XDG tree, boot the config headless and fail on any
 #           error message. Then boot SMOKE_RUNS more times and record the median
-#           lazy.nvim startup time against SMOKE_BUDGET_MS.
+#           lazy.nvim startup time against SMOKE_BUDGET_MS. A last boot opens
+#           tests/smoke/fixtures/* (one file per configured treesitter
+#           language) and fails on any parse, highlight or injection error.
 #   update  Same, but run `Lazy! update` instead of restoring the lockfile. When
 #           the updated plugins boot cleanly, copy the new lazy-lock.json back
 #           into the repo and list the changed plugins in lock-changes.md.
@@ -163,6 +165,10 @@ for i in $(seq 1 "$RUNS"); do
 	[[ $i -eq $RUNS ]] && extra=(--startuptime "$OUT/startuptime.log")
 	boot "boot-run-$i" ${extra[@]+"${extra[@]}"} || failed=1
 done
+# Highlight and injection queries only run on a redraw or a forced parse, and a
+# boot with no file open runs neither. Open every fixture in a tab so FileType
+# attaches treesitter, and let the probe force the parse (SMOKE_FILES=1).
+SMOKE_FILES=1 boot boot-files -p "$ROOT"/tests/smoke/fixtures/* || failed=1
 [[ $failed -eq 0 ]] || exit 1
 summarize
 

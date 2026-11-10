@@ -17,6 +17,8 @@ end
 return {
 	"echasnovski/mini.ai",
 	event = "VeryLazy",
+	-- Provides the textobjects.scm queries the treesitter specs below read.
+	dependencies = { "nvim-treesitter/nvim-treesitter-textobjects" },
 	opts = function()
 		local ai = require("mini.ai")
 		return {

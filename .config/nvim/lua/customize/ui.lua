@@ -57,7 +57,7 @@ function M.folds()
 		return
 	end
 	local ok, query = pcall(vim.treesitter.query.get, lang, "folds")
-	if ok and query and pcall(vim.treesitter.get_parser, 0, lang) then
+	if ok and query and vim.treesitter.get_parser(0, lang, { error = false }) then
 		vim.wo.foldmethod = "expr"
 		vim.wo.foldexpr = "v:lua.vim.treesitter.foldexpr()"
 	end
