@@ -113,13 +113,12 @@ for _, ascii in ipairs({ "0", "1" }) do
 		assert(#config.extensions == 8)
 		assert(component("lualine_x", "encoding").color.fg == component("lualine_x", "fileformat").color.fg)
 		assert(component("lualine_x", "encoding").color.fg ~= filename.color.fg, "secondary text must be dimmed")
-		local separator = ascii == "1" and "|" or "│"
-		assert(config.options.component_separators.left == separator)
-		assert(config.options.component_separators.right == separator)
+		assert(config.options.section_separators.left == (ascii == "1" and "" or ""))
+		assert(config.options.section_separators.right == (ascii == "1" and "" or ""))
+		assert(config.options.component_separators.left == (ascii == "1" and "|" or ""))
+		assert(config.options.component_separators.right == (ascii == "1" and "|" or ""))
 		for _, section in ipairs({ "lualine_a", "lualine_z" }) do
-			local edges = config.sections[section][1].separator
-			assert(edges.left == (ascii == "1" and "" or ""))
-			assert(edges.right == (ascii == "1" and "" or ""))
+			assert(config.sections[section][1].separator == nil, "use the section's slanted transition")
 		end
 		local before = config.options.theme.normal.a.bg
 		kitty.active = { primary = "#e0a060" }
@@ -150,3 +149,40 @@ current_width = 60
 assert(component("lualine_a", "mode").fmt("NORMAL") == "N")
 vim.api.nvim_win_get_width = window_width
 print("lualine mode pills, contrast, split widths, ASCII separators and reloads: OK")
+
+-- Opt in to rendering with the real plugin, keeping CI's offline suite independent of downloads.
+if vim.env.LUALINE_TEST_RTP then
+	vim.opt.rtp:prepend(vim.env.LUALINE_TEST_RTP)
+	package.loaded.lualine = nil
+	vim.o.termguicolors = true
+	vim.api.nvim_set_hl(0, "StatusLine", { fg = stock.text, bg = "NONE" })
+	for _, ascii in ipairs({ "0", "1" }) do
+		vim.env.NVIM_ASCII = ascii
+		package.loaded["lib.icons"] = nil
+		require("plugins.lualine").config()
+		for _, width in ipairs({ 35, 60, 120 }) do
+			vim.o.columns = width
+			local statusline = require("lualine").statusline(true)
+			local rendered = vim.api.nvim_eval_statusline(statusline, { highlights = true, maxwidth = width })
+			assert(not rendered.str:find("", 1, true) and not rendered.str:find("", 1, true))
+			if ascii == "1" then
+				assert(not rendered.str:find("[\128-\255]"), "ASCII statusline must contain no glyphs")
+			else
+				for _, edge in ipairs({ { "", "a" }, { "", "z" } }) do
+					local position = assert(rendered.str:find(edge[1], 1, true), "missing slanted edge") - 1
+					local group
+					for _, highlight in ipairs(rendered.highlights) do
+						if highlight.start <= position then
+							group = highlight.group
+						end
+					end
+					local hl = vim.api.nvim_get_hl(0, { name = group, link = false })
+					local section = vim.api.nvim_get_hl(0, { name = "lualine_" .. edge[2] .. "_normal", link = false })
+					assert(hl.fg == section.bg, "edge must inherit the coloured section background")
+					assert(hl.bg == nil and not hl.reverse, "edge background must stay transparent")
+				end
+			end
+		end
+	end
+	print("rendered slanted edges and transparent highlight backgrounds: OK")
+end
