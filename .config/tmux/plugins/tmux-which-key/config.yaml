@@ -31,16 +31,20 @@ items:
     menu:
       - name: Pick tool / session  (prefix a)
         key: a
-        command: display-popup -d "#{pane_current_path}" -w 90% -h 90% -b rounded -T " 󰘩 AI · #{b:pane_current_path} " -E "~/.config/tmux/scripts/persistent-ai.sh"
+        command: >-
+          display-popup -d "#{pane_current_path}" -w 90% -h 90% -b rounded -T " 󰘩 AI · #{b:pane_current_path} " -E "~/.config/tmux/scripts/persistent-ai.sh"
       - name: Latest agent  (prefix A)
         key: A
-        command: display-popup -d "#{pane_current_path}" -w 90% -h 90% -b rounded -T " 󰘩 AI · latest · #{b:pane_current_path} " -E "~/.config/tmux/scripts/persistent-ai.sh --latest"
+        command: >-
+          display-popup -d "#{pane_current_path}" -w 90% -h 90% -b rounded -T " 󰘩 AI · latest · #{b:pane_current_path} " -E "~/.config/tmux/scripts/persistent-ai.sh --latest"
       - name: Agent workflow menu  (prefix F)
         key: f
-        command: display-popup -d "#{pane_current_path}" -w 70% -h 60% -b rounded -T " 󰚩 Agent workflow · #{b:pane_current_path} " -E "~/.config/tmux/scripts/ai-workflow.sh"
+        command: >-
+          display-popup -d "#{pane_current_path}" -w 70% -h 60% -b rounded -T " 󰚩 Agent workflow · #{b:pane_current_path} " -E "~/.config/tmux/scripts/ai-workflow.sh"
       - name: no-mistakes pipelines  (prefix N)
         key: n
-        command: display-popup -d "#{pane_current_path}" -w 90% -h 90% -b rounded -T " 󰑮 no-mistakes · #{b:pane_current_path} " -E "~/.config/tmux/scripts/ai-workflow.sh pipelines"
+        command: >-
+          display-popup -d "#{pane_current_path}" -w 90% -h 90% -b rounded -T " 󰑮 no-mistakes · #{b:pane_current_path} " -E "~/.config/tmux/scripts/ai-workflow.sh pipelines"
       - name: Firstmate crew  (prefix C)
         key: c
         command: display-popup -d "#{pane_current_path}" -w 90% -h 90% -b rounded -T " 󰚩 Firstmate crew " -E "~/.config/tmux/scripts/crew-view.sh"
@@ -56,7 +60,8 @@ items:
     menu:
       - name: Copy hint (URL, path, hash, IP)  (prefix Tab)
         key: tab
-        command: run-shell "$TMUX_PLUGIN_MANAGER_PATH/extrakto/scripts/open.sh #{pane_id}"
+        command: >-
+          run-shell "$TMUX_PLUGIN_MANAGER_PATH/extrakto/scripts/open.sh #{pane_id}"
       - name: Files  (prefix f)
         key: f
         command: display-popup -d "#{pane_current_path}" -w 75% -h 75% -E "~/.config/tmux/scripts/file-finder.sh"
@@ -86,7 +91,8 @@ items:
         command: display-popup -d "#{pane_current_path}" -w 60% -h 60% -E "btop 2>/dev/null || htop"
       - name: Monitor Center  (prefix M)
         key: m
-        command: run-shell -b "$HOME/.config/tmux/scripts/monitor.sh --popup #{pane_id}"
+        command: >-
+          run-shell -b "$HOME/.config/tmux/scripts/monitor.sh --popup #{pane_id}"
   - name: +Panes
     key: p
     menu:
@@ -120,11 +126,13 @@ items:
         command: respawn-pane -k -c "#{pane_current_path}"
       - name: Kill
         key: X
-        command: confirm-before -p "Kill pane #P? (y/n)" kill-pane
+        command: >-
+          confirm-before -p "Kill pane #P? (y/n)" kill-pane
       - separator: true
       - name: Synchronize panes  (prefix S) - status bar shows SYNC
         key: S
-        command: setw synchronize-panes \; display-message "Sync #{?synchronize-panes,ON,OFF}"
+        command: >-
+          setw synchronize-panes \; display-message "Sync #{?synchronize-panes,ON,OFF}"
   - name: +Windows
     key: w
     menu:
@@ -154,7 +162,8 @@ items:
         command: select-layout even-vertical
       - name: Kill  (prefix W)
         key: X
-        command: confirm-before -p "Kill window #W? (y/n)" kill-window
+        command: >-
+          confirm-before -p "Kill window #W? (y/n)" kill-window
   - name: +Session
     key: s
     menu:

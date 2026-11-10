@@ -186,7 +186,20 @@ done
 # tmux-which-key pastes each command into a single-quoted tmux string without
 # escaping, so one stray ' in a command breaks the generated init.tmux.
 wk="$ROOT/.config/tmux/plugins/tmux-which-key/config.yaml"
-if grep -nE '^\s+command:.*'"'" "$wk"; then
+# Commands holding " #{...}" are folded (>-) block scalars: in a plain scalar
+# YAML reads " #" as a comment and cuts the command (yamllint flags it).
+wk_commands=$(awk '
+  { match($0, /^[[:space:]]*/); indent = RLENGTH }
+  block && indent > block_indent && $0 !~ /^[[:space:]]*$/ { print; next }
+  { block = 0 }
+  /^[[:space:]]+command:/ {
+    value = $0
+    sub(/^[[:space:]]+command:[[:space:]]*/, "", value)
+    if (value ~ /^[>|]-?$/) { block = 1; block_indent = indent } else print value
+  }' "$wk")
+[[ $(printf '%s\n' "$wk_commands" | grep -c .) -eq $(grep -cE '^[[:space:]]+command:' "$wk") ]] ||
+  fail "which-key: could not read every command (multi-line block scalar?)"
+if printf '%s\n' "$wk_commands" | grep -n "'"; then
   fail "which-key commands must not contain single quotes"
 fi
 # Every direct popup binding the menu advertises as "(prefix X)" must exist.
