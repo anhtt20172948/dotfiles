@@ -14,8 +14,17 @@ if [[ $status == 2 ]]; then
   exit 0
 fi
 TMP=$(mktemp -d)
-SOCKET="$TMP/tmux.sock"
-trap 'tmux -S "$SOCKET" kill-server 2>/dev/null || true; rm -rf -- "$TMP"' EXIT
+# One tmux server per launch: a new-session right after kill-server on the same
+# socket can reach the dying server and fail with "server exited unexpectedly".
+LAUNCHES=0
+SOCKET="$TMP/tmux-0.sock"
+kill_servers() {
+  local sock
+  for sock in "$TMP"/tmux-*.sock; do
+    tmux -S "$sock" kill-server 2>/dev/null || true
+  done
+}
+trap 'kill_servers; rm -rf -- "$TMP"' EXIT
 export HOME="$TMP/home" FIRSTMATE_DIR="$TMP/firstmate" AGENT_LOG="$TMP/agent.log"
 mkdir -p "$TMP/bin" "$HOME" "$FIRSTMATE_DIR/.git"
 cat > "$TMP/bin/quota-axi" <<'MOCK'
@@ -44,7 +53,9 @@ wait_for() {
   done
 }
 launch() {
-  tmux -S "$SOCKET" kill-server 2>/dev/null || true
+  kill_servers
+  LAUNCHES=$((LAUNCHES + 1))
+  SOCKET="$TMP/tmux-$LAUNCHES.sock"
   rm -f "$AGENT_LOG" "$TMP/exit"
   tmux -S "$SOCKET" -f /dev/null new-session -d -s picker -x 120 -y 30 \
     "bash '$ROOT/.config/tmux/scripts/ai-workflow.sh' firstmate; echo \$? > '$TMP/exit'; sleep 60"
