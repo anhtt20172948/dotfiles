@@ -24,7 +24,9 @@ return {
 			-- stays empty (true falls back to the last session, so any dir would open
 			-- another dir's session).
 			auto_restore_last_session = false,
-			show_auto_restore_notif = true, -- Whether to show a notification when auto-restoring
+			-- v2.5.1 also uses this for "Could not restore session", which would cover
+			-- the dashboard in every directory without a session.
+			show_auto_restore_notif = false,
 			lsp_stop_on_restore = true, -- Should language servers be stopped when restoring a session. Can also be a function that will be called if set. Not called on autorestore from startup
 			session_lens = {
 				-- If load_on_setup is false, make sure you use `:SessionSearch` to open the picker as it will initialize everything first

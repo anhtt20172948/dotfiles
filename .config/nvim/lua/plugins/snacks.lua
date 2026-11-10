@@ -92,25 +92,8 @@ return {
 			picker = {
 				enabled = true,
 				prompt = vim.env.NVIM_ASCII == "1" and "> " or " ",
-				layout = {
-					preset = function()
-						return vim.o.columns < 110 and "vertical" or "default"
-					end,
-				},
-				layouts = {
-					default = {
-						layout = {
-							border = "none",
-							backdrop = false,
-							min_width = 0,
-							width = 0.9,
-							[2] = { width = 0.45 },
-						},
-					},
-					vertical = {
-						layout = { backdrop = false, min_width = 0, width = 0.95, min_height = 0 },
-					},
-				},
+				layout = require("customize.picker_layout").config(),
+				layouts = require("customize.picker_layout").layouts(),
 				icons = {
 					files = { enabled = vim.env.NVIM_ASCII ~= "1" },
 					git = {
@@ -194,6 +177,8 @@ return {
 					}, -- Wrap notifications
 				},
 				notification_history = { border = "rounded", backdrop = false, wo = { winblend = 0 } },
+				-- The global fold column would shift the centred dashboard one column right.
+				dashboard = { wo = { foldcolumn = "0" } },
 			},
 			image = {
 				enabled = true,
@@ -312,75 +297,8 @@ return {
 					},
 				},
 			},
-			dashboard = {
-				width = math.min(56, vim.o.columns - 4),
-				preset = {
-					pick = function(cmd, opts)
-						return Snacks.dashboard.pick(cmd, opts)
-					end,
-					header = [[
-███╗   ███╗ █████╗ ██╗     █████╗ ███╗   ██╗██╗  ██╗
-████╗ ████║██╔══██╗██║    ██╔══██╗████╗  ██║██║  ██║
-██╔████╔██║███████║██║    ███████║██╔██╗ ██║███████║
-██║╚██╔╝██║██╔══██║██║    ██╔══██║██║╚██╗██║██╔══██║
-██║ ╚═╝ ██║██║  ██║██║    ██║  ██║██║ ╚████║██║  ██║
-╚═╝     ╚═╝╚═╝  ╚═╝╚═╝    ╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝
-]],
-                    -- stylua: ignore
-                    ---@type snacks.dashboard.Item[]
-                    keys = {
-                        { icon = icons.ui.Search, key = "f", desc = "Find File", action = ":lua Snacks.dashboard.pick('files')" },
-                        { icon = icons.ui.NewFile, key = "n", desc = "New File", action = ":ene | startinsert" },
-                        { icon = icons.ui.List, key = "g", desc = "Find Text", action = ":lua Snacks.dashboard.pick('live_grep')" },
-                        { icon = icons.documents.Files, key = "r", desc = "Recent Files", action = ":lua Snacks.dashboard.pick('oldfiles')" },
-                        { icon = icons.ui.Gear, key = "c", desc = "Config", action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})" },
-                        { icon = icons.ui.History, key = "s", desc = "Select Session", action = ":SessionSearch" },
-                        { icon = " ", key = "a", desc = "AI Sessions", action = ":lua require('customize.aiterm').pick()" },
-                        { icon = icons.documents.Folder, key = "e", desc = "File Explorer", action = ":Neotree filesystem reveal" },
-                        { icon = icons.ui.Sleep, key = "l", desc = "Lazy", action = ":Lazy" },
-                        { icon = icons.ui.SignOut, key = "q", desc = "Quit", action = ":qa" },
-                    },
-				},
-				-- Sections must be explicit to insert the AI entry (the default only
-				-- has header / keys / startup).
-				sections = {
-					function(self)
-						local compact = vim.api.nvim_win_get_width(self.win) < 90 or vim.env.NVIM_ASCII == "1"
-						return { header = compact and "MAI ANH" or self.opts.preset.header, padding = 1 }
-					end,
-					{ section = "keys", gap = 0, padding = 1 },
-					{
-						title = "  AI Sessions",
-						padding = 1,
-						-- Bound history per tool, then display at most three sessions.
-						function()
-							local ok, h = pcall(require, "customize.aiterm_history")
-							if not ok then
-								return {}
-							end
-							local items = {}
-							for i, e in ipairs(h.list(h.project_cwd(), 3)) do
-								if i > 3 then
-									break
-								end
-								local width = math.max(1, math.min(34, vim.o.columns - 30))
-								local t = require("customize.ui").truncate(e.title or e.id, width)
-								items[#items + 1] = {
-									icon = " ",
-									key = tostring(i),
-									indent = 2,
-									desc = ("%-9s %s"):format(e.tool, t),
-									action = function()
-										require("customize.aiterm").resume(e)
-									end,
-								}
-							end
-							return items
-						end,
-					},
-					{ section = "startup" },
-				},
-			},
+			-- Header, actions and recent AI sessions, sized to the dashboard window.
+			dashboard = require("customize.dashboard").config(),
 		},
 		keys = { -- Top Pickers & Explorer
 			{

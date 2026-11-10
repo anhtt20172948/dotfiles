@@ -149,6 +149,7 @@ local icons = {
 		Project = " ",
 		Question = " ",
 		Reload = " ",
+		Robot = "󰚩 ",
 		Rocket = " ",
 		Save = "󰆓 ",
 		Search = " ",
