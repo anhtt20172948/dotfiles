@@ -34,7 +34,7 @@ return {
 			command = colors.peach,
 			terminal = colors.green,
 		}) do
-			-- A light palette can produce dark accents. Lift the pill separately
+			-- A light palette can produce dark accents. Lift the background separately
 			-- so its dark label stays readable without changing section colours.
 			local ink = string.format("#%06x", 0)
 			local background = kitty.ensure_contrast(color, ink, string.format("#%06x", 16777215), 4.5)
@@ -57,23 +57,22 @@ return {
 			end
 		end
 		local compact, medium, wide, full = at_least(40), at_least(60), at_least(80), at_least(100)
-		local pill = { left = ascii and "" or "", right = ascii and "" or "" }
-		local separator = ascii and "|" or "│"
+		local section_separators = { left = ascii and "" or "", right = ascii and "" or "" }
+		local component_separators = { left = ascii and "|" or "", right = ascii and "|" or "" }
 		local function setup()
 			require("lualine").setup({
 				options = {
 					theme = theme,
 					globalstatus = false,
 					icons_enabled = not ascii,
-					section_separators = "",
-					component_separators = { left = separator, right = separator },
+					section_separators = section_separators,
+					component_separators = component_separators,
 					padding = { left = 1, right = 0 },
 				},
 				sections = {
 					lualine_a = {
 						{
 							"mode",
-							separator = pill,
 							padding = 1,
 							fmt = function(mode)
 								return vim.api.nvim_win_get_width(0) >= 120 and mode or mode:sub(1, 1)
@@ -156,7 +155,7 @@ return {
 						},
 					},
 					lualine_y = {},
-					lualine_z = { { "location", separator = pill, padding = 1, fmt = vim.trim } },
+					lualine_z = { { "location", padding = 1, fmt = vim.trim } },
 				},
 				extensions = { "lazy", "man", "mason", "nvim-dap-ui", "overseer", "quickfix", "trouble", "neo-tree" },
 			})
