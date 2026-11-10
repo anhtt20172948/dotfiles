@@ -149,6 +149,14 @@ CASE_ENV="LC_KITTY_PALETTE=$(encoded 101010) LC_KITTY_PALETTE_SRC=arch-local"
 report
 json 'd["palette"]["source"] == "LC_KITTY_PALETTE" and d["palette"]["background"] == "#101010"'
 plain_has 'source +LC_KITTY_PALETTE from the environment \(source arch-local\)'
+# A pane started before a DMS switch to light keeps the dark snapshot; locally
+# the live DMS file wins.
+new_home stale-env
+cp "$ROOT/tests/fixtures/palettes/dms-light.conf" "$CASE/home/.config/kitty/dank-theme.conf"
+CASE_ENV="LC_KITTY_PALETTE=$(encoded 101010) LC_KITTY_PALETTE_SRC=arch-local"
+report
+json 'd["palette"]["source"] == "dank-theme.conf" and d["palette"]["flavour"] == "latte"'
+plain_has 'source +DMS wallpaper palette \(dank-theme\.conf\)'
 new_home pushed
 printf '%s:abcdef\n' "$(encoded 202020)" >"$CASE/home/.config/kitty/remote-palette-arch-local.conf"
 CASE_ENV="SSH_CONNECTION=127.0.0.1_1234_127.0.0.1_22 LC_KITTY_PALETTE=$(encoded 101010) LC_KITTY_PALETTE_SRC=arch-local"

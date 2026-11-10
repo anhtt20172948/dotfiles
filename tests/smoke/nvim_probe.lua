@@ -10,6 +10,8 @@
 -- Before exiting it forces a full treesitter parse of every loaded buffer.
 -- With SMOKE_FILES=1 it also opens an LSP-hover-style markdown float and
 -- checks each buffer for a highlighter and its expected injections.
+-- With SMOKE_LIGHT=1 (a light DMS palette in the kitty directory) it checks
+-- that every text highlight group, from every loaded plugin, is readable.
 local report_path = assert(os.getenv("SMOKE_REPORT"), "SMOKE_REPORT is not set")
 local settle_ms = tonumber(os.getenv("SMOKE_SETTLE_MS") or "") or 500
 local timeout_ms = tonumber(os.getenv("SMOKE_TIMEOUT_MS") or "") or 60000
@@ -159,6 +161,25 @@ local benign_errmsg = {
 }
 
 local files_mode = os.getenv("SMOKE_FILES") == "1"
+local light_mode = os.getenv("SMOKE_LIGHT") == "1"
+
+-- SMOKE_LIGHT=1: the light palette applies, and no text group is below 4.5:1
+-- (customize.ui.low_contrast) or syntax below the light muted floor.
+local function check_light()
+	local kitty = require("customize.kitty_palette")
+	if kitty.background() ~= "light" or vim.o.background ~= "light" then
+		record("light", ("palette %s, background=%s"):format(kitty.background(), vim.o.background))
+		return
+	end
+	for _, low in ipairs(require("customize.ui").low_contrast(kitty.TEXT_FLOOR)) do
+		record("light", ("%s %s on %s is %.2f:1"):format(low.name, low.fg, low.bg, low.ratio))
+	end
+	for _, low in ipairs(require("customize.ui").low_contrast(kitty.LIGHT_MUTED_FLOOR - 0.01)) do
+		if low.name:sub(1, 1) == "@" or low.name == "Comment" then
+			record("light", ("syntax %s %s is %.2f:1"):format(low.name, low.fg, low.ratio))
+		end
+	end
+end
 
 local finished = false
 local function finish(reason)
@@ -169,6 +190,9 @@ local function finish(reason)
 	local buffers = treesitter_buffers()
 	if files_mode then
 		check_files(buffers)
+	end
+	if light_mode then
+		check_light()
 	end
 	snacks_errors()
 	message_errors()

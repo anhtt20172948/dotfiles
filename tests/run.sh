@@ -182,6 +182,13 @@ run_test() {
 	LOG_DIR=${TEST_LOG_DIR:-$CFG/logs}
 	mkdir -p "$LOG_DIR"
 	FAILED=0
+	# Lua cases with a real-Catppuccin mode (CATPPUCCIN_TEST_RTP) use lazy.nvim's
+	# checkout when this machine has one, read only. CI has none and runs them
+	# offline; tests/smoke/nvim_plugins.sh runs them against the locked plugin.
+	local catppuccin=${XDG_DATA_HOME:-$HOME/.local/share}/nvim/lazy/catppuccin
+	if [[ -z "${CATPPUCCIN_TEST_RTP:-}" && -d "$catppuccin" ]]; then
+		export CATPPUCCIN_TEST_RTP=$catppuccin
+	fi
 	local t
 	for t in tests/*.lua; do
 		# Async tests need the event loop -> luafile; -l exits before timers fire.

@@ -70,8 +70,9 @@ flowchart LR
 kitty includes the Mocha fallback first and the DMS files after it, so DMS wins
 whenever it has generated them ([kitty README](.config/kitty/README.md)).
 Neovim needs the palette itself because it draws in truecolor: locally it reads
-`LC_KITTY_PALETTE` (exported by the workflow shell rc) or the kitty palette
-files; over SSH it reads the forwarded variable or the file workflow pushed.
+the kitty palette files (`LC_KITTY_PALETTE`, exported by the workflow shell rc,
+only when there are none); over SSH it reads the file workflow pushed or the
+forwarded variable. A running Neovim follows theme changes without a restart.
 The details are in [Palette over SSH](#palette-over-ssh).
 
 ## Quick start
@@ -410,10 +411,28 @@ updated and may be stale, but a valid forwarded variable takes priority over
 these legacy files.
 Missing or incomplete file palettes fall back to plain Mocha.
 
+Outside SSH the order is reversed: the kitty files are live, while
+`LC_KITTY_PALETTE` is the shell's copy of them from when it started, so a pane
+(or tmux's global environment) older than a DMS theme switch still holds the
+old palette. Neovim reads `dank-theme.conf`, then `current-theme.conf`, and uses
+`LC_KITTY_PALETTE` only when neither exists.
+
+A running Neovim follows the palette: it watches the kitty directory (DMS
+rewriting `dank-theme.conf`, a pushed `remote-palette-<src>.conf` arriving) and
+re-reads on FocusGained, then reconfigures Catppuccin, sets `background` and
+rebuilds lualine, devicons and the decoration groups. A `background` set by
+anything else (the terminal's theme notification, `:set bg`) re-applies the
+palette instead of loading stock Latte or Mocha.
+
+Light palettes keep syntax colours at 6:1 and muted text (comments, line
+numbers, punctuation, inlay hints) at 5:1 against the background, since Latte's
+accents at the 4.5:1 floor read faint at kitty's 9pt font; every other text
+highlight group, including those plugins define later, is lifted to 4.5:1.
+Dark palettes keep their colours (4.5:1).
+
 The workflow
 repo manages a local watcher that pushes source-specific palettes to reachable
-servers. After a local theme change, quit and reopen remote Neovim in the same pane
-to read the latest pushed palette. Offline servers miss that push; the next SSH
+servers, and a running remote Neovim re-themes when the push lands. Offline servers miss that push; the next SSH
 connection still forwards the current palette, and the next theme change pushes
 again. tmux refreshes both palette variables on attach. Neovim reads that session
 environment even in existing panes. Panes without a source id use the newest valid

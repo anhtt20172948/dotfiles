@@ -10,6 +10,9 @@
 #           lazy.nvim startup time against SMOKE_BUDGET_MS. A last boot opens
 #           tests/smoke/fixtures/* (one file per configured treesitter
 #           language) and fails on any parse, highlight or injection error.
+#           A light-palette boot checks every highlight group for contrast,
+#           and the tests/*.lua cases with a real-Catppuccin mode run
+#           against the locked plugin.
 #   update  Same, but run `Lazy! update` instead of restoring the lockfile. When
 #           the updated plugins boot cleanly, copy the new lazy-lock.json back
 #           into the repo and list the changed plugins in lock-changes.md.
@@ -103,6 +106,23 @@ boot() {
 	echo "ok   $name ($(jq -r '.lazy.startuptime_ms | floor' "$OUT/$name.json") ms)"
 }
 
+# The tests/*.lua cases with a real-Catppuccin mode, against the locked plugin
+# (the offline suite has no plugins and runs them without it).
+catppuccin_cases() {
+	local name status=0
+	for name in kitty_palette_follow nvim_light_contrast nvim_transparency nvim_visual; do
+		if CATPPUCCIN_TEST_RTP="$LAZY_DIR/catppuccin" TMUX='' \
+			nvim --headless -u NONE -i NONE -l "$ROOT/tests/$name.lua" "$ROOT" >"$OUT/$name.log" 2>&1; then
+			echo "ok   $name ($(tail -n 1 "$OUT/$name.log"))"
+		else
+			echo "FAIL $name"
+			sed 's/^/  | /' "$OUT/$name.log"
+			status=1
+		fi
+	done
+	return "$status"
+}
+
 summarize() {
 	local median
 	median=$(jq -s 'map(.lazy.startuptime_ms) | sort | .[length / 2 | floor] | floor' "$OUT"/boot-run-*.json)
@@ -172,6 +192,13 @@ done
 # boot with no file open runs neither. Open every fixture in a tab so FileType
 # attaches treesitter, and let the probe force the parse (SMOKE_FILES=1).
 SMOKE_FILES=1 boot boot-files -p "$ROOT"/tests/smoke/fixtures/* || failed=1
+# A light DMS palette: every text highlight group of every loaded plugin must
+# be readable (the probe's SMOKE_LIGHT check).
+mkdir -p "$XDG_CONFIG_HOME/kitty"
+cp "$ROOT/tests/fixtures/palettes/dms-light-recorded.conf" "$XDG_CONFIG_HOME/kitty/dank-theme.conf"
+SMOKE_LIGHT=1 boot boot-light -p "$ROOT"/tests/smoke/fixtures/* || failed=1
+rm "$XDG_CONFIG_HOME/kitty/dank-theme.conf"
+catppuccin_cases || failed=1
 [[ $failed -eq 0 ]] || exit 1
 summarize
 
