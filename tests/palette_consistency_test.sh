@@ -10,15 +10,11 @@ import sys
 root = pathlib.Path(sys.argv[1])
 # Colour sources and upstream assets. These exceptions are data, not active UI config.
 prefixes = (
-    '.config/kitty/kitty-themes/',  # Vendored alternative terminal palettes.
-    '.config/yazi/flavors/',  # Upstream packages retained by package.toml; theme.toml uses ANSI.
     'docs/', 'tests/',  # Documentation, assertions and third-party fixtures.
 )
 files = {
     '.config/kitty/current-theme.conf',  # The terminal fallback palette.
     '.config/kitty/dank-theme.conf',  # Optional DMS-generated terminal palette.
-    '.config/kitty/colors-matugen.conf',  # Alternate generated terminal palette.
-    '.config/kitty/colors-wallust.conf',  # Alternate generated terminal palette.
     '.config/kitty/custom-tabs-colors.conf',  # Kitty tab palette.
     '.config/claude-mods/crew-watch/tests/theme.test.ts',  # Named-palette regression assertions.
     '.config/claude-mods/crew-watch/hooks/theme.ts',  # Explicitly selectable named palettes.

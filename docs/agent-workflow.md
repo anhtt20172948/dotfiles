@@ -182,7 +182,7 @@ skip. Answer from the TUI (`prefix N`) or with `no-mistakes axi respond`.
 
 - firstmate runs from its own checkout with its own `AGENTS.md`. Its rules
   apply only inside its sessions; the global agent rules are described in the
-  [README](../README.md#installation).
+  [README](../README.md#agent-settings).
 - Docker is not supported yet. The likely path is a `docker exec` wrapper set
   as `agent_path_override` (no-mistakes) and `agentPathOverride` (gnhf), with
   the worktree roots bind-mounted at the same paths inside the container.

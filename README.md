@@ -1,27 +1,171 @@
 # dotfiles
 
-Personal shell, terminal, editor and desktop configuration for an Arch Linux +
-Hyprland setup, with shared CLI settings for servers. `install.sh` links the
-configuration into `$HOME` and merges agent status-line and context settings;
-it requires no root access or GNU Stow.
+[![ci](https://github.com/anhtt20172948/dotfiles/actions/workflows/ci.yml/badge.svg)](https://github.com/anhtt20172948/dotfiles/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+<!--
+  HERO MEDIA PLACEHOLDER (deferred; scout report item R5).
+  Goes here: a short recording of one wallpaper change re-theming kitty, tmux,
+  local Neovim and Neovim over SSH, plus a still screenshot for the social
+  preview. Keep it reproducible (scripted, from the palette fixtures) so it can
+  be regenerated when the look changes.
+-->
+
+An Arch Linux + Hyprland workstation whose colours come from the wallpaper and
+follow you everywhere. DMS derives a palette from the wallpaper, kitty applies
+it, and tmux, Neovim, yazi, lazygit and the rest follow it, including Neovim on
+remote servers over SSH. Neovim keeps every text colour at WCAG 4.5:1 contrast
+against the real background. The same configuration runs on macOS (with a
+Catppuccin Mocha fallback palette) and on Linux servers provisioned by the
+[workflow](https://github.com/anhtt20172948/workflow) repository, and CI tests
+it on Ubuntu and on stock macOS.
+
+## Design principles
+
+- **One palette source.** kitty's active palette is the only place colours are
+  defined: DMS writes it from the wallpaper on Arch, and macOS uses the
+  Catppuccin Mocha fallback. Every other tool uses ANSI colour names, so a new
+  wallpaper re-themes everything without editing a config. A slot contract
+  keeps those names readable on any wallpaper (see
+  [The ANSI slot contract](#the-ansi-slot-contract)), and the palette tests
+  reject hex colours, truecolor escapes and forbidden slots in active
+  configuration.
+- **Transparent surfaces.** Neovim (including sidebars, status lines and
+  popups), tmux's status bar and btop draw no background of their own, so
+  kitty's `background_opacity 0.8` and the wallpaper show through; borders
+  carry the structure.
+- **One accent, one shape.** Cyan (ANSI 6, which DMS fills with its primary
+  colour) is the only marker of what is active: the kitty tab, the tmux session
+  pill, current window and pane border, the fzf pointer, yazi's hovered row,
+  Neovim's borders and the prompt's directory. Pills and tabs share lualine's
+  slanted caps, and kitty's tab bar appears only with two or more tabs.
+- **One prompt on every host.** [.config/starship.toml](.config/starship.toml)
+  is the Starship prompt for bash and zsh, in ANSI names with the same accent
+  and caps; `starship-plain.toml` is its ASCII twin for terminals without a
+  Nerd Font (`STARSHIP_CONFIG=~/.config/starship-plain.toml`).
+- **Readable by construction.** Neovim computes every text colour, file icons
+  included, to at least 4.5:1 contrast against the actual background
+  (`tests/nvim_visual.lua`, `tests/nvim_icons.lua`, `tests/nvim_lualine.lua`).
+  Every ANSI slot another tool uses as text is checked at 4.5:1 against
+  Catppuccin Mocha and recorded DMS dark and light palettes
+  (`tests/palette_contract.py`), and Hyprland picks its group bar title colours
+  for contrast against the tab colours DMS sets.
+- **The palette travels.** The local shell exports the palette and SSH forwards
+  it; a watcher pushes it to servers on every theme change. Remote Neovim reads
+  it without a reconnect, and ANSI-only tools follow automatically because the
+  local kitty renders them.
+- **Links, not copies; no root.** `install.sh` symlinks only git-tracked files,
+  moves conflicts to a backup instead of deleting them, and is safe to re-run.
+  Tool installs and shell rc files belong to workflow, not to this repository.
+
+## How the palette flows
+
+```mermaid
+flowchart LR
+  wallpaper[Wallpaper] --> dms["DMS + matugen"]
+  dms --> hypr["Hyprland colours"]
+  dms --> palette["kitty palette<br/>dank-theme.conf<br/>(Mocha fallback on macOS)"]
+  palette -- "16 ANSI colours" --> tuis["tmux, Starship, fzf, bat, delta,<br/>yazi, lazygit, btop"]
+  palette -- "LC_KITTY_PALETTE" --> nvim["Neovim"]
+  palette -- "SSH SendEnv +<br/>palette push" --> remote["Neovim on servers"]
+```
+
+kitty includes the Mocha fallback first and the DMS files after it, so DMS wins
+whenever it has generated them ([kitty README](.config/kitty/README.md)).
+Neovim needs the palette itself because it draws in truecolor: locally it reads
+`LC_KITTY_PALETTE` (exported by the workflow shell rc) or the kitty palette
+files; over SSH it reads the forwarded variable or the file workflow pushed.
+The details are in [Palette over SSH](#palette-over-ssh).
 
 ## Quick start
+
+On a workstation that already has the applications and workflow's tools (see
+[Bootstrap per platform](#bootstrap-per-platform)):
 
 ```bash
 git clone https://github.com/anhtt20172948/dotfiles.git ~/dotfiles
 cd ~/dotfiles
-./install.sh -n     # dry run
+./install.sh -n     # dry run: print what would be linked or backed up
 ./install.sh
 ```
 
-Server tool provisioning is managed by the separate
-[workflow](https://github.com/anhtt20172948/workflow) repository.
+### Bootstrap per platform
 
-## Installation
+`install.sh` only links configuration. Applications come from the platform's
+package manager, and CLI tools, shell rc files and palette transport come from
+workflow.
+
+**Arch Linux workstation** (primary)
+
+1. Packages: `pacman -S git zsh tmux kitty hyprland matugen python dux-shell`
+   (`dux-shell` provides `dms-shell`, the `dms` desktop shell). The font is the
+   patched SFMono Nerd Font "Complete" family, installed by hand into
+   `~/.local/share/fonts`; no package provides that family (see the
+   [kitty README](.config/kitty/README.md)).
+2. Workflow, `make converge-local`: pinned CLI tools in `~/.local/bin` (Neovim,
+   yazi, lazygit, fzf, bat, delta, atuin, btop, ...), the bash/zsh rc files,
+   the `LC_KITTY_PALETTE` export, SSH `SendEnv`, and a systemd user unit that
+   pushes the palette to servers on every DMS theme change. Two pieces for
+   configs tracked here are workflow's job too and not in workflow yet:
+   installing Starship and running `starship init` (until then hosts keep
+   workflow's powerlevel10k prompt), and exporting
+   `FZF_DEFAULT_OPTS_FILE=~/.config/fzf/fzfrc` so shell fzf takes the palette
+   colours (the tmux pickers already do).
+3. Dotfiles: `./install.sh`.
+
+**macOS workstation**
+
+1. Homebrew, kitty, and the same hand-installed SFMono Nerd Font "Complete"
+   family.
+2. Workflow, `make converge-local`, as above; the palette watcher is a launchd
+   agent on `current-theme.conf`.
+3. Dotfiles: `./install.sh`, which also installs Homebrew `coreutils` for
+   tmux-which-key.
+
+**Linux servers** (x86_64 and aarch64)
+
+1. `git`, `zsh` and `tmux` must already be there: workflow cannot install them
+   without root. The SSH server must accept `LC_*` (for example
+   `AcceptEnv LC_*`) to receive the palette.
+2. Workflow, `make converge LIMIT=<host>`: tools, shell rc and TPM plugins, then
+   it clones this repository to `~/dotfiles` and links it with its own linker.
+   No `install.sh` step is needed there.
+
+Workflow's inventory, prerequisites and commands are in its
+[README](https://github.com/anhtt20172948/workflow#readme).
+
+### DMS look inputs
+
+The palette also depends on DMS settings that live only in
+`~/.config/dms/settings.json`, which DMS rewrites and which is not tracked
+here. These values produce the look this repository is tuned for; set them in
+DMS's settings before judging contrast or comparing screenshots:
+
+| Setting (`settings.json` key) | Value | Effect |
+| --- | --- | --- |
+| `currentThemeName` | `dynamic` | Colours come from the wallpaper. |
+| `matugenScheme` | `scheme-tonal-spot` | Material You scheme that turns the wallpaper into the palette. |
+| `matugenSpec` | `2025` | Material colour specification version used by matugen. |
+| `radiusStrength` | `38` | Corner rounding of the shell (0-100, Material's baseline is 50), so a little squarer than stock. |
+| `fontFamily`, `monoFontFamily` | `SF Pro Display` | Shell UI fonts (terminal and editor use SFMono Nerd Font from kitty). |
+| `fontWeight` | `700` | Shell UI font weight. |
+| `interfaceStyle`, `density` | `expressive`, `comfortable` | Shell layout style. |
+| `popupTransparency`, `foregroundLayerTransparency` | `1`, `1` | Surface alpha of shell popups and layers: fully opaque. |
+| `blurEnabled`, `blurBorderEnabled`, `blurBorderOpacity` | `true`, `true`, `0.35` | Background blur and its border. |
+
+Compare a host with these values:
+
+```bash
+jq '{currentThemeName, matugenScheme, matugenSpec, radiusStrength, fontFamily,
+  monoFontFamily, fontWeight, interfaceStyle, density, popupTransparency,
+  foregroundLayerTransparency, blurEnabled, blurBorderEnabled,
+  blurBorderOpacity}' ~/.config/dms/settings.json
+```
+
+### What `install.sh` does
 
 The linker needs Bash, coreutils (including `readlink -f`) and Python 3.11+
 for the agent settings merge. Keep `~/.local/bin` on `PATH` to use the helpers.
-Install the applications you need separately.
 
 - Missing destinations are symlinked to this checkout. Existing real directories
   are traversed so machine-only files stay in place.
@@ -31,6 +175,24 @@ Install the applications you need separately.
   directories stay real; existing directory symlinks outside this checkout are
   preserved, so runtime data stays outside the checkout.
 - Root documentation, tests and project-only settings are excluded from linking.
+- An empty `~/.gitconfig` is created when none exists, so `git config --global`
+  writes land there instead of in the linked `~/.config/git/config` (git reads
+  both; identity and credentials stay in `~/.gitconfig`).
+- bat's theme cache is rebuilt when it is missing or older than a tracked theme
+  in `.config/bat/themes`, since bat loads custom themes only from its cache.
+- A file deleted from the repository leaves its old link behind. From the
+  checkout, `find ~ -maxdepth 4 -xtype l -lname "$PWD/*"` lists links into it
+  that no longer resolve; remove them by hand.
+
+Shell rc files (`.bashrc`, `.zshrc`, `.bash_profile`) are rendered by workflow,
+and this repository carries no shell exports with one deliberate exception:
+[.zshenv](.zshenv) exports the active `ai-acct` Claude token
+(`CLAUDE_CODE_OAUTH_TOKEN`) and its fingerprint (`AI_ACCT_FINGERPRINT`) for
+every zsh, including the non-interactive shells agent workers run in. It reads
+the token from `~/.config/claude-accounts` and keeps the read out of xtrace; see
+[Claude account switching](#claude-account-switching).
+
+#### Agent settings
 
 Global agent rules live in `.config/agents/AGENTS.md`; OpenCode links to them,
 and `.config/agents/CLAUDE.md` is linked to `~/.claude/CLAUDE.md` to import them.
@@ -50,7 +212,7 @@ Firstmate's `config/crew-dispatch.json` is linked individually under
 `~/.local/share/firstmate`, keeping its runtime directories real. Edits to that
 linked file change this checkout.
 
-### Firstmate settings are per host
+#### Firstmate settings are per host
 
 `captain.md` holds each host's own captain preferences, so it lives at
 `~/.local/share/firstmate/data/captain.md` on every host and is intentionally
@@ -70,33 +232,30 @@ only means the path was not a symlink):
 for f in data/captain.md; do p=~/.local/share/firstmate/$f; [ -L "$p" ] && cp --remove-destination "$(readlink -f "$p")" "$p"; done
 ```
 
-## Configurations
+## What's inside
 
-| Directory | Configuration |
-|-----------|---------------|
-| `.config/nvim` | Neovim: Lua, lazy.nvim and `lazy-lock.json`; see [Neovim](#neovim). |
-| `.config/tmux` | Modular tmux config and persistent AI popups; see [tmux](#tmux). |
-| `.config/kitty` | Terminal font and themes; see [font configuration](.config/kitty/README.md). |
-| `.config/hypr` | Hyprland Lua config and DankMaterialShell integration. |
-| `.config/yazi` | File manager settings and vendored color themes. |
-| `.config/btop` | Resource monitor settings and themes. |
-| `.config/atuin` | Shell history settings. |
-| `.config/lazygit`, `.config/lazydocker` | Git and Docker TUI settings. |
-| `.config/git`, `.config/bat`, `.config/fzf` | Shared git settings (delta diffs; identity stays in `~/.gitconfig`), bat and fzf colours; see [Colour consistency](#colour-consistency). |
-| `.config/clangd` | C/C++ language server settings. |
+| Path | Configuration | Docs |
+| --- | --- | --- |
+| `.config/nvim` | Neovim: Lua, lazy.nvim with `lazy-lock.json`, palette-derived transparent UI. | [Neovim](#neovim) |
+| `.tmux.conf`, `.config/tmux` | Modular tmux: status bar, popups, persistent AI sessions, which-key menu. | [tmux README](.config/tmux/README.md) |
+| `.config/extrakto` | Extra extrakto filters (git hashes) for picking text out of a pane. | [tmux README](.config/tmux/README.md) |
+| `.config/kitty` | Terminal: font, palette include order, slanted tab bar, `kitten ssh` settings. | [kitty README](.config/kitty/README.md) |
+| `.config/starship.toml`, `.config/starship-plain.toml` | Shell prompt for bash and zsh (Nerd Font and ASCII variants). | [Design principles](#design-principles) |
+| `.config/hypr` | Hyprland 0.57 Lua config; loads the DMS-generated colours, layout and rules last, then computes readable group bar titles (`groupbar.lua`). | [How the palette flows](#how-the-palette-flows) |
+| `.config/yazi` | File manager: ANSI-only theme with Material folder icons, keymaps, and the duckdb, center-media and toggle-pane plugins. | |
+| `.duckdbrc` | DuckDB CLI highlight colours (ANSI names), also used by yazi's duckdb previews. | |
+| `.config/btop` | Resource monitor: built-in `TTY` theme, transparent background. | |
+| `.config/lazygit`, `.config/lazydocker` | Git and Docker TUIs: ANSI-only themes and a reverse-video selected row; lazygit adds Nerd Font icons and delta diffs. | |
+| `.config/git`, `.config/bat`, `.config/fzf` | Shared git settings (delta as pager with ANSI-only styles; identity stays in `~/.gitconfig`), bat's `ansi` theme, and fzf's palette colours for the shell. | [The ANSI slot contract](#the-ansi-slot-contract) |
+| `.config/atuin` | Shell history settings. | |
+| `.config/clangd` | C/C++ language server: a trimmed clang-tidy check set. | |
+| `.config/agents`, `.config/opencode` | Global agent rules for Claude Code, Codex and OpenCode. | [Agent settings](#agent-settings) |
+| `.config/claude-mods` | Claude Code mods: crew-watch (Crew Monitor) and pixel-pet. | [Claude Code mods](#claude-code-mods) |
+| `.config/treehouse`, `.no-mistakes`, `.gnhf`, `.local/share/firstmate/config` | Agent workflow tools: worktree pool, pre-push gate, unattended loops, Firstmate crew dispatch. | [Agent workflow](docs/agent-workflow.md) |
+| `.local/bin` | Helpers: `ai-acct`, `show`/`download`, the agent status line, standalone installers. | [Claude account switching](#claude-account-switching), [Remote helpers](#remote-helper-scripts) |
+| `.zshenv` | The active Claude account token for every zsh. | [What `install.sh` does](#what-installsh-does) |
 
-### tmux
-
-[.tmux.conf](.tmux.conf) sources the modules in `.config/tmux`. The prefix is
-`Ctrl-b`. `prefix a` opens the AI tool/session picker; `prefix A` attaches the
-most recent live agent for the project. `prefix F` opens the agent workflow
-menu, `prefix C` the crew view, `prefix E` the Claude account menu, and
-`prefix Q` the quota TUI.
-
-See the [tmux README](.config/tmux/README.md) for bindings and dependencies,
-including `fzf`, `fd`, `rg`, `bat`, `jq`, `sqlite3` and `sesh`. Install tmux and
-TPM through `workflow` on servers; the local tmux entrypoint also has a TPM
-bootstrap for other installations.
+## Guides
 
 ### Neovim
 
@@ -126,539 +285,69 @@ palette's text color; named folder icons keep their mini.icons identities.
 | `<leader>aF` / `<leader>aR` | Open Firstmate / review a worker's changes. |
 | `<leader>au` | Open the Claude account menu. |
 
-## Agent workflow
+#### Neovim colours
 
-The configuration integrates treehouse, no-mistakes, gnhf and Firstmate with
-the AI CLIs. Firstmate's launcher offers agent, Claude account, model and
-effort choices; an existing Firstmate window is focused directly. See
-[docs/agent-workflow.md](docs/agent-workflow.md) for daily use.
-Use `workflow` for supported server provisioning; `install.sh` links the
-configuration and does not install these tools.
+Neovim uses Kitty/DMS foreground and background for its neutral layers, keeping
+Catppuccin's own syntax accents. Light backgrounds select Latte; dark backgrounds
+select Mocha. All text colours (including comments and UI overlays) are adjusted
+toward the foreground to meet WCAG 4.5:1 contrast against the editor background;
+if the foreground is too dim, the adjustment uses black or white instead.
+The DMS cursor colour (or URL colour when available) supplies borders, cursor and
+active line accents. Neovim, sidebars, status lines and all popup surfaces use
+transparent backgrounds, sharing Kitty's terminal opacity. Popup borders remain
+visible, while cursor lines, visual selections and selected menu entries keep a
+subtle surface fill. Contrast is measured against the unmodified Kitty/DMS
+background behind the transparent window.
 
-## Claude account switching
+Comments alone are italic. Keywords, conditionals and loops are bold; functions,
+types, variables, operators and rainbow delimiters are plain. Document heading
+and emphasis styles retain their markup meaning. Constants and readonly LSP
+variables use peach, parameters maroon, properties/members teal, builtin variables
+red and builtin functions sapphire; ordinary variables use the foreground.
+Uppercase names depend on the Python parser/LSP classifying them as constants or
+readonly variables.
 
-`ai-acct` selects named Claude OAuth tokens while keeping one shared
-`~/.claude` directory and `~/.claude.json`, so history survives account switches.
-Codex retains its single account. Requirements: `claude`, `jq`, Python 3 and
-`quota-axi`; tmux is optional.
+File icons retain nvim-web-devicons' per-filetype colours, adjusted to at least
+4.5:1 contrast against the resolved terminal background, including the generic
+file icon. Neo-tree, Snacks file pickers and Lualine use these colours;
+mini.icons folder icons keep their existing appearance. `NVIM_ASCII=1` retains
+the ASCII fallback. Theme reloads recompute from the original icon colours.
+`tests/nvim_icons.lua` covers palette changes without plugins; with the installed
+plugins, run `nvim --headless -u NONE -i NONE -l tests/helpers/check_devicon_colors.lua "$PWD"`
+(and repeat with `NVIM_ASCII=1`) to check the providers and picker formatter.
 
-```bash
-ai-acct add personal      # enter the token at the hidden prompt
-ai-acct use personal
-ai-acct list
-ai-acct status            # quota for Claude accounts and Codex
-```
+### The ANSI slot contract
 
-Names start with a lowercase letter or digit and contain only lowercase
-letters, digits, `-` and `_` (up to 32 characters). Tokens are read from stdin,
-never arguments, and stored in `~/.config/claude-accounts/NAME.token` with mode
-`600`; new account directories use mode `700`. Never commit tokens or put them
-in shell commands or logs.
+Every tool except Neovim uses ANSI colours: btop's built-in `TTY` theme, yazi's
+built-in theme (no flavour), tmux, lazygit, lazydocker, duckdb, Starship, bat
+(`.config/bat`), delta (the `[delta]` section of `.config/git/config`, also
+used by lazygit) and fzf (`.config/fzf/fzfrc` for the shell, read through
+`FZF_DEFAULT_OPTS_FILE`; the tmux pickers use the same spec from
+`.config/tmux/scripts/fzf-colors.sh`). They follow one slot contract, because
+DMS's dank16 palette gives two slots dark tones whatever the wallpaper:
 
-`ai-acct edit NAME` replaces a token, `ai-acct rename OLD NEW` renames an account,
-and `ai-acct remove NAME` deletes it. `ai-acct use NAME` writes the `active`
-selector, marks Claude onboarding complete and updates tmux's environment for
-future panes. It validates the local token without an authentication request.
-Running processes retain their token, and the parent shell is unchanged.
-Launch with `ai-acct exec claude`, a new zsh shell, or exit the main Claude
-process and run `ai-acct resume`. It asks the tmux launcher for the Firstmate
-home (`FIRSTMATE_DIR`, else `FM_HOME`, else `~/.local/share/firstmate`), applies
-its live-primary guard and resumes the newest session of that home by id with
-the active account. `ai-acct exec --account NAME CMD...` binds a named account
-to the child instead of following the selector, which is how the tmux launcher
-starts Firstmate; once that pane exists the launcher also selects the account so
-crews follow it.
+- text uses ANSI 1-4, 6, 7, 9-15 or the default foreground;
+- ANSI 5 (magenta) is never text: dank16 makes it a dark container tone, about
+  2.5:1 on the background (use bright magenta, 13);
+- ANSI 8 (bright black) is a surface and border tone, never text;
+- ANSI 0 (black) equals the background, so it is no selection surface;
+- the accent is ANSI 6 (cyan), the DMS primary.
 
-`ai-acct list --quota` adds compact quota bars. Quota readings are cached;
-older readings show their age and missing readings show an explicit unknown or
-unavailable state. The account menu remains usable while quota refreshes.
-In Neovim, `:AiAccount` shows quota and `:AiAccount use NAME` selects an account;
-the status line shows `AI:NAME`.
+Do not add hex colour literals to active tool configuration. Neovim highlights
+must use the active Catppuccin palette, preserving the existing highlight roles
+without retaining an independent fixed palette.
+`tests/palette_consistency_test.sh` enforces this for tracked files. Its
+commented exceptions cover kitty palettes, crew-watch named palettes, pixel-pet
+sprite artwork, test fixtures/assertions, documentation, and generated
+dependency locks. `tests/palette_contract.py` (run by the same test) also
+rejects truecolor and 256-colour escapes, enforces the slot contract in tmux,
+fzf, shell, Starship, yazi, lazygit, lazydocker and duckdb configuration, and
+checks every text slot they use at 4.5:1 against Catppuccin Mocha and recorded
+DMS dark and light palettes (`tests/fixtures/palettes/`). kitty's
+`kitten themes` downloads other terminal themes on demand, so none are
+vendored here.
 
-## Claude Code mods
-
-`.config/claude-mods` holds Claude Code mods (function-hooks plugins) and is a
-local plugin marketplace, `dotfiles-mods`, listed in
-`.config/claude-mods/.claude-plugin/marketplace.json`. `install.sh` leaves the
-folder in the checkout and calls `install-agent-statusline`, which declares its
-real checkout path in `~/.claude/settings.json` (`extraKnownMarketplaces`)
-and enables every mod the marketplace lists
-(`enabledPlugins`), so every Claude Code session loads them however it was
-started (a shell, Neovim, tmux, the desktop app). A mod turned off in `/plugin`
-stays off when `install.sh` runs again. A mod that draws above the prompt stacks
-its rows on what lies beneath (`next(e)`) instead of replacing it, so the mods'
-bands show together.
-
-Claude Code reads the mods from the folder itself, not from a copy: after
-editing one, run `/reload-plugins` in a session. For live reload on every save
-while working on a mod, start a session with `claude --plugin-dir
-<checkout>/.config/claude-mods/<mod>` (replace `<checkout>` with the actual checkout
-path). A new mod is a folder with a
-`.claude-plugin/plugin.json`, listed in `marketplace.json`, then `./install.sh`.
-
-Check a change to a mod with `claude plugin validate`, `tsc -p` and
-`claude plugin test` on its folder (`tests/claude_mod_test.sh` checks the
-marketplace and the settings `install.sh` writes, runs each mod's
-`tests/*_test.py` with `python3`, and runs the first and last for every mod
-when `claude` is installed). `tsc -p` needs the types the engine
-lays in `.claude-plugin/types` the first time it loads the mod.
-
-### crew-watch
-
-`.config/claude-mods/crew-watch` draws the Crew Monitor: a header
-(`▣ CREW / monitor`, then how fresh the data is and the time), six zones in a
-fixed order and a key footer. Each zone sits in its own rounded box, its title
-in small capitals on the first row and a short meta against the right edge, with
-a blank row between boxes, so the blocks are told apart at a glance.
-
-All themes use `paneStyles()` in `hooks/theme.ts` for the same visual rules:
-rounded frames in `border` for every zone, stat tile and help box; bold `text`
-for titles (including card names and detail headings); regular `subtle` for
-metadata; and regular `border` for heading rules, the footer separator and bar
-tracks. Each palette defines those roles; `default` resolves them through the
-engine's theme. Agent cards and their expanded details use their harness colour:
-Claude amber, Codex blue, other harnesses neutral. Running and blocked cards
-use full colour; quiet, paused, stale and done cards are dim. The status glyph
-and word keep the state readable, with blocked status in red.
-While a card runs (working or active), two thick runs travel its whole border clockwise, half a lap apart, in the thin border's cells and in the running colour.
-Their full-block bodies (`█`) keep their thickness on every edge and across corners; fractional block ends advance half a cell every 30 ms at the same speed of one cell per 60 ms.
-A card's open details do not know their height, so their runs keep to the top and bottom edges.
-Every other border stands still.
-The runs
-need a timer, which runs only while the pane is open and in front, some
-crewmate runs and Claude Code's Reduce motion setting (`/config`, or
-`"prefersReducedMotion": true` in settings) is off. Each refresh (every 5 s by
-default, failed reads included) checks those again, and closing the pane stops
-the timer at once; a stopped timer leaves the borders their colours without
-the run.
-
-One rule colours every harness, provider and model name, through
-`harnessStyle()` in `hooks/theme.ts`: a card's harness, model and effort, the
-open details' dispatch line, model rows, account heads and workspace harness,
-each Quota account's provider and its bars, the Overview's model list (details
-mode) and the inline summary. Claude names use `claude` (amber) after `✻`,
-Codex names use `codex` (the palette's blue) after `◆`, and any other harness
-uses neutral `text` after `▪`. The icons are plain characters one cell wide in
-common terminal fonts, so no Nerd Font is needed, and an icon is always
-followed by its name, so a terminal without colour still reads the family.
-Event authors and detail headings do not take a harness colour. No layout or
-background colour changes with these rules.
-
-1. **Overview**: four tiles, each a small box with a big figure over its label:
-   `LIVE` crewmates, `RUNNING` (working or active), `DONE`, and `CACHE READ`,
-   the fleet's cache share. Under them the fleet's tokens, requests and tool
-   calls. Details mode adds a bar of what Tokens is made of (cache read, cache
-   write, output, uncached input) across the box's full width, drawn with the
-   thin `━` of the pane's other bars so it never runs into the rows above and
-   below it, each part in its own colour with a one-cell gap between parts and
-   at least one cell for any part above zero; its legend lists each part with a
-   `━━` swatch in that colour, three cells apart, wrapping as whole items; and
-   both sums written out.
-2. **Agents**: one card per crewmate: the status glyph, its name in bold and
-   the status word and age on the right; harness, model, effort and task;
-   `Context usage` with `used / window · percent` on the right and a bar of it
-   on its own line; its own requests, tools and tokens (`in` is all input,
-   uncached plus cache read and write); and its latest status line. Everything
-   else about it opens with its number, below the cards: a box whose sections
-   (status, model, context and tokens, tools, recent calls, last action, source
-   and limits, workspace) each open with a ruled heading after a blank row.
-   Every line in it is wrapped by the mod to the box's inner width, long words
-   split, so no text runs past the border.
-3. **Quota & Limits**: one block per provider and account: the name, then a
-   `5h` row and a `week` row. Each row has a bar of the vendor's percent in the
-   provider's colour, and in a column shared by every row the percent,
-   `◷ stale` once the reading is over 30 minutes old and the time to its reset
-   (`53% · resets 1h 12m`). A window with no percent shows `—` and why
-   (`no 5h reading`, `window reset`) and draws no bar; too narrow for a bar beside
-   the figure, the bar takes the next row. The 5-hour percent is the vendor's
-   own reading (the pane session's rate limits, ai-acct's stored `five_hour`
-   window, a Codex rollout's 300-minute window), shown as reported and never
-   estimated or recorded in the reading history. `i` adds each account's notes.
-4. **Activity**: the whole crew's logged events per minute as a bar chart of
-   block characters (`▁▂▃▄▅▆▇█`, two rows tall), one cell per minute over up to
-   the last hour (fewer minutes when the zone is narrower than 60 cells; a bar
-   and a gap each from 119), scaled to the busiest minute, which the zone's meta
-   names (`LAST 60 MIN · peak 29/min`); `60m ago` and `now` under it. A quiet
-   minute is a dim `▁`.
-5. **Recent Events**: the newest three to five events, newest first, one short
-   row each, with a filter; `Enter` on a row shows its full text. A row reads
-   time, the tag drawn as a badge, the crewmate (when more than one is live),
-   then two right-aligned columns under an `in` / `out` header: the input the
-   call's result added (`~` when estimated from its size) and its share of the
-   request's output, as the details' recent calls count them, `—` for a status
-   line or a call nobody measured. The command comes last and takes the rest of
-   the row. When the token columns would leave the command under 16 cells they
-   are dropped, and the header row says so.
-
-The context figure and its bar need the model's window: a Codex rollout
-supplies it, else Codex's own catalog (`~/.codex/models_cache.json`), and for
-Claude models a small table in `crew_usage.py` (`CLAUDE_WINDOWS`), because
-Claude transcripts never record it and no local catalog lists Claude models. A model none of them
-knows shows `window n/a for <model>`, and a crewmate with no request yet shows
-`no request yet`.
-
-`/crew` opens or closes the pane; `/crew refresh` reads the logs immediately.
-The keys work while the pane has the keyboard (`ctrl+x tab`, or a click); the
-key footer names them and says so while the pane is unfocused.
-
-| Key | Action |
-| --- | --- |
-| `1`–`9` | open or close that crewmate's details (one at a time) |
-| `d` | compact or details mode; details adds every figure and note |
-| `i` | quota notes: each account's source and age, estimates, crew shares and caveats |
-| `l` | more or fewer log entries |
-| `f` | log filter: All, Tools, Status, Errors, and Agent while details are open |
-| `u` | Usage by Model: this quota week or all retained history |
-| `h` | help: keys, status words and what each metric counts |
-| `Tab`, `Shift+Tab`, `Enter` | move between the pane's controls, log rows included, and press one (the engine's keys); `Enter` on a log row shows or hides its full text |
-| `↑` `↓` `PgUp` `PgDn` `Home` `End` | scroll the pane (the engine's keys) |
-| `Esc` | back to the prompt (the engine's key) |
-
-The engine decides which keys a pane gets, so some keys of the handoff design
-differ. A pane hotkey must be one digit or lowercase letter, so help is `h`,
-not `?`. `Esc` always returns the keyboard to the prompt and never reaches the
-mod, so details close with their own number. The arrows scroll the pane and
-cannot move between crewmates; `Tab` does that. The engine documents only
-`Enter` for pressing the focused control, so nothing is bound to `Space`. No
-letter used here is an engine key inside a focused pane, and `q` and `x` are
-left alone (`ctrl+x x` closes the pane). `Enter` cannot be a pane hotkey: it
-always presses whichever control has the focus. So each log row is a control
-of its own, and `Tab` to a row, then `Enter`, opens its full text; the quota
-notes take the letter `i`, and `d` still switches the whole pane between
-compact and details.
-
-What it shows, and what it does not:
-
-- **Freshness.** `● LIVE · updated 4s ago · 13:48` while reads succeed; `◷ STALE` once
-  two refresh intervals and one read's 20 s timeout pass without a new report
-  (30 s at the default 5 s interval); `× SOURCE ERROR` with the reason and the
-  age of the last good data when a read fails. A report's own warnings show as
-  `!` lines.
-- **Status.** Each crewmate has a glyph and a word, so no colour is needed:
-  `● WORKING` and `● ACTIVE` (activity under 2 minutes), `◐ QUIET` (2 to 15
-  minutes), `○ STALE` (over 15), `✓ DONE`, `× BLOCKED` and `◷ PAUSED` from the
-  task's status line, `? UNKNOWN` with no activity and no status yet. Only
-  working and active count as active. Each card ends with the crewmate's latest
-  status line (else its last tool call); in the row layout it is the third row,
-  left out only under 24 rows (a blocked one's stays). A running (working or
-  active) card has a harness-coloured border with two full-block runs moving around
-  it; a quiet or done card has a dim harness-coloured border. A blocked card keeps
-  its harness border and red status; a done card has a green
-  `✓ DONE`, so it sits back from the running ones.
-- **Overview.** `Tokens` is uncached input + cache read + cache write + output,
-  summed over the live crew since each task started. Thinking (reasoning) is
-  part of output, as both vendors bill it, so it is never added a second time;
-  Codex's cached input is split out of its input first, so nothing is counted
-  twice. `Cache` is cache read / (uncached input + cache read + cache write),
-  the share of all input served from the prompt cache, never called a hit rate.
-  The `CACHE READ` tile shows this share; it is not labelled a hit rate. The
-  details-mode legend names each part (`━━ uncached in 24`), because a small
-  count beside `828k` reads like `24k`: a crewmate with 24 uncached, 827,917 cache-read and
-  57,268 cache-write tokens has a cache share of 827,917 / 885,209 = 93.5%,
-  shown as 94%. Details mode writes both sums out with every term, says how
-  much of output was thinking where the log reports it, and lists requests per
-  model.
-- **Accounts.** Every quota figure belongs to one provider and account and is
-  never summed across accounts or providers: two Claude accounts and a Codex
-  account are three rows. A Claude account is named by its ai-acct name, a Codex
-  one by its plan (its id is a hash) unless two would then read the same.
-  `i` (and details mode) adds, per account, the reading's age and source, the
-  account's estimate, the crew's session and tools-direct shares and the notes
-  on what the figures can and cannot say; an open crewmate's details name the
-  account its usage went to.
-- **Missing data** shows as `—` or a sentence saying why, never as a zero: a
-  harness whose logs cannot be read, an unknown model window, an account with no
-  reading, no crewmates, no activity in the chart's window.
-- **Usage by Model.** After Quota & Limits, this zone sums measured usage per
-  model across live and finished crewmates, including those already cleaned up.
-  Rows show the harness icon and colour, requests, uncached input, output,
-  cache read, cache write, total and number of crewmates, followed by a total
-  row that counts each measured crewmate once. Narrow panes fold numeric columns
-  before the model name becomes unreadable. It opens on `this week`, using each
-  account's quota reset to date that account's week. A missing dated boundary
-  is unavailable data, with `u` offering all retained history instead. `all time`
-  means the records retained by the ledger, which starts with this release and
-  does not backfill crewmates cleaned up before it began.
-- **Events.** A row is the time, a tag drawn as a badge (the tool's name such
-  as `BASH` or `EDIT`, `STAT` for a status line, `× ERR` for an error; tool tags
-  use the crewmate's harness colour, status stays green and errors red), the
-  crewmate when more than one is live, the token columns, then the command or
-  path in bold and the rest dim: `12:45:51   BASH         ~0    373  wc -l <…/report.md`. A preview writes the home folder as
-  `~` (and its dashed form in Claude's transcript folders) and cuts every path
-  of three or more parts to its last part, so the user name never shows in a
-  screenshot; URLs and short paths such as `/dev/null` stay whole. The full
-  text (`Enter` on the row) and the crewmate details write the home folder as
-  `~` too.
-  The collector keeps the latest ten events per crewmate and cuts long commands
-  itself; the full text says `(source truncated)` where it did. An error is a
-  status line whose state is blocked, failed or needs-decision; no severity is
-  guessed from free text.
-
-The layout follows the pane's own size, not the terminal's. From 40 columns
-each zone has its box; a narrower pane keeps only a heading rule per zone. The
-four tiles sit in one row while each keeps 11 cells, else two to a row, else
-one. From 110 columns the cards sit two to a row; below that they stack; below 70 columns, past four
-crewmates (three in one column) or under 24 rows each crewmate is a two-line
-row. Under 24 rows Activity and the log preview fold to one line each; from 36
-rows the log shows five entries. A docked pane is about 90 columns wide until
-it is widened. Inline above the prompt (below 110 terminal columns, or outside
-fullscreen) the pane is a summary of at most eight rows, and never more than the
-engine shows it: header, totals, up to three crewmates and one quota line per
-provider. Short of rows (a 24-row terminal shows five) the providers share one
-quota line before any crewmate gives way, so no provider's row scrolls out of
-sight; on a narrow pane that shared line is cut at its edge.
-
-To preview a change, run Claude Code in fullscreen with the mod loaded from the
-checkout and the installed copy turned off for that session, then type
-`/crew`; the session reloads the mod on every save:
-
-```sh
-CLAUDE_CODE_NO_FLICKER=1 claude \
-  --plugin-dir "$PWD/.config/claude-mods/crew-watch" \
-  --settings '{"enabledPlugins":{"crew-watch@dotfiles-mods":false}}'
-```
-
-The engine writes the mod's types to `.claude-plugin/types`, which git ignores.
-Run it from a Firstmate home (or set `homes`) to see a crew. The tests draw the
-pane at 60, 80 and 120 columns and check that no row runs past it.
-
-It reads the Claude Code transcripts and Codex rollouts each task wrote since it
-first started (worktree slots are reused; a relaunch keeps earlier usage),
-follows secondmate homes, and shows a summary in the status line. The layout takes inspiration from
-[claude-flightdeck](https://github.com/scasella/claude-flightdeck).
-
-Pane background. The pane is not transparent, and a mod cannot make it so.
-When docked, the engine fills the whole pane column (and its divider) with its
-own background colour, behind whatever the mod draws, and the mod API has no
-transparent or terminal-default colour: `Color` is a theme key or a raw colour,
-`Pane` has no background prop, and values such as `transparent` or `default` are
-ignored. A mod can only cover that fill with an explicit colour, never remove
-it, so a transparent terminal does not show through the docked pane. crew-watch
-therefore sets no `backgroundColor` anywhere (an event's badge is inverse video:
-its tag colour swaps with the fill behind it, so no colour of its own is set), the palette backgrounds in
-`hooks/theme.ts` exist only to check text contrast, and a test keeps it so; it
-adds no background option, since an explicit colour would only paint a patchwork
-over the engine's fill.
-
-Tokens per tool call. The API bills requests, not calls, so each call is
-charged with the output tokens of the request that emitted it (split evenly
-when one request emits several calls) plus the input its result added to the
-next request: the growth of the context window, `next context - this context -
-this output`, split between the request's calls by result size. When no next
-request exists yet, or the growth is unusable (a compaction shrank the
-context), the input is estimated from the result size at four characters per
-token and shown with `~`. The expanded crewmate lists `out N in M` per recent
-call and `total · avg` per tool; Codex rollouts work the same from their
-`token_count` events, and a log without usage fields says so instead of
-guessing. This is a call's direct cost: every later request re-reads its result
-from the prompt cache, and those re-reads count to the session, never to the
-call.
-
-Weekly quota. Vendors do not publish weekly caps in tokens, so none is
-hard-coded, and the dashboard says for each figure what it is. Everything is
-keyed by provider, account and limit scope (Claude `seven_day`; Codex the window
-of at least 7200 minutes of its own `codex` limit), and a vendor percent is only
-ever compared with the local usage of the same account.
-
-- **Accounts.** A Claude session is tied to its `ai-acct` account without
-  opening any token file: the pane's `AI_ACCT_FINGERPRINT` is matched against
-  the fingerprints `agent-statusline-claude` stores in
-  `~/.cache/ai-acct/claude-<name>.limits.json`, and only the account *name* is
-  kept. Each session writes `session id -> name` into
-  `~/.cache/crew-watch/accounts.json`, which is how another session's
-  transcripts find their account. A Codex rollout is told apart by a short hash
-  of its creator account id (the id is never stored). A session of no known
-  account is `unknown`: it shows only its raw share of the local usage and never
-  a percent. Another account's usage is never multiplied by this account's
-  percent. Only sessions that ran this mod are tied to an account, so an
-  account's local usage is a lower bound of its real usage and its share of
-  local usage a partial one.
-- **Measured vs estimated.** The vendor percent is an anchor `P(t0)` dated by
-  the response that carried it: the pane session's last response
-  (`$.session.usage()`, dated by the newest response in its own transcript), the
-  reading history below (so a pane also shows another account's latest reading
-  with its true age), `ai-acct`'s stored window (of unknown age, so always
-  stale) and Codex rollout rate-limit events. The card shows `week 26% measured
-  4m ago` and `source ...` separately from the estimate `session ~2% of week
-  est`, which is the anchor plus the weighted tokens spent since it
-  (`P(t0) + slope x tokens`) while the period has not reset. Tokens are weighted
-  by relative price per type and model family (`PRICE_RATIO`/`FAMILY_PRICE` in
-  `crew_usage.py`), and the slope is that period's own average up to the anchor:
-  an explicitly uncalibrated prior, never a fitted weight. A new reading
-  re-anchors and records how far the forecast missed it.
-- **Settled intervals.** A crewmate's share sums settled intervals: each rise
-  of the vendor percent is split by the crewmate's share of the account's usage
-  inside that interval alone, so spending after the reading cannot make an
-  earlier share shrink. Usage is kept per request, and the task start and the
-  window start cut at each request's own time, so an old transcript that was
-  resumed and edited recently counts only what the task did, and nothing from
-  before the window.
-- **Stale readings.** A reading older than 30 minutes, or of unknown age, is
-  stale: it keeps its timestamp (`stale 3h ago`), is never called current or an
-  upper bound, and shows only what was settled plus the raw local delta since
-  (`session since 120k wtok`; `wtok` is price-weighted tokens), with no
-  extrapolation, unless the confidence below is `calibrated` and the reading is
-  under two hours old (the horizon that calibration measured). A reading whose
-  window has reset is dropped as an anchor.
-- **Confidence.** Each estimate carries `uncalibrated`, `low` or `calibrated`
-  and the number of samples behind it. A sample is a recorded residual of a
-  forecast 10 minutes to 2 hours old against a vendor reading that rose by at
-  least a point; `calibrated` needs ten of them with the 90th percentile error
-  within half the rise. It never means fitted weights. Estimates are shown
-  rounded and always led by `~` (`~2%`, `~<1%`), because a one-point vendor
-  step and an unfitted rate cannot support a decimal. Every estimated percent
-  is an order-of-magnitude figure, about 2x either way: vendors do not publish
-  their weights for cache reads, which dominate agent usage, so the price
-  ratios are a guess. Only the vendor's own `week 26% measured` carries no
-  `~`. The Codex aggregate error measured in the audit was about 4 points on
-  20 samples, so no per-crewmate precision is claimed.
-
-The plan comes from Claude's local auth metadata and the Codex plan type. A
-named `ai-acct` account signs in with `CLAUDE_CODE_OAUTH_TOKEN`, which leaves no
-credentials file, so it carries only the account name and `token login`. Usage
-from other machines or the web is not seen, so a figure is neither exact nor an
-upper bound. The first refresh indexes the last week of local logs over several
-refreshes (each stops after ten seconds) and shows "indexing local logs" until
-it finishes. Claude Code's cached `/usage` is no longer a source: it cannot be
-tied to an account.
-
-#### Reading history
-
-Every genuinely new observation is appended as one JSON line to
-`${XDG_STATE_HOME:-~/.local/state}/crew-watch/readings.jsonl` (directory mode
-700, file mode 600), outside the repository: schema version, provider, account
-key, source, `observedAt` (the response's time, `null` when unknown, never faked
-as now), `receivedAt`, an anonymous session key, kind and scope, the raw
-percent, `resetsAt`, duration, the plan label and, once a reading met an older
-one, the forecast's `residual`. A repeated callback of the same response is not
-a new observation; the same percent in a later response is. A reading of
-unknown time counts once per session. No token, OAuth value, fingerprint, prompt
-or tool result is written, and an account of unknown identity is not recorded.
-Sessions take a lock and append atomically, so several can run together. The
-file is bounded: every observation is kept for two days, older ones only where
-the percent moved, and anything older than five weekly periods is dropped (a
-rewrite starts past 2 MiB and thins until about 1 MiB). To delete it:
-
-```sh
-rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/crew-watch"
-```
-
-The dashboard then starts from the live readings again, with no calibration
-evidence. `~/.cache/crew-watch/accounts.json` is a cache of session account
-names and can be deleted too: sessions of that account show as `unknown` until
-they run the mod again.
-
-The collector also keeps `crew-history.jsonl` beside `readings.jsonl`, with the
-same private permissions. Each poll atomically replaces its snapshot under a
-lock, upserting one record per home, task id and first-start time. When a task's
-meta disappears, its last record becomes finished at its last-seen time. Records
-expire 90 days after last seen. The ledger holds dispatch metadata, project name,
-activity times and token counts per provider, account, model and request time;
-it holds no credentials, prompts, tool text or worktree paths. Home paths are
-the same task identities already present in the live report. Deleting the
-state directory above removes both reading history and finished-crew history.
-
-Its three options in `/config` are `homes` (Firstmate homes, comma-separated;
-empty defaults to the session's working directory), `intervalSeconds`
-(refresh interval in seconds, default `5`) and `theme`. Parsed log offsets are
-cached in `~/.cache/crew-watch/cache.json` so refreshes read only appended
-content.
-
-The `theme` option picks the dashboard's colours. `default` uses Claude Code's
-own theme keys, so the pane follows your theme; every other value maps the
-dashboard's roles (text, subtle, success, warning, blocked, merged, the
-per-harness accents and borders) to one palette, defined once in
-`hooks/theme.ts`. A theme changes colours only, never text, layout or
-truncation. Palettes are truecolor; without `COLORTERM=truecolor` they use the
-nearest 256-colour index, and `NO_COLOR` turns colour off. Light palettes are
-for light terminals and dark palettes for dark ones: a light palette on a dark
-terminal is not legible by design. Each role keeps at least 4.5:1 contrast
-(text, subtle) or 3:1 (accents) on its palette's own background.
-
-| `theme` | Palette | Terminal |
-| --- | --- | --- |
-| `default` | Claude Code's theme keys | any |
-| `tokyo-night` | Tokyo Night | dark |
-| `catppuccin-mocha` | Catppuccin Mocha | dark |
-| `catppuccin-latte` | Catppuccin Latte | light |
-| `gruvbox-dark` | Gruvbox Dark | dark |
-| `gruvbox-light` | Gruvbox Light | light |
-| `nord` | Nord | dark |
-| `dracula` | Dracula | dark |
-| `solarized-dark` | Solarized Dark | dark |
-| `solarized-light` | Solarized Light | light |
-| `one-dark` | One Dark | dark |
-
-### pixel-pet
-
-`.config/claude-mods/pixel-pet` draws a pixel-art cat, four rows tall, above the
-prompt, with its name, what it is doing and the session's turn, tool and error
-counts beside it. Two pixel rows share one text row (`▀`/`▄` with a foreground
-and a background colour).
-
-| When | The cat |
-| --- | --- |
-| idle | walks back and forth and blinks |
-| a turn or a tool runs | paws tap, `đang chạy Bash...` |
-| a turn ends | closed eyes and blush, `xong rồi! ♥`, for 4 seconds |
-| a tool fails or a turn is interrupted | a tear, `Bash lỗi rồi…` |
-| idle for 3 minutes | sleeps, `zZz` |
-
-`/pet` hides or shows it. Its name is the Pet name row of `/config` (type `pet`),
-`Mochi` by default. Prompts and tools never wait on its updates. It gives way
-while a survey holds the band or the band has fewer than four rows, and under
-`NO_COLOR` it is drawn as a silhouette with its eyes cut out.
-
-## Remote helper scripts
-
-`show` and `download` search SSH hosts in parallel for a path. `show` mounts
-the remote root with `sshfs` and opens the item using a local application;
-`download` copies it with `rsync`.
-
-```bash
-show /home/user/project/report.pdf
-download /home/user/project/data.csv
-download /home/user/project/dir ./local-dir
-REMOTE_HOSTS="rack jupyter" download /path/to/file
-SSH_CONFIG=~/.ssh/config.work show /path/to/file
-```
-
-Hosts come from non-wildcard aliases on `Host` lines in `~/.ssh/config`.
-`Include` directives are not followed. Both helpers prompt when multiple hosts
-match. `download` defaults to the remote basename in the current directory.
-`SSH_CONFIG` selects the configuration for discovery and all connections,
-including SSHFS and rsync. Quote its value when the config path contains spaces.
-`download` requires Python 3 to resolve destinations that do not exist yet.
-
-Both helpers support macOS's stock Bash 3.2. `show` uses macOS `open` for files
-and directories; on Linux it keeps the file-type-specific application choices.
-
-`show` schedules an unmount after ten minutes. The mount path is
-`/tmp/mnt_show_<host>` with `@` and `.` replaced by `_`; to unmount early, use
-`fusermount3 -u` on Linux or `umount` on macOS with that path. Failures are logged to
-`${TMPDIR:-/tmp}/show-unmount.log`.
-
-## Bootstrap scripts
-
-The supported way to provision servers is
-[workflow](https://github.com/anhtt20172948/workflow), which owns tool installs
-and shell setup. These standalone helpers remain in `.local/bin`:
-
-- `install_zsh`: builds ncurses and zsh into `~/.local` and updates
-  `~/.bash_profile` to launch zsh in interactive shells.
-- `install_neovim`: builds a selected Neovim version into `~/.local` and adds
-  environment settings to `~/.zshrc` when needed.
-- `install_agent_workflow`: installs its pinned agent tools and AXI skills;
-  `--update` reinstalls those pins.
-
-These helpers are separate from `install.sh` and are not the supported server
-provisioning path.
-
-## License
-
-[MIT](LICENSE). Vendored components retain their own license notices.
-
-### Colour consistency
+### Palette over SSH
 
 Kitty's active palette is the colour source on both platforms. DMS writes
 `~/.config/kitty/dank-theme.conf` on Arch Linux with Hyprland; macOS uses
@@ -701,26 +390,6 @@ updated and may be stale, but a valid forwarded variable takes priority over
 these legacy files.
 Missing or incomplete file palettes fall back to plain Mocha.
 
-Neovim uses Kitty/DMS foreground and background for its neutral layers, keeping
-Catppuccin's own syntax accents. Light backgrounds select Latte; dark backgrounds
-select Mocha. All text colours (including comments and UI overlays) are adjusted
-toward the foreground to meet WCAG 4.5:1 contrast against the editor background;
-if the foreground is too dim, the adjustment uses black or white instead.
-The DMS cursor colour (or URL colour when available) supplies borders, cursor and
-active line accents. Neovim, sidebars, status lines and all popup surfaces use
-transparent backgrounds, sharing Kitty's terminal opacity. Popup borders remain
-visible, while cursor lines, visual selections and selected menu entries keep a
-subtle surface fill. Contrast is measured against the unmodified Kitty/DMS
-background behind the transparent window.
-
-Comments alone are italic. Keywords, conditionals and loops are bold; functions,
-types, variables, operators and rainbow delimiters are plain. Document heading
-and emphasis styles retain their markup meaning. Constants and readonly LSP
-variables use peach, parameters maroon, properties/members teal, builtin variables
-red and builtin functions sapphire; ordinary variables use the foreground.
-Uppercase names depend on the Python parser/LSP classifying them as constants or
-readonly variables.
-
 The workflow
 repo manages a local watcher that pushes source-specific palettes to reachable
 servers. After a local theme change, quit and reopen remote Neovim in the same pane
@@ -735,41 +404,179 @@ Kitty shell integration, remote kitty installation, and connection sharing remai
 disabled in `ssh.conf`, preserving the server's account login shell and existing
 connection policy when explicitly using `kitten ssh`.
 
-File icons retain nvim-web-devicons' per-filetype colours, adjusted to at least
-4.5:1 contrast against the resolved terminal background, including the generic
-file icon. Neo-tree, Snacks file pickers and Lualine use these colours;
-mini.icons folder icons keep their existing appearance. `NVIM_ASCII=1` retains
-the ASCII fallback. Theme reloads recompute from the original icon colours.
-`tests/nvim_icons.lua` covers palette changes without plugins; with the installed
-plugins, run `nvim --headless -u NONE -i NONE -l tests/helpers/check_devicon_colors.lua "$PWD"`
-(and repeat with `NVIM_ASCII=1`) to check the providers and picker formatter.
+### tmux
 
-Other terminal tools use ANSI colours, including btop's built-in `TTY` theme,
-bat (`.config/bat`), delta (the `[delta]` section of `.config/git/config`, also
-used by lazygit) and fzf (`.config/fzf/fzfrc` for the shell, read through
-`FZF_DEFAULT_OPTS_FILE`; the tmux pickers use the same spec from
-`.config/tmux/scripts/fzf-colors.sh`). They follow one slot contract, because
-DMS's dank16 palette gives two slots dark tones whatever the wallpaper:
+[.tmux.conf](.tmux.conf) sources the modules in `.config/tmux`. The prefix is
+`Ctrl-b`. `prefix a` opens the AI tool/session picker; `prefix A` attaches the
+most recent live agent for the project. `prefix F` opens the agent workflow
+menu, `prefix C` the crew view, `prefix E` the Claude account menu, and
+`prefix Q` the quota TUI.
 
-- text uses ANSI 1-4, 6, 7, 9-15 or the default foreground;
-- ANSI 5 (magenta) is never text: dank16 makes it a dark container tone, about
-  2.5:1 on the background (use bright magenta, 13);
-- ANSI 8 (bright black) is a surface and border tone, never text;
-- ANSI 0 (black) equals the background, so it is no selection surface;
-- the accent is ANSI 6 (cyan), the DMS primary.
-
-Do not add hex colour literals to active tool configuration. Neovim highlights
-must use the active Catppuccin palette, preserving the existing highlight roles
-without retaining an independent fixed palette. `tests/palette_consistency_test.sh`
-enforces this for tracked files. Its commented exceptions cover kitty palettes,
-vendored Yazi flavour assets (the active Yazi theme uses ANSI), crew-watch named
-palettes, pixel-pet sprite artwork, test fixtures/assertions, documentation, and
-generated dependency locks. `tests/palette_contract.py` (run by the same test)
-also rejects truecolor and 256-colour escapes, enforces the slot contract in
-tmux, fzf, shell, yazi, lazygit, lazydocker and duckdb configuration, and checks
-every text slot they use at 4.5:1 against Catppuccin Mocha and recorded DMS
-dark and light palettes (`tests/fixtures/palettes/`).
+See the [tmux README](.config/tmux/README.md) for bindings and dependencies,
+including `fzf`, `fd`, `rg`, `bat`, `jq`, `sqlite3` and `sesh`. Install tmux and
+TPM through `workflow` on servers; the local tmux entrypoint also has a TPM
+bootstrap for other installations.
 
 On macOS, `install.sh` installs Homebrew coreutils for tmux-which-key's GNU
 `realpath --relative-to`; tmux includes Homebrew's GNU tools in the plugin
 environment. The workflow-only `install_agent_workflow` setup installs the same prerequisite.
+
+### Agent workflow
+
+The configuration integrates treehouse, no-mistakes, gnhf and Firstmate with
+the AI CLIs. Firstmate's launcher offers agent, Claude account, model and
+effort choices; an existing Firstmate window is focused directly. See
+[docs/agent-workflow.md](docs/agent-workflow.md) for daily use.
+Use `workflow` for supported server provisioning; `install.sh` links the
+configuration and does not install these tools.
+
+### Claude account switching
+
+`ai-acct` selects named Claude OAuth tokens while keeping one shared
+`~/.claude` directory and `~/.claude.json`, so history survives account switches.
+Codex retains its single account. Requirements: `claude`, `jq`, Python 3 and
+`quota-axi`; tmux is optional.
+
+```bash
+ai-acct add personal      # enter the token at the hidden prompt
+ai-acct use personal
+ai-acct list
+ai-acct status            # quota for Claude accounts and Codex
+```
+
+Names start with a lowercase letter or digit and contain only lowercase
+letters, digits, `-` and `_` (up to 32 characters). Tokens are read from stdin,
+never arguments, and stored in `~/.config/claude-accounts/NAME.token` with mode
+`600`; new account directories use mode `700`. Never commit tokens or put them
+in shell commands or logs.
+
+`ai-acct edit NAME` replaces a token, `ai-acct rename OLD NEW` renames an account,
+and `ai-acct remove NAME` deletes it. `ai-acct use NAME` writes the `active`
+selector, marks Claude onboarding complete and updates tmux's environment for
+future panes. It validates the local token without an authentication request.
+Running processes retain their token, and the parent shell is unchanged.
+Launch with `ai-acct exec claude`, a new zsh shell, or exit the main Claude
+process and run `ai-acct resume`. It asks the tmux launcher for the Firstmate
+home (`FIRSTMATE_DIR`, else `FM_HOME`, else `~/.local/share/firstmate`), applies
+its live-primary guard and resumes the newest session of that home by id with
+the active account. `ai-acct exec --account NAME CMD...` binds a named account
+to the child instead of following the selector, which is how the tmux launcher
+starts Firstmate; once that pane exists the launcher also selects the account so
+crews follow it.
+
+`ai-acct list --quota` adds compact quota bars. Quota readings are cached;
+older readings show their age and missing readings show an explicit unknown or
+unavailable state. The account menu remains usable while quota refreshes.
+In Neovim, `:AiAccount` shows quota and `:AiAccount use NAME` selects an account;
+the status line shows `AI:NAME`.
+
+### Claude Code mods
+
+`.config/claude-mods` holds Claude Code mods (function-hooks plugins) and is a
+local plugin marketplace, `dotfiles-mods`, listed in
+`.config/claude-mods/.claude-plugin/marketplace.json`:
+
+| Mod | What it draws | Docs |
+| --- | --- | --- |
+| crew-watch | The Crew Monitor: a Firstmate crew's agents, context, quota, activity and events, as a docked pane (`/crew`) and a status-line summary. | [crew-watch README](.config/claude-mods/crew-watch/README.md) |
+| pixel-pet | A pixel-art cat above the prompt that reacts to turns, tools and errors (`/pet`). | [pixel-pet README](.config/claude-mods/pixel-pet/README.md) |
+
+`install.sh` leaves the
+folder in the checkout and calls `install-agent-statusline`, which declares its
+real checkout path in `~/.claude/settings.json` (`extraKnownMarketplaces`)
+and enables every mod the marketplace lists
+(`enabledPlugins`), so every Claude Code session loads them however it was
+started (a shell, Neovim, tmux, the desktop app). A mod turned off in `/plugin`
+stays off when `install.sh` runs again. A mod that draws above the prompt stacks
+its rows on what lies beneath (`next(e)`) instead of replacing it, so the mods'
+bands show together.
+
+Claude Code reads the mods from the folder itself, not from a copy: after
+editing one, run `/reload-plugins` in a session. For live reload on every save
+while working on a mod, start a session with `claude --plugin-dir
+<checkout>/.config/claude-mods/<mod>` (replace `<checkout>` with the actual checkout
+path). A new mod is a folder with a
+`.claude-plugin/plugin.json` and its own `README.md`, listed in
+`marketplace.json`, then `./install.sh`.
+
+Check a change to a mod with `claude plugin validate`, `tsc -p` and
+`claude plugin test` on its folder (`tests/claude_mod_test.sh` checks the
+marketplace and the settings `install.sh` writes, runs each mod's
+`tests/*_test.py` with `python3`, and runs the first and last for every mod
+when `claude` is installed). `tsc -p` needs the types the engine
+lays in `.claude-plugin/types` the first time it loads the mod.
+
+### Remote helper scripts
+
+`show` and `download` search SSH hosts in parallel for a path. `show` mounts
+the remote root with `sshfs` and opens the item using a local application;
+`download` copies it with `rsync`.
+
+```bash
+show /home/user/project/report.pdf
+download /home/user/project/data.csv
+download /home/user/project/dir ./local-dir
+REMOTE_HOSTS="rack jupyter" download /path/to/file
+SSH_CONFIG=~/.ssh/config.work show /path/to/file
+```
+
+Hosts come from non-wildcard aliases on `Host` lines in `~/.ssh/config`.
+`Include` directives are not followed. Both helpers prompt when multiple hosts
+match. `download` defaults to the remote basename in the current directory.
+`SSH_CONFIG` selects the configuration for discovery and all connections,
+including SSHFS and rsync. Quote its value when the config path contains spaces.
+`download` requires Python 3 to resolve destinations that do not exist yet.
+
+Both helpers support macOS's stock Bash 3.2. `show` uses macOS `open` for files
+and directories; on Linux it keeps the file-type-specific application choices.
+
+`show` schedules an unmount after ten minutes. The mount path is
+`/tmp/mnt_show_<host>` with `@` and `.` replaced by `_`; to unmount early, use
+`fusermount3 -u` on Linux or `umount` on macOS with that path. Failures are logged to
+`${TMPDIR:-/tmp}/show-unmount.log`.
+
+### Standalone installers
+
+The supported way to provision servers is
+[workflow](https://github.com/anhtt20172948/workflow), which owns tool installs
+and shell setup. These standalone helpers remain in `.local/bin`:
+
+- `install_zsh`: builds ncurses and zsh into `~/.local` and updates
+  `~/.bash_profile` to launch zsh in interactive shells.
+- `install_neovim`: builds a selected Neovim version into `~/.local` and adds
+  environment settings to `~/.zshrc` when needed.
+- `install_agent_workflow`: installs its pinned agent tools and AXI skills;
+  `--update` reinstalls those pins.
+
+These helpers are separate from `install.sh` and are not the supported server
+provisioning path.
+
+## Testing and CI
+
+```bash
+tests/run.sh lint   # ShellCheck on the scripts in tests/run.sh's LINT_FILES
+tests/run.sh test   # tests/*.lua in headless Neovim, tests/*_test.sh, test_material_folder_icons.py
+tests/run.sh        # both
+```
+
+Tests use stubs instead of downloaded plugins and need no network or display;
+a case that needs a missing tool (Python 3.11+, `luac`) is skipped with a clear
+message. Each case gets 300 s (`TEST_CASE_TIMEOUT` overrides it) and a timeout
+is reported as one. `TEST_LOG_DIR` keeps each case's log. The same entry point is the
+no-mistakes gate (`.no-mistakes.yaml`).
+
+[CI](.github/workflows/ci.yml) runs on pull requests and pushes to `main`, with
+pinned action SHAs and checksummed tool downloads:
+
+- **lint**: ShellCheck 0.11.0 through `tests/run.sh lint`.
+- **stylua**: StyLua 2.5.2 over the Neovim and Hyprland Lua.
+- **test**: the full suite on Ubuntu 24.04 with Neovim 0.11.7 and Starship
+  1.27.0, in a scratch `HOME`.
+- **macos**: lint and tests on macOS 15 with stock `/bin/bash` 3.2 and BSD
+  tools (plus Neovim and Starship), with GNU `timeout` kept off `PATH`.
+- **secrets**: gitleaks over the full history.
+
+## License
+
+[MIT](LICENSE). Vendored components (the yazi plugins and the test fixtures)
+retain their own license notices.

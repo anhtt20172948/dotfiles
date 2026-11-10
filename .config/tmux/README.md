@@ -320,7 +320,7 @@ Notes:
   [token setup and migration](../../README.md#claude-account-switching).
 - firstmate runs from its own checkout with its own `AGENTS.md`, which applies
   only inside firstmate's sessions. Global agent rules are covered in the
-  [top-level README](../../README.md#installation).
+  [top-level README](../../README.md#agent-settings).
 - `no-mistakes`, `gnhf` and `firstmate` need `gh` logged in to open PRs.
 - All binaries, including `gnhf` (npm, `--prefix ~/.local`), go to
   `~/.local/bin`. The installer warns if another `gnhf` (e.g. an nvm global)
