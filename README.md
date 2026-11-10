@@ -58,13 +58,11 @@ it on Ubuntu and on stock macOS.
 ```mermaid
 flowchart LR
   wallpaper[Wallpaper] --> dms["DMS + matugen"]
-  dms --> dank["kitty: dank-theme.conf"]
-  dms --> hypr["Hyprland: dms/colors.lua"]
-  mocha["kitty: current-theme.conf<br/>(Catppuccin Mocha fallback, macOS)"] -.-> kitty
-  dank --> kitty[kitty]
-  kitty -- "16 ANSI colours" --> tuis["tmux, Starship, yazi,<br/>lazygit, btop, fzf, duckdb"]
-  dank -- "palette file / LC_KITTY_PALETTE" --> nvim[Neovim]
-  dank -- "SSH SendEnv + palette push (workflow)" --> remote["Neovim on servers"]
+  dms --> hypr["Hyprland colours"]
+  dms --> palette["kitty palette<br/>dank-theme.conf<br/>(Mocha fallback on macOS)"]
+  palette -- "16 ANSI colours" --> tuis["tmux, Starship, yazi,<br/>lazygit, btop, fzf"]
+  palette -- "LC_KITTY_PALETTE" --> nvim["Neovim"]
+  palette -- "SSH SendEnv +<br/>palette push" --> remote["Neovim on servers"]
 ```
 
 kitty includes the Mocha fallback first and the DMS files after it, so DMS wins
@@ -77,7 +75,7 @@ The details are in [Palette over SSH](#palette-over-ssh).
 ## Quick start
 
 On a workstation that already has the applications and workflow's tools (see
-the table below):
+[Bootstrap per platform](#bootstrap-per-platform)):
 
 ```bash
 git clone https://github.com/anhtt20172948/dotfiles.git ~/dotfiles
@@ -92,11 +90,38 @@ cd ~/dotfiles
 package manager, and CLI tools, shell rc files and palette transport come from
 workflow.
 
-| Platform | Install first | Then workflow | Then dotfiles |
-| --- | --- | --- | --- |
-| Arch Linux workstation (primary) | `pacman -S git zsh tmux kitty hyprland matugen python dux-shell` (`dux-shell` provides `dms-shell`, the `dms` desktop shell); the patched SFMono Nerd Font "Complete" family, installed by hand into `~/.local/share/fonts` (no package provides that family; see the [kitty README](.config/kitty/README.md)) | `make converge-local`: pinned CLI tools in `~/.local/bin` (Neovim, yazi, lazygit, fzf, bat, delta, atuin, btop, ...), bash/zsh rc, the `LC_KITTY_PALETTE` export, SSH `SendEnv`, and a systemd user unit that pushes the palette to servers on every DMS theme change. Starship and `starship init` for the tracked prompt are workflow's to add; until it does, hosts keep workflow's powerlevel10k prompt | `./install.sh` |
-| macOS workstation | Homebrew, kitty, and the same hand-installed SFMono Nerd Font "Complete" family | `make converge-local`, as above; the palette watcher is a launchd agent on `current-theme.conf` | `./install.sh` (also installs Homebrew `coreutils` for tmux-which-key) |
-| Linux servers (x86_64, aarch64) | `git`, `zsh` and `tmux` (workflow cannot install them without root) | `make converge LIMIT=<host>`: tools, shell rc, TPM plugins, then it clones this repository to `~/dotfiles` and links it with its own linker; the SSH server must accept `LC_*` (for example `AcceptEnv LC_*`) | nothing: workflow links it |
+**Arch Linux workstation** (primary)
+
+1. Packages: `pacman -S git zsh tmux kitty hyprland matugen python dux-shell`
+   (`dux-shell` provides `dms-shell`, the `dms` desktop shell). The font is the
+   patched SFMono Nerd Font "Complete" family, installed by hand into
+   `~/.local/share/fonts`; no package provides that family (see the
+   [kitty README](.config/kitty/README.md)).
+2. Workflow, `make converge-local`: pinned CLI tools in `~/.local/bin` (Neovim,
+   yazi, lazygit, fzf, bat, delta, atuin, btop, ...), the bash/zsh rc files,
+   the `LC_KITTY_PALETTE` export, SSH `SendEnv`, and a systemd user unit that
+   pushes the palette to servers on every DMS theme change. Installing Starship
+   and running `starship init` for the tracked prompt is workflow's job too;
+   until workflow does it, hosts keep workflow's powerlevel10k prompt.
+3. Dotfiles: `./install.sh`.
+
+**macOS workstation**
+
+1. Homebrew, kitty, and the same hand-installed SFMono Nerd Font "Complete"
+   family.
+2. Workflow, `make converge-local`, as above; the palette watcher is a launchd
+   agent on `current-theme.conf`.
+3. Dotfiles: `./install.sh`, which also installs Homebrew `coreutils` for
+   tmux-which-key.
+
+**Linux servers** (x86_64 and aarch64)
+
+1. `git`, `zsh` and `tmux` must already be there: workflow cannot install them
+   without root. The SSH server must accept `LC_*` (for example
+   `AcceptEnv LC_*`) to receive the palette.
+2. Workflow, `make converge LIMIT=<host>`: tools, shell rc and TPM plugins, then
+   it clones this repository to `~/dotfiles` and links it with its own linker.
+   No `install.sh` step is needed there.
 
 Workflow's inventory, prerequisites and commands are in its
 [README](https://github.com/anhtt20172948/workflow#readme).
