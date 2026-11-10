@@ -577,7 +577,12 @@ installed; `LINT_STRICT=1` (set in CI) fails instead. TOML formatting follows
 `tests/smoke/nvim_plugins.sh` installs the plugins pinned in `lazy-lock.json`
 into a scratch `HOME`, boots the full config headless and fails on any error
 message, then reports the median lazy.nvim startup time over five boots against
-`SMOKE_BUDGET_MS`. `tests/smoke/nvim_plugins.sh update` does the same after
+`SMOKE_BUDGET_MS`. A last boot opens `tests/smoke/fixtures/` (one file per
+treesitter language the config installs, plus a markdown code fence, a bash
+heredoc and an LSP-hover-style float), forces a full treesitter parse and fails
+on any parse error, missing highlighter or missing injection; headless Neovim
+never redraws, so the plain boots never run those queries.
+`tests/smoke/nvim_plugins.sh update` does the same after
 `Lazy! update` and writes the new `lazy-lock.json` back.
 
 [CI](.github/workflows/ci.yml) runs on pull requests and pushes to `main`, with

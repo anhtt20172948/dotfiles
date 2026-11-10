@@ -2,7 +2,9 @@ return {
 	{
 		"nvim-treesitter/nvim-treesitter",
 		build = ":TSUpdate",
-		event = { "BufReadPre", "BufNewFile" },
+		-- At startup, so its compiled parsers are on the runtimepath before the
+		-- first file buffer: picker previews and LSP hover floats use them too.
+		lazy = false,
 		commit = "cf12346a3414fa1b06af75c79faebe7f76df080a",
 		opts = {
 			ensure_installed = {

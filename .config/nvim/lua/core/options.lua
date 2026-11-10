@@ -42,7 +42,7 @@ vim.opt.splitright = true
 vim.opt.splitbelow = true
 
 -- Detect OS ("Linux", "Darwin" or "Windows_NT")
-vim.g.os = vim.loop.os_uname().sysname
+vim.g.os = vim.uv.os_uname().sysname
 
 -- Get ~ directory path
 HOME = os.getenv("HOME")
