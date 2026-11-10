@@ -89,6 +89,11 @@ cd ~/dotfiles
 ./install.sh
 ```
 
+`dotfiles-diagnose` (or `dotfiles-diagnose --json`) then reports the host, the
+managed tools' versions, the dotfiles commit, the palette Neovim resolves with
+each ANSI slot's contrast, and which tools follow it; missing tools are
+reported, not fatal.
+
 ### Bootstrap per platform
 
 `install.sh` only links configuration. Applications come from the platform's
@@ -252,7 +257,7 @@ for f in data/captain.md; do p=~/.local/share/firstmate/$f; [ -L "$p" ] && cp --
 | `.config/agents`, `.config/opencode` | Global agent rules for Claude Code, Codex and OpenCode. | [Agent settings](#agent-settings) |
 | `.config/claude-mods` | Claude Code mods: crew-watch (Crew Monitor) and pixel-pet. | [Claude Code mods](#claude-code-mods) |
 | `.config/treehouse`, `.no-mistakes`, `.gnhf`, `.local/share/firstmate/config` | Agent workflow tools: worktree pool, pre-push gate, unattended loops, Firstmate crew dispatch. | [Agent workflow](docs/agent-workflow.md) |
-| `.local/bin` | Helpers: `ai-acct`, `show`/`download`, the agent status line, standalone installers. | [Claude account switching](#claude-account-switching), [Remote helpers](#remote-helper-scripts) |
+| `.local/bin` | Helpers: `ai-acct`, `show`/`download`, `dotfiles-diagnose`, the agent status line, standalone installers. | [Claude account switching](#claude-account-switching), [Remote helpers](#remote-helper-scripts) |
 | `.zshenv` | The active Claude account token for every zsh. | [What `install.sh` does](#what-installsh-does) |
 
 ## Guides
