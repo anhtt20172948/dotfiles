@@ -1,0 +1,71 @@
+"$schema" = "https://starship.rs/config-schema.json"
+
+# starship.toml in plain ASCII, for terminals without a Nerd Font (a Linux
+# console, a bare SSH client). Select it with
+#   STARSHIP_CONFIG=~/.config/starship-plain.toml
+# Same modules, order and ANSI colours as starship.toml; only the glyphs differ,
+# and the directory is bold cyan text instead of a pill.
+
+format = """
+$hostname\
+$directory\
+$git_branch\
+$git_state\
+$git_status\
+$python\
+$cmd_duration\
+$line_break\
+$character"""
+add_newline = true
+continuation_prompt = "[. ](cyan)"
+
+[hostname]
+ssh_only = true
+ssh_symbol = "@"
+format = "[$ssh_symbol$hostname]($style) "
+style = "bright-purple"
+
+[directory]
+style = "bold cyan"
+read_only = " ro"
+read_only_style = "red"
+truncation_length = 3
+format = "[$path]($style)[$read_only]($read_only_style) "
+
+[git_branch]
+symbol = "git:"
+format = "[$symbol$branch(:$remote_branch)]($style) "
+style = "bright-purple"
+
+[git_state]
+style = "bold yellow"
+
+[git_status]
+format = "([$all_status$ahead_behind]($style) )"
+style = "yellow"
+ahead = "[>${count}](green)"
+behind = "[<${count}](red)"
+diverged = "[>${ahead_count}](green)[<${behind_count}](red)"
+renamed = "r"
+deleted = "x"
+
+[python]
+detect_extensions = []
+detect_files = []
+detect_folders = []
+symbol = "py:"
+format = "[$symbol$virtualenv]($style) "
+style = "blue"
+
+[cmd_duration]
+min_time = 2000
+format = "[$duration]($style) "
+style = "yellow"
+
+[character]
+success_symbol = "[>](bold cyan)"
+error_symbol = "[>](bold red)"
+vimcmd_symbol = "[<](bold green)"
+vimcmd_visual_symbol = "[<](bold yellow)"
+vimcmd_replace_symbol = "[<](bold bright-purple)"
+vimcmd_replace_one_symbol = "[<](bold bright-purple)"
