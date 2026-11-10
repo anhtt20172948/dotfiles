@@ -112,17 +112,23 @@ export const caption = (mood: Mood, pet: Pet): { text: string; tone: Tone } => {
   const dots = '.'.repeat((pet.tick % 3) + 1)
   switch (mood) {
     case 'idle':
-      return { text: 'đang chờ bạn', tone: 'dim' }
+      return { text: 'waiting for you', tone: 'dim' }
     case 'working':
-      return { text: pet.tool === null ? `đang nghĩ${dots}` : `đang chạy ${pet.tool}${dots}`, tone: 'dim' }
+      return { text: pet.tool === null ? `thinking${dots}` : `running ${pet.tool}${dots}`, tone: 'dim' }
     case 'happy':
-      return { text: `xong rồi! ${pet.tick % 2 === 0 ? '♥' : '♥ ♥'}`, tone: 'love' }
+      return { text: `done! ${pet.tick % 2 === 0 ? '♥' : '♥ ♥'}`, tone: 'love' }
     case 'sad':
-      return { text: pet.tool === null ? 'bị ngắt rồi…' : `${pet.tool} lỗi rồi…`, tone: 'warn' }
+      return { text: pet.tool === null ? 'interrupted…' : `${pet.tool} failed…`, tone: 'warn' }
     case 'sleep':
       return { text: 'zZz'.slice(0, (pet.tick % 3) + 1), tone: 'dim' }
   }
 }
 
+const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
+
 export const stats = (pet: Pet) =>
-  [`${pet.turns} lượt`, `${pet.tools} tool`, ...(pet.errors > 0 ? [`${pet.errors} lỗi`] : [])].join(' · ')
+  [
+    count(pet.turns, 'turn'),
+    count(pet.tools, 'tool'),
+    ...(pet.errors > 0 ? [count(pet.errors, 'error')] : []),
+  ].join(' · ')

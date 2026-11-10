@@ -1,16 +1,16 @@
-# no-mistakes cho chính repo dotfiles: `git push no-mistakes <branch>`
-# (hoặc tmux prefix F -> Push, nvim <leader>ap).
+# no-mistakes for the dotfiles repo itself: `git push no-mistakes <branch>`
+# (or tmux prefix F -> Push, nvim <leader>ap).
 #
-# LƯU Ý: `commands` và `review` chỉ được đọc từ bản trên nhánh mặc định (origin/main),
-# không từ nhánh đang push -> sửa file này phải merge vào main mới có hiệu lực.
+# NOTE: `commands` and `review` are read only from the default branch (origin/main),
+# not from the pushed branch -> a change here takes effect only once merged to main.
 
 commands:
-  # Cùng lối vào với khi chạy tay: tests/run.sh.
+  # Same entry point as a manual run: tests/run.sh.
   lint: "tests/run.sh lint"
   test: "tests/run.sh test"
 
 ignore_patterns:
-  # Ảnh nền, theme sinh tự động: không đáng để review.
+  # Wallpapers and generated themes: not worth reviewing.
   - "**/*.png"
   - "**/*.jpg"
   - ".config/hypr/dms/colors.lua"
@@ -29,7 +29,7 @@ review:
         Lua modules use tabs and `local M = {}`. Logic lives in lua/customize/,
         lazy.nvim wiring in lua/plugins/. aiterm changes should keep aiterm*.lua,
         plugins/aiterm.lua and the history helpers consistent. Comments are written
-        in Vietnamese; keep that.
+        in English; keep that.
     - path: ".local/bin/**"
       instructions: |
         Installers are bash with `set -euo pipefail`, pin versions, install into

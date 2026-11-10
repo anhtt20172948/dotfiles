@@ -20,9 +20,9 @@ return {
 		tag = "v2.5.1",
 		lazy = false,
 		opts = {
-			-- false: chỉ restore session của ĐÚNG cwd nếu có; thư mục chưa có session
-			-- thì để trống (true sẽ fallback nạp session cuối cùng -> mở dir nào cũng ra
-			-- session của dir khác).
+			-- false: restore only the session of this exact cwd; a directory without a session
+			-- stays empty (true falls back to the last session, so any dir would open
+			-- another dir's session).
 			auto_restore_last_session = false,
 			show_auto_restore_notif = true, -- Whether to show a notification when auto-restoring
 			lsp_stop_on_restore = true, -- Should language servers be stopped when restoring a session. Can also be a function that will be called if set. Not called on autorestore from startup
@@ -49,14 +49,14 @@ return {
 			},
 		},
 		config = function(_, opts)
-			-- BỎ "terminal": mksession ghi buffer terminal của pane AI -> lúc restore
-			-- chạy `setlocal buftype=terminal` (E474) làm hỏng cả session + tắt auto-save.
+			-- DROP "terminal": mksession writes the AI pane's terminal buffer, so restore
+			-- runs `setlocal buftype=terminal` (E474), breaking the session and auto-save.
 			vim.o.sessionoptions = "blank,buffers,curdir,folds,help,tabpages,winsize,winpos,localoptions"
 			vim.keymap.set("n", "<leader>P", function()
 				require("auto-session.session-lens").search_session()
 			end, { desc = "Select Session" })
-			-- Dùng lại khối `opts` của spec (trước đây bị bỏ quên vì setup gọi thiếu),
-			-- rồi bổ sung pre/post cmds. Đóng pane AI trước khi lưu, giống pattern Neotree.
+			-- Reuse the spec's `opts` block (previously lost because setup was called without it),
+			-- then add pre/post cmds. Close the AI pane before saving, like the Neotree pattern.
 			opts.pre_save_cmds = {
 				"Neotree close",
 				function()

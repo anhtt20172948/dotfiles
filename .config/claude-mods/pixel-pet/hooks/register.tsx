@@ -57,7 +57,7 @@ export const register: Register = (on, options: Options) => {
     const isHidden = !(await read($, isHiddenAtom))
     await update($, isHiddenAtom, () => isHidden)
 
-    return { text: isHidden ? `${name} đi ngủ rồi. Gõ /pet để gọi lại.` : `${name} đã quay lại!` }
+    return { text: isHidden ? `${name} is asleep. Type /pet to call it back.` : `${name} is back!` }
   })
 
   // Prompts and tools are never waited on for the pet: its updates run beside them.

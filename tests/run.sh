@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
-# Lint + test cho dotfiles. Một lối vào cho cả người và gate no-mistakes
-# (.no-mistakes.yaml gọi `tests/run.sh lint` / `tests/run.sh test`).
+# Lint + test for dotfiles. One entry point for humans and the no-mistakes gate
+# (.no-mistakes.yaml calls `tests/run.sh lint` / `tests/run.sh test`).
 #
-#   tests/run.sh lint   shellcheck các script đã sạch (danh sách LINT_FILES)
-#   tests/run.sh test   chạy mọi tests/*.lua trong nvim headless, tests/*_test.sh và
-#                       tests/test_material_folder_icons.py (SKIP rõ ràng nếu thiếu
-#                       python 3.11+/luac). Case fail in log ngay; TEST_LOG_DIR giữ log từng case.
-#   tests/run.sh        cả hai
+#   tests/run.sh lint   shellcheck the clean scripts (LINT_FILES list)
+#   tests/run.sh test   run every tests/*.lua in headless nvim, tests/*_test.sh and
+#                       tests/test_material_folder_icons.py (explicit SKIP when
+#                       python 3.11+/luac is missing). Failing cases print their log;
+#                       TEST_LOG_DIR keeps per-case logs.
+#   tests/run.sh        both
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 
-# Daemon no-mistakes không đọc .zshrc: nvim (install_neovim) nằm ở ~/.local/bin.
+# The no-mistakes daemon does not read .zshrc: nvim (install_neovim) lives in ~/.local/bin.
 export PATH="$HOME/.local/bin:$PATH"
 
-# Chỉ các script đang qua shellcheck. Script cũ install_neovim và hypr
-# chưa sạch -> thêm vào khi sửa.
+# Only scripts that pass shellcheck. The legacy install_neovim and hypr scripts
+# are not clean yet -> add them when they are fixed.
 LINT_FILES=(
 	.config/tmux/scripts/*.sh
 	.local/bin/ai-acct
@@ -31,7 +32,7 @@ LINT_FILES=(
 	tests/run.sh
 )
 
-# Bản shellcheck thường chỉ có của mason, không nằm trên PATH.
+# Often only mason ships shellcheck, and it is not on PATH.
 find_shellcheck() {
 	command -v shellcheck 2>/dev/null && return
 	local mason="$HOME/.local/share/nvim/mason/bin/shellcheck"
@@ -43,19 +44,19 @@ find_shellcheck() {
 run_lint() {
 	local sc
 	sc=$(find_shellcheck) || return 1
-	# Bỏ file chưa có (nhánh cũ / glob không khớp) thay vì để shellcheck báo lỗi.
+	# Skip missing files (older branch / unmatched glob) instead of letting shellcheck error.
 	local -a files=()
 	local f
 	for f in "${LINT_FILES[@]}"; do
 		[[ -f "$f" ]] && files+=("$f")
 	done
-	# Không dựa vào set -e: trong `run_lint && run_test` bash tắt errexit cho cả
-	# thân hàm, lint fail vẫn in OK.
+	# Do not rely on set -e: in `run_lint && run_test` bash disables errexit for the whole
+	# function body, so a failing lint would still print OK.
 	"$sc" --severity=style -x "${files[@]}" || return 1
 	echo "lint: OK (${#files[@]} files)"
 }
 
-# macOS không có GNU timeout: alarm của perl (có sẵn) làm cùng việc.
+# macOS has no GNU timeout: perl's alarm (always present) does the same job.
 with_timeout() {
 	local secs=$1
 	shift
@@ -66,9 +67,9 @@ with_timeout() {
 	fi
 }
 
-# Chạy một case trong HOME/XDG riêng; log giữ ở $LOG_DIR/<tên>.log, in ra khi fail
-# (khi pass chỉ in các dòng `skip:`).
-#   run_case <tên> <lệnh...>
+# Run one case in its own HOME/XDG; the log stays at $LOG_DIR/<name>.log and prints on failure
+# (on pass only the `skip:` lines are printed).
+#   run_case <name> <command...>
 # A case gets CASE_TIMEOUT seconds (TEST_CASE_TIMEOUT overrides). The slowest,
 # claude_mod_test.sh, spends 60-100 s in `claude plugin test` on a loaded host,
 # so 120 s timed it out intermittently; a timeout is reported as one.
@@ -96,7 +97,7 @@ run_case() {
 	fi
 }
 
-# Case cần thêm công cụ: thiếu thì báo SKIP rõ ràng, không im lặng coi như pass.
+# Cases that need extra tools: when missing, report an explicit SKIP, never a silent pass.
 python_has_tomllib() {
 	python3 -c 'import tomllib' >/dev/null 2>&1
 }
@@ -106,16 +107,16 @@ run_test() {
 		echo "nvim not found" >&2
 		return 1
 	}
-	# XDG_CONFIG_HOME rỗng: nếu không, runtimepath chứa ~/.config/nvim (bản đã
-	# link) và require() nạp code ở đó thay vì code của checkout/worktree này.
+	# Empty XDG_CONFIG_HOME: otherwise runtimepath holds ~/.config/nvim (the linked
+	# copy) and require() loads code from there instead of this checkout/worktree.
 	CFG=$(mktemp -d)
-	# TEST_LOG_DIR cho CI upload log từng case; mặc định nằm trong thư mục tạm.
+	# TEST_LOG_DIR lets CI upload per-case logs; defaults to a temp directory.
 	LOG_DIR=${TEST_LOG_DIR:-$CFG/logs}
 	mkdir -p "$LOG_DIR"
 	FAILED=0
 	local t
 	for t in tests/*.lua; do
-		# Test bất đồng bộ cần event loop -> luafile; -l thoát trước khi timer chạy.
+		# Async tests need the event loop -> luafile; -l exits before timers fire.
 		if grep -q 'luafile' "$t"; then
 			run_case "${t##*/}" nvim --headless -u NONE -i NONE -c "luafile $t"
 		else

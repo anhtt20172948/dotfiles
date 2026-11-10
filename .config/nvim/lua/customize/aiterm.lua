@@ -1,25 +1,25 @@
--- AI terminal (tmux-style): chạy Codex / Claude / opencode trong một vsplit phải.
--- Nhiều session mỗi tool (codex-1, codex-2, claude-1...). Picker <leader>aa liệt kê:
---   ● live    session đang chạy trong nvim  -> attach
---    past    session CŨ trên đĩa của cwd   -> resume (đọc từ customize.aiterm_history)
---    new     tạo session mới
---    browse  fallback: gọi picker của chính tool (claude --resume, codex resume)
+-- AI terminal (tmux-style): runs Codex / Claude / opencode in a right vsplit.
+-- Several sessions per tool (codex-1, codex-2, claude-1...). The <leader>aa picker lists:
+--   ● live    sessions running in nvim       -> attach
+--    past    OLD on-disk sessions of the cwd -> resume (read from customize.aiterm_history)
+--    new     create a new session
+--    browse  fallback: the tool's own picker (claude --resume, codex resume)
 --
--- Keybindings ngoài picker:
---   <C-Space> (trong AI pane) -> quay lại code (pane vẫn mở, session vẫn chạy)
---   <C-h>/<C-w>h (trong AI pane) -> code ngay bên trái nếu có
---   <C-j/k>/<C-w>j/k (trong AI pane) -> pane ngay bên dưới/trên nếu có
---   <C-l>/<C-w>l (trong editor) -> AI pane nếu ở ngay bên phải
---   <C-w>p    (trong editor)  -> attach/focus AI pane (session gần nhất)
+-- Keybindings outside the picker:
+--   <C-Space> (in the AI pane) -> back to code (pane stays open, session keeps running)
+--   <C-h>/<C-w>h (in the AI pane) -> the code directly to the left, if any
+--   <C-j/k>/<C-w>j/k (in the AI pane) -> the pane directly below/above, if any
+--   <C-l>/<C-w>l (in the editor) -> the AI pane if it is directly to the right
+--   <C-w>p    (in the editor)  -> attach/focus the AI pane (most recent session)
 --
--- !! ICON: file này KHÔNG chứa glyph thô, tất cả dựng từ CODEPOINT !!
--- Glyph PUA thô bị huỷ mỗi lần file đi qua một vòng copy/encode. Đã xảy ra 2 lần:
--- U+F0D0 biến thành U+EE0D (codepoint không có trong font -> ô vuông), còn các
--- icon khác rụng sạch thành dấu cách trắng. Source chỉ có ASCII thì không hỏng
--- được nữa - xem M.icon_sets bên dưới.
+-- !! ICONS: this file holds NO raw glyphs, all are built from CODEPOINTS !!
+-- Raw PUA glyphs get destroyed every time the file goes through a copy/encode round. It happened twice:
+-- U+F0D0 turned into U+EE0D (a codepoint missing from the font -> a box), and the
+-- other icons all collapsed into blank spaces. ASCII-only source cannot break
+-- that way - see M.icon_sets below.
 local M = {}
 
--- Dựng chuỗi từ danh sách codepoint.
+-- Build a string from a list of codepoints.
 local function c(...)
 	local out = {}
 	for _, cp in ipairs({ ... }) do
@@ -28,16 +28,16 @@ local function c(...)
 	return table.concat(out)
 end
 
--- Ba bộ icon, chọn bằng M.config.icon_style:
---   nerd    - glyph Nerd Font. CHỈ dùng codepoint <= U+FFFF (PUA U+E000-U+F8FF):
---             'SFMono Nerd Font' là patch Nerd Fonts v2, cmap chỉ tới U+FD46, nên
---             mọi glyph MDI-v3 kiểu U+F0xxx rơi xuống fallback font khác ->
---             khác typeface, khác advance width, nhìn lệch hẳn.
---   unicode - Geometric Shapes + Arrows, có trong gần như mọi font monospace.
---             Dùng khi terminal/SSH không có Nerd Font.
---   ascii   - thuần ASCII, chạy được ở mọi nơi kể cả Linux console.
--- Cả ba bộ đều đã kiểm nvim_strwidth == 1 cho từng glyph (ambiwidth=single) nên
--- đổi bộ không làm lệch cột.
+-- Three icon sets, picked with M.config.icon_style:
+--   nerd    - Nerd Font glyphs. ONLY codepoints <= U+FFFF (PUA U+E000-U+F8FF):
+--             'SFMono Nerd Font' is a Nerd Fonts v2 patch whose cmap stops at U+FD46, so
+--             every MDI-v3 glyph like U+F0xxx falls back to another font ->
+--             different typeface, different advance width, visibly off.
+--   unicode - Geometric Shapes + Arrows, present in almost every monospace font.
+--             For terminals/SSH without a Nerd Font.
+--   ascii   - pure ASCII, works everywhere including the Linux console.
+-- All three sets were checked for nvim_strwidth == 1 per glyph (ambiwidth=single), so
+-- switching sets never shifts columns.
 M.icon_sets = {
 	nerd = {
 		claude = c(0xF0D0), -- magic
@@ -48,10 +48,10 @@ M.icon_sets = {
 		new = c(0xF067), -- plus
 		browse = c(0xF002), -- search
 		install = c(0xF019), -- download
-		ecc = c(0xF1B2), -- cube (bộ skill/command của ECC)
+		ecc = c(0xF1B2), -- cube (ECC's skill/command set)
 		branch = c(0xF418), -- git-branch
 		all_dirs = c(0xF07C), -- folder-open
-		-- icon từng field của preview (f_ = field)
+		-- per-field icons of the preview (f_ = field)
 		f_model = c(0xF2DB), -- microchip
 		f_tokens = c(0xF1C0), -- database
 		f_cost = c(0xF155), -- dollar
@@ -63,8 +63,8 @@ M.icon_sets = {
 		f_cwd = c(0xF07B), -- folder
 		f_prompt = c(0xF075), -- comment
 		f_cmd = c(0xF120), -- terminal
-		-- action icon (dùng ở inlay hint + menu <leader>ai). Toàn Font-Awesome cổ
-		-- điển U+F0xx (<= U+F0C3) nên chắc chắn nằm trong cmap SFMono NF v2.
+		-- action icons (used in the inlay hint + <leader>ai menu). All classic Font Awesome
+		-- U+F0xx (<= U+F0C3), so they are surely in the SFMono NF v2 cmap.
 		explain = c(0xF05A), -- info-circle
 		ask = c(0xF059), -- question-circle
 		fix = c(0xF0AD), -- wrench
@@ -77,11 +77,11 @@ M.icon_sets = {
 		quality = c(0xF14A), -- check-square
 		star = c(0xF005), -- fa-star (favorites/pin)
 	},
-	-- Bộ "chạy mọi nơi": MỌI codepoint dưới đây đã kiểm có trong CẢ SFMono NF lẫn
-	-- JetBrainsMono NF. Cẩn thận khi đổi: nvim_strwidth trả 1 kể cả với glyph font
-	-- KHÔNG có (nó chỉ tra bảng width của Unicode, không tra cmap) nên đo strwidth
-	-- KHÔNG đủ để kết luận. Bản trước có 5 icon thiếu font đúng vì lý do này:
-	-- ◆ U+25C6, ◼ U+25FC, ↺ U+21BA, ↳ U+21B3, ▤ U+25A4 đều KHÔNG có trong SFMono.
+	-- The "works everywhere" set: EVERY codepoint below was checked to exist in BOTH SFMono NF and
+	-- JetBrainsMono NF. Careful when changing: nvim_strwidth returns 1 even for a glyph the font
+	-- LACKS (it only consults Unicode width tables, not the cmap), so measuring strwidth
+	-- is NOT enough. The previous version had 5 icons missing from the font for exactly this reason:
+	-- ◆ U+25C6, ◼ U+25FC, ↺ U+21BA, ↳ U+21B3, ▤ U+25A4 are all MISSING from SFMono.
 	unicode = {
 		claude = c(0x25CE), -- ◎
 		codex = c(0x25A1), -- □
@@ -90,13 +90,13 @@ M.icon_sets = {
 		past = c(0x2022), -- •
 		new = "+",
 		browse = c(0x00BB), -- »
-		-- KHÔNG dùng U+26A0 warning: đã kiểm là THIẾU trong SFMono NF.
+		-- NOT U+26A0 warning: checked MISSING from SFMono NF.
 		install = c(0x2193), -- ↓
 		ecc = c(0x2318), -- ⌘
-		branch = "*", -- git hay đánh dấu nhánh hiện tại bằng *
+		branch = "*", -- git usually marks the current branch with *
 		all_dirs = c(0x00A4), -- ¤
-		-- Field trong preview đã có NHÃN CHỮ bên cạnh nên icon chỉ là dấu dẫn:
-		-- dùng chung một ký tự trung tính, hơn là bịa 11 ký hiệu khó đoán.
+		-- Preview fields already have a TEXT LABEL next to them, so the icon is just a leader:
+		-- one shared neutral character beats inventing 11 cryptic symbols.
 		f_model = c(0x00B7), -- ·
 		f_tokens = c(0x00B7),
 		f_cost = c(0x00B7),
@@ -118,7 +118,7 @@ M.icon_sets = {
 		security = c(0x2020), -- †
 		plan = c(0x00B6), -- ¶
 		quality = c(0x25A0), -- ■
-		star = c(0x2605), -- ★ (width-1 dưới ambiwidth=single)
+		star = c(0x2605), -- ★ (width 1 under ambiwidth=single)
 	},
 	ascii = {
 		claude = "C",
@@ -157,7 +157,7 @@ M.icon_sets = {
 	},
 }
 
--- Bộ icon đang dùng. "auto" -> theo vim.g.have_nerd_font (chưa set thì coi như có).
+-- Active icon set. "auto" -> follows vim.g.have_nerd_font (unset counts as present).
 function M.icons()
 	local style = M.config.icon_style
 	if style == "auto" or style == nil then
@@ -166,7 +166,7 @@ function M.icons()
 	return M.icon_sets[style] or M.icon_sets.nerd
 end
 
--- Icon của tool, tra theo tên tool. Không lưu glyph trong M.config.tools nữa.
+-- A tool's icon, looked up by tool name. Glyphs no longer live in M.config.tools.
 local function tool_icon(tool)
 	return M.icons()[tool.name] or ""
 end
@@ -177,24 +177,24 @@ M.config = {
 		{
 			name = "claude",
 			cmd = "claude",
-			-- PATH của nvim cố định từ lúc khởi động -> cài xong mà thư mục đích
-			-- không có trong PATH thì executable() vẫn báo không có tới khi restart.
-			-- path là fallback để tool_cmd() nhận ra ngay sau khi cài.
+			-- nvim's PATH is fixed at startup -> after an install whose target dir is
+			-- not on PATH, executable() keeps saying missing until a restart.
+			-- path is the fallback so tool_cmd() sees the tool right after the install.
 			path = vim.fn.expand("~/.local/bin/claude"),
 			install = "curl -fsSL https://claude.ai/install.sh | bash",
-			-- icon tra tu M.icons()[name], KHONG luu glyph o day (xem dau file).
+			-- icon comes from M.icons()[name], NO glyph stored here (see the top of the file).
 			resume = function(id)
 				return { "--resume", id }
 			end,
 			fork = function(id)
 				return { "--resume", id, "--fork-session" }
 			end,
-			-- prompt truyền NGAY lúc launch -> M.send không phải paste vào TUI đang
-			-- boot (xem M.send). claude: positional, vẫn giữ chế độ tương tác.
+			-- the prompt is passed AT launch -> M.send does not paste into a TUI that is still
+			-- booting (see M.send). claude: positional, still interactive.
 			prompt_args = function(text)
 				return { text }
 			end,
-			browse = { "--resume" }, -- picker tương tác của chính claude
+			browse = { "--resume" }, -- claude's own interactive picker
 			browse_label = "claude's own picker",
 		},
 		{
@@ -202,7 +202,7 @@ M.config = {
 			cmd = "codex",
 			path = vim.fn.expand("~/.local/bin/codex"),
 			install = "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
-			-- icon tra tu M.icons()[name], KHONG luu glyph o day (xem dau file).
+			-- icon comes from M.icons()[name], NO glyph stored here (see the top of the file).
 			resume = function(id)
 				return { "resume", id }
 			end,
@@ -218,70 +218,70 @@ M.config = {
 		{
 			name = "opencode",
 			cmd = "opencode",
-			-- ~/.zshrc thêm ~/.opencode/bin vào PATH, nhưng nvim mở từ GUI/launchd
-			-- thì không có -> path làm fallback cho tool_cmd(). Đã đo: PATH của nvim
-			-- KHÔNG có ~/.opencode/bin, nên riêng opencode phải dựa vào path này.
+			-- ~/.zshrc adds ~/.opencode/bin to PATH, but nvim launched from a GUI/launchd
+			-- does not get it -> path is the fallback for tool_cmd(). Measured: nvim's PATH
+			-- LACKS ~/.opencode/bin, so opencode alone relies on this path.
 			path = vim.fn.expand("~/.opencode/bin/opencode"),
 			install = "curl -fsSL https://opencode.ai/install | bash",
-			-- icon tra tu M.icons()[name], KHONG luu glyph o day (xem dau file).
+			-- icon comes from M.icons()[name], NO glyph stored here (see the top of the file).
 			resume = function(id)
 				return { "--session", id }
 			end,
 			fork = function(id)
 				return { "--session", id, "--fork" }
 			end,
-			prompt_args = function(text) -- opencode: qua flag, không phải positional
+			prompt_args = function(text) -- opencode: via a flag, not positional
 				return { "--prompt", text }
 			end,
-			-- opencode KHÔNG có CLI picker (chỉ `session list|delete`) -> fallback là --continue
+			-- opencode has NO CLI picker (only `session list|delete`) -> the fallback is --continue
 			browse = { "--continue" },
 			browse_label = "resume most recent",
 		},
 	},
-	win = { width = 0.4 }, -- tỉ lệ rộng của vsplit
+	win = { width = 0.4 }, -- width ratio of the vsplit
 	start_insert = true,
-	history = { scope = "cwd" }, -- scope mặc định của picker: "cwd" | "all"
+	history = { scope = "cwd" }, -- default picker scope: "cwd" | "all"
 
-	-- Gửi context (file/selection + instruction) vào session đang chạy. Xem M.actions().
-	--   default_tools - CHUỖI ưu tiên khi CHƯA có session sống: chọn tool ĐÃ CÀI đầu
-	--                   tiên. Ghi đè phiên/lâu dài qua M.set_default_tool (<leader>aD).
-	--   ready         - phát hiện session vừa tạo "sẵn sàng" (terminal vẽ xong + im)
-	--                   trước lần gửi đầu, thay cho delay cố định (hay miss request).
-	--                   min_ms sàn boot, quiet_ms im bao lâu thì coi là xong, max_ms
-	--                   trần fallback, interval_ms nhịp poll.
-	--   submit_delay  - ms giữa lúc dán xong và lúc gửi <CR>; cho TUI (Ink/React của
-	--                   claude) kịp xử lý bracketed-paste trước khi Enter submit.
+	-- Send context (file/selection + instruction) to the running session. See M.actions().
+	--   default_tools - PRIORITY LIST when there is NO live session yet: the first INSTALLED
+	--                   tool wins. Overridden per session/persistently via M.set_default_tool (<leader>aD).
+	--   ready         - detects that a just-created session is "ready" (terminal drawn + quiet)
+	--                   before the first send, instead of a fixed delay (which often lost requests).
+	--                   min_ms boot floor, quiet_ms how long quiet counts as done, max_ms
+	--                   fallback ceiling, interval_ms poll period.
+	--   submit_delay  - ms between finishing the paste and sending <CR>; gives the TUI (claude's
+	--                   Ink/React) time to process the bracketed paste before Enter submits.
 	send = {
 		default_tools = { "codex", "opencode", "claude" },
-		-- Trên ngưỡng này thì message không nhét vào argv được nữa -> quay về đường
-		-- tạo-session-rồi-paste. ARG_MAX của macOS là 1048576; chọn 344 dòng code
-		-- mới ~15KB nên hiếm khi chạm.
+		-- Above this size the message no longer fits in argv -> fall back to the
+		-- create-session-then-paste path. macOS ARG_MAX is 1048576; 344 lines of code
+		-- are only ~15KB, so this is rarely hit.
 		max_arg_bytes = 100000,
-		-- CHỈ dùng cho đường DỰ PHÒNG (paste vào session đang boot). Đường chính là
-		-- tool.prompt_args: nhúng prompt vào lệnh launch nên không có đua tranh.
-		-- Đừng tưởng đây là cơ chế chính rồi đi tinh chỉnh số: heuristic quiescence
-		-- về bản chất không phân biệt được "TUI xong rồi" với "đang lặng giữa lúc
-		-- boot" - đó chính là lỗi làm mất request với opencode.
+		-- ONLY for the FALLBACK path (pasting into a booting session). The main path is
+		-- tool.prompt_args: the prompt is embedded in the launch command, so there is no race.
+		-- Do not mistake this for the main mechanism and tune the numbers: a quiescence heuristic
+		-- fundamentally cannot tell "TUI is done" from "quiet mid-boot" - exactly the
+		-- bug that lost requests with opencode.
 		ready = { min_ms = 800, quiet_ms = 1200, max_ms = 10000, interval_ms = 120 },
 		submit_delay = 120,
-		-- Tool nào CHẠY được /slash command của ECC natively. codex 0.146 KHÔNG bung
-		-- ~/.codex/prompts/*.md thành /command (đã đo: "Unrecognized command"; chính
-		-- CODEX-NAVIGATION-GUIDE của ECC cũng ghi "may not execute slash commands
-		-- natively ... read the command file"). false -> M.workflows() DÁN NỘI DUNG
-		-- file lệnh thay cho /token. Tool không có trong bảng coi như native.
+		-- Tools that RUN ECC /slash commands natively. codex 0.146 does NOT expand
+		-- ~/.codex/prompts/*.md into /commands (measured: "Unrecognized command"; ECC's own
+		-- CODEX-NAVIGATION-GUIDE also says "may not execute slash commands
+		-- natively ... read the command file"). false -> M.workflows() PASTES THE CONTENT of the
+		-- command file instead of the /token. Tools missing from the table count as native.
 		slash_native = { claude = true, opencode = true, codex = false },
 	},
 
-	-- Nguồn skill THỨ HAI (ngoài ECC): vercel-labs/skills CLI (`npx skills add`). Cài
-	-- SKILL.md vào đúng thư mục aiterm quét -> hiện luôn trong <leader>aS (origin=user).
+	-- SECOND skill source (besides ECC): the vercel-labs/skills CLI (`npx skills add`). It installs
+	-- SKILL.md into the exact dirs aiterm scans -> shows up in <leader>aS (origin=user).
 	-- Xem M.skills_add() (<leader>aV).
-	--   sources  - seed list gợi ý trong picker; picker thêm mục "Enter source…" tự nhập.
-	--   scope    - "global" -> cờ -g (dùng chung mọi repo); "project" -> vào repo.
-	--   copy     - --copy: chép file thật (tự chứa) thay vì symlink vào cache của CLI.
-	--   agent_id - map tên tool của aiterm -> --agent id của CLI (claude vs claude-code).
+	--   sources  - suggested seed list in the picker; the picker adds an "Enter source…" free-input entry.
+	--   scope    - "global" -> -g flag (shared by every repo); "project" -> into the repo.
+	--   copy     - --copy: copy real files (self-contained) instead of symlinking into the CLI cache.
+	--   agent_id - maps aiterm tool names -> the CLI's --agent id (claude vs claude-code).
 	skills = {
-		-- Nguồn seed cho developer (đã verify trên skills.sh). Picker hiện "src — desc"
-		-- kèm mục "Enter source…" để tự nhập owner/repo hay URL bất kỳ.
+		-- Seed sources for developers (verified on skills.sh). The picker shows "src - desc"
+		-- plus an "Enter source…" entry for any owner/repo or URL.
 		sources = {
 			{ src = "mattpocock/skills", desc = "TDD, code-review, git-guardrails, debugging" },
 			{ src = "anthropics/skills", desc = "skill-creator, webapp-testing, mcp-builder, docs" },
@@ -289,44 +289,44 @@ M.config = {
 			{ src = "prisma/skills", desc = "Prisma ORM: setup, client, cli, postgres" },
 			{ src = "supabase/agent-skills", desc = "Supabase / Postgres best practices" },
 		},
-		registry = "https://skills.sh", -- nơi khám phá skill (skills find truy vào đây)
-		scope = "global", -- -g: dùng chung mọi repo
-		copy = true, -- --copy: chép file thật (tự chứa)
+		registry = "https://skills.sh", -- where skills are discovered (skills find queries it)
+		scope = "global", -- -g: shared by every repo
+		copy = true, -- --copy: copy real files (self-contained)
 		agent_id = { claude = "claude-code", codex = "codex", opencode = "opencode" },
 	},
 
-	-- Node treesitter coi là "khối code" để lấy làm context ở normal mode. Khớp
-	-- theo SUBSTRING type nên phủ nhiều ngôn ngữ mà không cần query riêng từng ngôn
-	-- ngữ (function_declaration, method_definition, class_specifier, struct_specifier...).
+	-- Treesitter nodes treated as a "code block" to use as context in normal mode. Matched
+	-- by type SUBSTRING, so it covers many languages without a per-language
+	-- query (function_declaration, method_definition, class_specifier, struct_specifier...).
 	ts_node_types = { "function", "method", "class", "struct", "constructor", "impl" },
 
-	-- Inlay hint trên code buffer (kiểu code-lens của CodeCompanion): 1 dòng ảo phía
-	-- trên function/class ĐANG chứa con trỏ. Badge = icon+tên tool mặc định (tô màu
-	-- theo tool) + vài action có icon + phím tắt mờ. actions là danh sách action.key
-	-- muốn quảng cáo; icon tra M.icons() nên tự xuống chữ ở style unicode/ascii.
+	-- Inlay hint on code buffers (CodeCompanion-style code lens): 1 virtual line above
+	-- the function/class CONTAINING the cursor. Badge = icon+name of the default tool (colored
+	-- per tool) + a few actions with icons + dimmed shortcuts. actions is the list of action.key
+	-- to advertise; icons come from M.icons(), so they degrade to text in the unicode/ascii styles.
 	hints = {
 		enabled = false,
 		actions = { "explain", "fix", "tests" },
 		key = "<leader>ai",
 	},
 
-	-- Preset cho picker M.actions(). `key` khớp icon trong M.icons() (hiện icon ở
-	-- menu + hint). `prompt` là câu lệnh cố định; `input` (nếu có) hỏi câu hỏi tự do
-	-- qua vim.fn.input rồi dùng thay cho prompt.
+	-- Presets for the M.actions() picker. `key` matches an icon in M.icons() (shown in the
+	-- menu + hint). `prompt` is the fixed instruction; `input` (if set) asks a free-form question
+	-- via vim.fn.input and uses it instead of prompt.
 	--
-	-- `skill` (tuỳ chọn) là SKILL của ECC khớp với việc đó. Lúc gửi sẽ dò trên đĩa
-	-- (aiterm_ecc.skills): có thì chèn thêm dòng "Follow the `x` skill.", không có thì
-	-- gửi đúng `prompt` như cũ. Message vẫn kèm @ref + khối code như thường.
+	-- `skill` (optional) is the ECC SKILL matching the job. On send it is looked up on disk
+	-- (aiterm_ecc.skills): when present a "Follow the `x` skill." line is added, otherwise
+	-- the plain `prompt` is sent as before. The message still carries @ref + the code block.
 	--
-	-- Vì sao KHÔNG dùng command của ECC ở đây: command là quy trình CẤP REPO -
-	-- /code-review chạy `git diff --name-only HEAD`, /build-fix chạy `npx tsc --noEmit`,
-	-- /refactor-clean chạy `npx knip` - chúng bỏ qua hoàn toàn đoạn code đang chọn.
-	-- Chúng nằm ở M.workflows() (<leader>aw), nơi gửi không kèm context.
+	-- Why NOT ECC commands here: commands are REPO-LEVEL workflows -
+	-- /code-review runs `git diff --name-only HEAD`, /build-fix runs `npx tsc --noEmit`,
+	-- /refactor-clean runs `npx knip` - they ignore the selected code entirely.
+	-- They live in M.workflows() (<leader>aw), which sends without context.
 	--
-	-- Vì sao chỉ 3 action có `skill`: đã đọc mô tả cả 207 skill, không có cái nào cho
-	-- "explain đoạn này" / "review đoạn này" / "viết docstring". code-tour là tạo file
-	-- .tour, plankton-code-quality là chạy formatter lúc ghi file, plan-canvas là mở
-	-- plan trong browser. Gán bừa chỉ làm prompt tệ đi.
+	-- Why only 3 actions have a `skill`: all 207 skill descriptions were read, none fits
+	-- "explain this" / "review this" / "write a docstring". code-tour creates a .tour
+	-- file, plankton-code-quality runs a formatter on write, plan-canvas opens a
+	-- plan in the browser. A forced match only makes the prompt worse.
 	actions = {
 		{ key = "explain", label = "Explain", prompt = "Explain what this code does, step by step." },
 		{ key = "ask", label = "Ask a question", input = "Ask about this code: " },
@@ -367,9 +367,9 @@ M.config = {
 		},
 	},
 
-	-- Ngoại lệ khi gửi command ECC ở M.workflows(). Mặc định gửi trơn "/tên".
-	--   path - lệnh nhận đường dẫn (`/quality-gate [path|.]`) -> thêm "."
-	--   ask  - lệnh nhận mô tả tự do qua $ARGUMENTS -> hỏi vim.fn.input
+	-- Exceptions when sending ECC commands from M.workflows(). Default sends a plain "/name".
+	--   path - commands taking a path (`/quality-gate [path|.]`) -> append "."
+	--   ask  - commands taking free text via $ARGUMENTS -> ask with vim.fn.input
 	workflow_args = {
 		path = { "quality-gate", "security-scan" },
 		ask = { plan = "Plan what? ", ["plan-prd"] = "PRD for: ", tdd = "TDD for: " },
@@ -377,24 +377,24 @@ M.config = {
 }
 
 -- state ------------------------------------------------------------------
-local win = nil -- handle vsplit dùng chung (một pane, swap buffer)
+local win = nil -- shared vsplit handle (one pane, buffers swapped)
 local sessions = {} -- array: { id, tool, buf, job, cwd, title, label }
-local counters = {} -- tool.name -> số đếm để đặt id
-local last_session = nil -- id session attach gần nhất
+local counters = {} -- tool.name -> counter for ids
+local last_session = nil -- id of the most recently attached session
 
 local function history()
 	return require("customize.aiterm_history")
 end
 
--- ECC module là TUỲ CHỌN: thiếu/ lỗi thì nhớ lỗi và trả nil (không dò lại mỗi lần).
--- Mọi caller đều suy biến thành "không có ECC" thay vì làm vỡ picker/doctor.
+-- The ECC module is OPTIONAL: when missing/broken remember the error and return nil (no re-probe each time).
+-- Every caller degrades to "no ECC" instead of breaking the picker/doctor.
 local ecc_mod, ecc_err
 local function ecc()
 	if ecc_mod or ecc_err then
 		return ecc_mod
 	end
-	-- pcall trả (ok, kết quả) - gán thẳng vào (ecc_mod, ecc_err) là ecc_mod nhận đúng
-	-- cờ boolean `true`, rồi mọi caller đi index một boolean. Phải tách hai biến ra.
+	-- pcall returns (ok, result) - assigning straight to (ecc_mod, ecc_err) leaves ecc_mod as the
+	-- boolean `true`, and every caller then indexes a boolean. Keep two variables.
 	local ok, mod = pcall(require, "customize.aiterm_ecc")
 	if ok then
 		ecc_mod = mod
@@ -409,8 +409,8 @@ local function win_valid()
 	return win ~= nil and vim.api.nvim_win_is_valid(win)
 end
 
--- 0.11-safe: ưu tiên jobstart{term=true}, fallback termopen ở bản cũ.
--- cmd là LIST (không qua shell) -> session id / path chứa space, quote đều an toàn.
+-- 0.11-safe: prefer jobstart{term=true}, fall back to termopen on older versions.
+-- cmd is a LIST (no shell) -> session ids / paths with spaces or quotes are safe.
 local function start_term(buf, cmd, cwd)
 	return vim.api.nvim_buf_call(buf, function()
 		local o = { term = true, cwd = cwd }
@@ -429,7 +429,7 @@ local function find_tool(name)
 	end
 end
 
--- Binary trong PATH; nếu không có thì thử tool.path (xem comment ở opencode).
+-- Binary on PATH; otherwise try tool.path (see the opencode comment).
 local function tool_cmd(tool)
 	if vim.fn.executable(tool.cmd) == 1 then
 		return tool.cmd
@@ -440,10 +440,10 @@ local function tool_cmd(tool)
 	return nil
 end
 
--- Terminal-mode: <C-Space> (và alias <C-@>/<Nul> mà kitty đôi khi gửi) để quay lại
--- code. rhs dùng noremap nên <C-w>p ở đây là builtin previous-window (về code),
--- KHÔNG vòng lại global map <C-w>p. <Esc>/<Space> vẫn truyền thẳng vào AI app;
--- <C-w> riêng lẻ vẫn tới app sau timeoutlen vì chỉ chuỗi <C-w>h được map.
+-- Terminal mode: <C-Space> (and the <C-@>/<Nul> aliases kitty sometimes sends) returns to
+-- code. The rhs is noremap, so <C-w>p here is the builtin previous-window (back to code),
+-- NOT the global <C-w>p map again. <Esc>/<Space> pass straight to the AI app;
+-- a lone <C-w> still reaches the app after timeoutlen since only <C-w>h sequences are mapped.
 local function set_term_keymaps(buf)
 	local o = { buffer = buf, silent = true, nowait = true }
 	vim.keymap.set("t", "<C-Space>", [[<C-\><C-n><C-w>p]], o)
@@ -452,7 +452,7 @@ local function set_term_keymaps(buf)
 		local current = vim.api.nvim_get_current_win()
 		local target = vim.fn.win_getid(vim.fn.winnr(direction))
 		if target == current then
-			return -- không có pane theo hướng này: giữ nguyên terminal-mode
+			return -- no pane in that direction: stay in terminal mode
 		end
 		vim.cmd("stopinsert")
 		vim.api.nvim_set_current_win(target)
@@ -496,19 +496,19 @@ local function notify(msg, level)
 	end
 end
 
--- window (vsplit phải) ---------------------------------------------------
+-- window (right vsplit) ---------------------------------------------------
 local function open_split(buf)
-	vim.cmd("botright vsplit") -- pane full-height sát mép phải
+	vim.cmd("botright vsplit") -- full-height pane on the right edge
 	win = vim.api.nvim_get_current_win()
 	vim.api.nvim_win_set_buf(win, buf)
 	vim.api.nvim_win_set_width(win, math.floor(vim.o.columns * M.config.win.width))
-	vim.wo[win].winfixwidth = true -- neo-tree mở không bóp méo pane AI
+	vim.wo[win].winfixwidth = true -- opening neo-tree does not squeeze the AI pane
 	vim.wo[win].number = false
 	vim.wo[win].relativenumber = false
 	vim.wo[win].signcolumn = "no"
 end
 
--- Reuse pane (swap buffer) nếu còn; nếu không thì mở split mới. Cập nhật winbar nhãn.
+-- Reuse the pane (swap buffer) if it still exists; otherwise open a new split. Updates the winbar label.
 local function ensure_win(buf, label)
 	if win_valid() then
 		vim.api.nvim_win_set_buf(win, buf)
@@ -523,22 +523,22 @@ end
 
 -- session lifecycle ------------------------------------------------------
 
--- id session vẫn là "<tool>-<n>": uuid 36 ký tự làm buffer name / winbar không
--- dùng được. Phần người-đọc-được nằm ở session.label (winbar) và session.title.
+-- Session ids stay "<tool>-<n>": a 36-char uuid is unusable as a buffer name / winbar.
+-- The human-readable part lives in session.label (winbar) and session.title.
 ---@param tool table
 ---@param opts? { args?: string[], cwd?: string, title?: string, cmd?: string[], real_id?: string, on_exit?: fun(code:number) }
 local function new_session(tool, opts)
 	opts = opts or {}
 
-	-- jobstart throw E475 nếu cwd không tồn tại (session cũ của repo đã xoá).
+	-- jobstart throws E475 when cwd does not exist (an old session of a deleted repo).
 	local cwd = opts.cwd
 	if cwd and not vim.uv.fs_stat(cwd) then
 		notify(("cwd no longer exists: %s"):format(cwd), "warn")
 		cwd = nil
 	end
 
-	-- opts.cmd: argv tuỳ ý, BỎ QUA tool_cmd và guard binary-not-found. Chỉ dùng
-	-- cho install (lúc đó binary của tool chưa tồn tại là chuyện đương nhiên).
+	-- opts.cmd: arbitrary argv, SKIPS tool_cmd and the binary-not-found guard. Only
+	-- for install (when the tool's binary naturally does not exist yet).
 	local cmd
 	if opts.cmd then
 		cmd = opts.cmd
@@ -572,17 +572,17 @@ local function new_session(tool, opts)
 		job = job,
 		cwd = cwd,
 		title = opts.title,
-		-- real_id: id THẬT của session trên đĩa (uuid/thread). Resume biết trước
-		-- (gán qua opts.real_id); session vừa tạo (new/fork/browse) để nil, tới
-		-- build_items tự dò trong history rồi pin lại. Dùng để loại mục past trùng.
+		-- real_id: the session's REAL on-disk id (uuid/thread). Resume knows it up front
+		-- (set via opts.real_id); a just-created session (new/fork/browse) leaves it nil until
+		-- build_items finds it in history and pins it. Used to drop duplicate past entries.
 		real_id = opts.real_id,
-		-- launch_time (epoch giây, cùng đơn vị e.time của history): mốc để
-		-- build_items tìm entry history <=> chính session này.
+		-- launch_time (epoch seconds, same unit as history's e.time): the anchor for
+		-- build_items to match a history entry <=> this very session.
 		launch_time = os.time(),
 		label = tool_icon(tool) .. " " .. id .. (opts.title and (" · " .. opts.title) or ""),
 	}
 	sessions[#sessions + 1] = session
-	-- set_term_keymaps ở đây -> mọi đường (new/resume/fork/browse) đều có <C-Space>.
+	-- set_term_keymaps here -> every path (new/resume/fork/browse) gets <C-Space>.
 	set_term_keymaps(buf)
 	vim.api.nvim_create_autocmd("WinEnter", {
 		buffer = buf,
@@ -599,7 +599,7 @@ local function new_session(tool, opts)
 		callback = function()
 			remove_session(id)
 			if opts.on_exit then
-				-- vim.v.event.status = exit code của tiến trình vừa kết thúc.
+				-- vim.v.event.status = exit code of the process that just ended.
 				opts.on_exit(tonumber(vim.v.event.status) or 0)
 			end
 		end,
@@ -619,10 +619,10 @@ local function attach(session)
 	end
 end
 
--- Cài tool chưa có. tool.install là lệnh SHELL (có pipe) nên phải chạy qua shell.
--- Đây là tải script từ mạng về chạy trực tiếp -> LUÔN hiện nguyên câu lệnh và hỏi
--- xác nhận, mặc định No: một lần bấm nhầm trong picker rất khó hoàn tác.
--- Chạy trong pane AI (không chạy ngầm) để đọc được output và lỗi.
+-- Install a missing tool. tool.install is a SHELL command (with pipes), so it runs through a shell.
+-- It downloads a script from the network and runs it -> ALWAYS show the full command and ask
+-- for confirmation, defaulting to No: one mis-press in the picker is hard to undo.
+-- Runs in the AI pane (not in the background) so output and errors can be read.
 local function install_tool(tool)
 	if not tool or not tool.install then
 		notify(("no install script configured for '%s'"):format(tool and tool.name or "?"), "warn")
@@ -633,8 +633,8 @@ local function install_tool(tool)
 		return
 	end
 	attach(new_session(tool, {
-		-- argv tường minh { shell, -c, lệnh } thay vì truyền string thẳng, để giữ
-		-- đúng hợp đồng "cmd là list" của start_term.
+		-- Explicit argv { shell, -c, command } instead of a plain string, to keep
+		-- start_term's "cmd is a list" contract.
 		cmd = { vim.o.shell, "-c", tool.install },
 		cwd = history().project_cwd(),
 		title = "install",
@@ -648,10 +648,10 @@ local function install_tool(tool)
 	}))
 end
 
--- Cài/cập nhật ECC cho một tool. Rủi ro cao hơn install_tool: clone repo bên thứ ba,
--- `npm install` chạy lifecycle script tuỳ ý, rồi installer GHI vào ~/.claude / ~/.codex
--- (bản sync codex còn sửa AGENTS.md + config.toml, có backup dấu thời gian). Vì vậy
--- hiện NGUYÊN danh sách lệnh, confirm mặc định No, chạy trong pane để đọc được output.
+-- Install/update ECC for a tool. Riskier than install_tool: clones a third-party repo,
+-- `npm install` runs arbitrary lifecycle scripts, then the installer WRITES into ~/.claude / ~/.codex
+-- (the codex sync also edits AGENTS.md + config.toml, with a timestamped backup). So
+-- show the WHOLE command list, confirm defaults to No, run in the pane so output can be read.
 local function install_ecc(tool)
 	if not tool then
 		return
@@ -677,8 +677,8 @@ local function install_ecc(tool)
 	lines[#lines + 1] = ""
 	lines[#lines + 1] = "This clones a third-party repo and runs its installer."
 	if tool.name == "codex" then
-		-- Không đổi ngầm: đường sync của codex sinh prompt từ TOÀN BỘ commands/, không
-		-- lọc theo profile -> codex nhận đủ lệnh bất kể M.config.profile là developer.
+		-- No silent change: codex's sync path generates prompts from ALL of commands/, without
+		-- a profile filter -> codex gets every command whatever M.config.profile is.
 		lines[#lines + 1] = "Note: codex sync copies ALL commands (profile does not apply)."
 	end
 	if vim.fn.confirm(table.concat(lines, "\n"), "&Yes\n&No", 2) ~= 1 then
@@ -690,7 +690,7 @@ local function install_ecc(tool)
 		cwd = history().project_cwd(),
 		title = "ecc",
 		on_exit = function(code)
-			e.refresh() -- dò lại đĩa: dòng picker biến mất, action bắt đầu dùng /command
+			e.refresh() -- re-scan disk: the picker row disappears, actions start using /command
 			if code == 0 then
 				notify(("ECC installed for %s (%d commands)"):format(tool.name, e.count(tool.name)), "info")
 			else
@@ -701,27 +701,27 @@ local function install_ecc(tool)
 end
 
 -- vercel-labs/skills CLI (`npx skills add/find/use/init`) --------------------
--- CLI KHÔNG lưu nguồn/lockfile -> aiterm tự ghi provenance (diff thư mục skill
--- trước/sau add) để <leader>aS hiện được "skill này từ source nào".
+-- The CLI keeps NO source/lockfile -> aiterm records provenance itself (diff of the skill dir
+-- before/after add) so <leader>aS can show "which source this skill came from".
 local function xdg_config()
 	local x = vim.env.XDG_CONFIG_HOME
 	return (x and x ~= "") and x or vim.fn.expand("~/.config")
 end
 
--- Dir "universal" mà vercel skills CLI hay ghi vào; claude/codex/opencode KHÔNG đọc.
--- M.skills_activate() symlink từ đây vào dir thật của tool.
+-- "Universal" dir the vercel skills CLI often writes to; claude/codex/opencode do NOT read it.
+-- M.skills_activate() symlinks from here into the tool's real dir.
 local AGENTS_SKILLS = vim.fn.expand("~/.agents/skills")
 
 local function have_npx()
 	if vim.fn.executable("npx") == 1 then
 		return true
 	end
-	notify("aiterm: `npx` not on PATH (cần Node) để chạy skills CLI", "warn")
+	notify("aiterm: `npx` not on PATH (Node is needed) to run the skills CLI", "warn")
 	return false
 end
 
--- Tool để đặt nhãn pane cho find/init (lệnh thật là npx, không phụ thuộc tool):
--- ưu tiên session đang sống, không có thì tool đầu.
+-- Tool used to label the pane for find/init (the real command is npx, tool-independent):
+-- prefer a live session, else the first tool.
 local function pane_tool()
 	for _, s in ipairs(sessions) do
 		if is_alive(s) then
@@ -731,7 +731,7 @@ local function pane_tool()
 	return M.config.tools[1]
 end
 
--- Thư mục vercel skills CLI ghi vào cho (tool, scope) - khớp bảng path của CLI.
+-- Dir the vercel skills CLI writes to for (tool, scope) - matches the CLI's path table.
 local function skills_target_dir(tool, scope, cwd)
 	local name = tool.name
 	if scope == "project" then
@@ -750,7 +750,7 @@ local function skills_target_dir(tool, scope, cwd)
 	return g[name]
 end
 
--- Tên các skill (thư mục con) trong một thư mục skills - cơ sở để diff.
+-- Skill names (subdirectories) in a skills dir - the basis for the diff.
 local function skill_dir_names(dir)
 	local set = {}
 	if not dir then
@@ -768,7 +768,7 @@ local function skill_dir_names(dir)
 	return set
 end
 
--- provenance: tool -> { skillName -> { source, scope } }. Lưu qua các lần mở nvim.
+-- provenance: tool -> { skillName -> { source, scope } }. Persisted across nvim runs.
 local skill_src = {}
 local function skill_src_file()
 	return vim.fs.joinpath(vim.fn.stdpath("state"), "aiterm-skill-sources.json")
@@ -786,12 +786,12 @@ end
 local function save_skill_src()
 	pcall(vim.fn.writefile, { vim.json.encode(skill_src) }, skill_src_file())
 end
--- provenance của 1 skill (nil nếu không phải skill do aiterm add).
+-- Provenance of 1 skill (nil when it was not added by aiterm).
 local function skill_source(tool, name)
 	return (skill_src[tool] or {})[name]
 end
 
--- Ghi provenance cho các skill MỚI xuất hiện trong dir sau khi add.
+-- Record provenance for skills that NEWLY appear in the dir after add.
 local function record_new_skills(tname, dir, before, source, scope)
 	local after = skill_dir_names(dir)
 	skill_src[tname] = skill_src[tname] or {}
@@ -808,14 +808,14 @@ local function record_new_skills(tname, dir, before, source, scope)
 	return n
 end
 
--- add: confirm -> chạy `npx skills add` trong pane (TUI chọn skill chạy tương tác,
--- nên KHÔNG -y) -> on_exit ghi provenance + refresh cache ECC.
+-- add: confirm -> run `npx skills add` in the pane (the skill selection TUI is interactive,
+-- so NO -y) -> on_exit records provenance + refreshes the ECC cache.
 function M.skills_add()
 	if not have_npx() then
 		return
 	end
 	local cfg = M.config.skills
-	-- items: mỗi source là {src,desc}; thêm sentinel {enter=true}.
+	-- items: each source is {src,desc}; plus an {enter=true} sentinel.
 	local items = {}
 	for _, s in ipairs(cfg.sources or {}) do
 		items[#items + 1] = s
@@ -862,7 +862,7 @@ function M.skills_add()
 			if cfg.copy then
 				argv[#argv + 1] = "--copy"
 			end
-			local prompt = ("Run: %s\n\nTải & cài skill bên thứ ba vào %s (scope %s)."):format(
+			local prompt = ("Run: %s\n\nDownload & install third-party skills into %s (scope %s)."):format(
 				table.concat(argv, " "),
 				tname,
 				cfg.scope
@@ -870,7 +870,7 @@ function M.skills_add()
 			if vim.fn.confirm(prompt, "&Yes\n&No", 2) ~= 1 then
 				return
 			end
-			-- snapshot thư mục đích TRƯỚC khi cài để diff ra skill mới.
+			-- snapshot the target dir BEFORE installing to diff out the new skills.
 			local dir = skills_target_dir(tool, cfg.scope, history().project_cwd())
 			local before = skill_dir_names(dir)
 			attach(new_session(tool, {
@@ -881,21 +881,21 @@ function M.skills_add()
 					local added = record_new_skills(tname, dir, before, src, cfg.scope)
 					local e = ecc()
 					if e then
-						e.refresh() -- skill mới hiện trong <leader>aS
+						e.refresh() -- new skills show up in <leader>aS
 					end
-					notify(("skills add: +%d skill từ %s -> %s"):format(added, src, tname), "info")
+					notify(("skills add: +%d skill(s) from %s -> %s"):format(added, src, tname), "info")
 				end,
 			}))
 		end)
 	end)
 end
 
--- find: `npx skills find [query]` - TUI fzf khám phá skill (skills.sh + GitHub) trong pane.
+-- find: `npx skills find [query]` - fzf TUI to discover skills (skills.sh + GitHub) in the pane.
 function M.skills_find()
 	if not have_npx() then
 		return
 	end
-	local q = vim.fn.input("skills find (query, để trống = duyệt): ")
+	local q = vim.fn.input("skills find (query, empty = browse): ")
 	local argv = { "npx", "skills", "find" }
 	if q ~= "" then
 		argv[#argv + 1] = q
@@ -913,8 +913,9 @@ function M.skills_find()
 	}))
 end
 
--- use: `npx skills use <source[@skill]>` sinh prompt (KHÔNG cài) rồi gửi vào session AI.
--- Chạy qua vim.system (không phải TTY) nên NÊN kèm @skill; timeout chặn treo.
+-- use: `npx skills use <source[@skill]>` generates a prompt (does NOT install) and sends it
+-- to the AI session.
+-- Runs via vim.system (no TTY), so @skill SHOULD be given; a timeout prevents hangs.
 function M.skills_use()
 	if not have_npx() then
 		return
@@ -935,7 +936,7 @@ function M.skills_use()
 			if r.code ~= 0 or out == "" then
 				local why = (r.stderr and vim.trim(r.stderr) ~= "") and vim.trim(r.stderr)
 					or ("exit " .. tostring(r.code))
-				notify(("skills use failed (%s) — thử kèm @skill"):format(why), "warn")
+				notify(("skills use failed (%s) - try adding @skill"):format(why), "warn")
 				return
 			end
 			M.send(r.stdout, { submit = true })
@@ -943,12 +944,12 @@ function M.skills_use()
 	)
 end
 
--- init: `npx skills init [name]` scaffold SKILL.md trong repo (skill cấp project).
+-- init: `npx skills init [name]` scaffolds a SKILL.md in the repo (project-level skill).
 function M.skills_init()
 	if not have_npx() then
 		return
 	end
-	local name = vim.fn.input("new skill name (để trống = thư mục hiện tại): ")
+	local name = vim.fn.input("new skill name (empty = current directory): ")
 	local argv = { "npx", "skills", "init" }
 	if name ~= "" then
 		argv[#argv + 1] = name
@@ -960,7 +961,7 @@ function M.skills_init()
 	}))
 end
 
--- Tên skill (thư mục con có SKILL.md) trong ~/.agents/skills.
+-- Skill names (subdirectories with a SKILL.md) in ~/.agents/skills.
 local function agents_skill_names()
 	local out = {}
 	local ok, it = pcall(vim.fs.dir, AGENTS_SKILLS)
@@ -975,8 +976,8 @@ local function agents_skill_names()
 	return out
 end
 
--- Symlink ~/.agents/skills/<name> -> <dir skill global thật của tool>/<name> để tool
--- ĐỌC được. Trả "ok" | "exists" | "error". Idempotent.
+-- Symlink ~/.agents/skills/<name> -> <the tool's real global skill dir>/<name> so the tool
+-- can READ it. Returns "ok" | "exists" | "error". Idempotent.
 local function activate_skill(tool, name)
 	local dst = skills_target_dir(tool, "global") .. "/" .. name
 	if vim.uv.fs_stat(dst) then
@@ -987,12 +988,12 @@ local function activate_skill(tool, name)
 	return ok and "ok" or "error"
 end
 
--- Activate skill 'shared' (~/.agents/skills) vào dir thật của tool: chọn skill (hoặc
--- tất cả) + tool -> symlink. Sau đó skill hiện scope=global và tool đọc được.
+-- Activate a 'shared' skill (~/.agents/skills) into the tool's real dir: pick a skill (or
+-- all) + tool -> symlink. Afterwards the skill shows scope=global and the tool reads it.
 function M.skills_activate()
 	local names = agents_skill_names()
 	if #names == 0 then
-		notify("~/.agents/skills trống — không có skill nào để activate", "info")
+		notify("~/.agents/skills is empty - no skill to activate", "info")
 		return
 	end
 	local ALL = "★ all"
@@ -1025,7 +1026,7 @@ function M.skills_activate()
 			if e then
 				e.refresh()
 			end
-			notify(("activated %d skill -> %s (mở <leader>aS)"):format(ok, tn), "info")
+			notify(("activated %d skill(s) -> %s (open <leader>aS)"):format(ok, tn), "info")
 		end)
 	end)
 end
@@ -1062,8 +1063,8 @@ function M.skills()
 	end)
 end
 
--- codex archive HOÀN TÁC được (codex unarchive); opencode session delete và xoá
--- file jsonl của claude thì KHÔNG -> caller phải confirm trước khi gọi.
+-- codex archive CAN be undone (codex unarchive); opencode session delete and deleting
+-- claude's jsonl file can NOT -> the caller must confirm before calling.
 local function delete_entry(tool, e)
 	local exe = tool_cmd(tool)
 	if tool.name == "codex" then
@@ -1071,35 +1072,35 @@ local function delete_entry(tool, e)
 	elseif tool.name == "opencode" then
 		return exe ~= nil and vim.system({ exe, "session", "delete", e.id }, { text = true }):wait(5000).code == 0
 	elseif e.jsonl then
-		return vim.fn.delete(e.jsonl) == 0 -- claude không có CLI delete
+		return vim.fn.delete(e.jsonl) == 0 -- claude has no CLI delete
 	end
 	return false
 end
 
 -- picker -----------------------------------------------------------------
--- hl group của từng kind; glyph lấy từ M.icons() lúc render (không hardcode).
+-- hl group per kind; glyphs come from M.icons() at render time (not hardcoded).
 local KIND_HL = {
 	live = "SnacksPickerGitStatusStaged",
 	past = "SnacksPickerTime",
 	new = "SnacksPickerLabel",
 	browse = "SnacksPickerSpecial",
-	install = "DiagnosticWarn", -- amber, khác hẳn mọi màu khác trong dòng
-	ecc = "SnacksPickerSpecial", -- không phải cảnh báo: tool vẫn chạy tốt khi thiếu ECC
+	install = "DiagnosticWarn", -- amber, distinct from every other color on the line
+	ecc = "SnacksPickerSpecial", -- not a warning: the tool works fine without ECC
 }
 
--- Cột tool bên trái: "opencode" (8) + icon (1) + dấu cách (1) = 10, chừa 1 cột đệm.
+-- Left tool column: "opencode" (8) + icon (1) + space (1) = 10, plus 1 padding column.
 local TOOL_W = 11
--- Phần đầu dòng trước title: icon kind (2 cột) + cột tool + 1 cột đệm.
+-- Line prefix before the title: kind icon (2 cols) + tool column + 1 padding column.
 local LEAD_W = 2 + TOOL_W + 1
 
--- Màu riêng cho từng tool. Dùng LINK tới nhóm ngữ nghĩa chứ không hardcode hex:
--- đổi colorscheme là tự đúng theo theme mới.
--- Constant/String/Keyword giữ vai trò ngữ nghĩa qua cả palette sáng và tối.
+-- One color per tool. LINKS to semantic groups instead of hardcoded hex:
+-- switching colorscheme follows the new theme automatically.
+-- Constant/String/Keyword keep their semantic role across light and dark palettes.
 local TOOL_HL = { claude = "AitermClaude", codex = "AitermCodex", opencode = "AitermOpencode" }
 
--- Snacks.util.set_hl tự đăng ký augroup ColorScheme để set lại nên KHÔNG cần tự
--- viết autocmd. Không truyền default = true (group `default` bị colorscheme ghi đè).
--- Gọi lazy vì lúc require module này Snacks có thể chưa load.
+-- Snacks.util.set_hl registers its own ColorScheme augroup to re-apply, so NO custom
+-- autocmd is needed. No default = true (a `default` group gets overridden by colorschemes).
+-- Called lazily because Snacks may not be loaded when this module is required.
 local hl_done = false
 local function ensure_hl()
 	if hl_done or not (_G.Snacks and Snacks.util) then
@@ -1126,9 +1127,9 @@ local function commafy(n)
 	return (out:gsub("^,", ""))
 end
 
--- Bảng dựng preview: mỗi dòng là "<icon> <nhãn canh cột> <giá trị>", kèm extmark
--- tô màu icon + nhãn. snacks nhận item.preview.extmarks (picker/preview.lua) với
--- row 1-indexed, col 0-indexed tính theo BYTE.
+-- Preview builder: each line is "<icon> <aligned label> <value>", with extmarks
+-- coloring icon + label. snacks takes item.preview.extmarks (picker/preview.lua) with
+-- 1-indexed rows and 0-indexed BYTE cols.
 local LABEL_W = 9
 
 local function new_doc()
@@ -1139,8 +1140,8 @@ local function doc_raw(d, text)
 	d.lines[#d.lines + 1] = text or ""
 end
 
--- Bỏ qua hẳn dòng nếu value rỗng -> tool nào không có field thì không hiện, không
--- bịa "n/a". col tính bằng #s (byte) chứ không phải strwidth: icon là multibyte.
+-- Skip the line entirely when value is empty -> fields a tool lacks are hidden, never
+-- faked as "n/a". col uses #s (bytes), not strwidth: icons are multibyte.
 local function doc_row(d, icon, label, value, icon_hl)
 	if value == nil or value == "" then
 		return
@@ -1170,7 +1171,7 @@ local function doc_section(d, icon, text)
 	d.marks[#d.marks + 1] = { row = row, col = 0, end_col = #d.lines[row], hl_group = "SnacksPickerLabel" }
 end
 
--- Khối chữ thụt lề (prompt, mô tả). Nhận list dòng hoặc string.
+-- Indented text block (prompt, description). Takes a list of lines or a string.
 local function doc_block(d, text, hl)
 	local lines = type(text) == "table" and text or vim.split(tostring(text), "\n", { plain = true })
 	for _, s in ipairs(lines) do
@@ -1184,11 +1185,11 @@ local function doc_done(d)
 	return { text = table.concat(d.lines, "\n"), extmarks = d.marks }
 end
 
--- Preview build ngay trong finder (dữ liệu đã có sẵn trong RAM từ discovery)
--- -> không đọc lại file jsonl 5 MB khi di chuyển con trỏ.
--- Nhãn + màu + động từ theo trạng thái ECC. "current" thì <CR> là CÀI LẠI chứ không
--- phải cập nhật; nói đúng để không mất vài phút chạy lại quy trình mà tưởng đang có
--- việc cần làm.
+-- Preview built inside the finder (data already in RAM from discovery)
+-- -> the 5 MB jsonl is not re-read while the cursor moves.
+-- Label + color + verb per ECC status. For "current", <CR> REINSTALLS rather than
+-- updates; say so, so nobody spends minutes re-running the process thinking there is
+-- work to do.
 local ECC_STATE = {
 	current = { "up to date", "SnacksPickerGitStatusStaged", "reinstall" },
 	outdated = { "OUTDATED", "DiagnosticWarn", "update" },
@@ -1196,8 +1197,8 @@ local ECC_STATE = {
 	unknown = { "unknown", "SnacksPickerDimmed", "reinstall" },
 }
 
--- Preview cho M.ecc. Nhận clone/remote qua tham số thay vì tự đọc: finder gọi nó nhiều
--- lần, mà clone_info() có spawn git - đọc lại mỗi dòng là phí.
+-- Preview for M.ecc. Takes clone/remote as parameters instead of reading them: the finder calls it
+-- many times, and clone_info() spawns git - re-reading per row is wasteful.
 local function ecc_preview(item, e, clone, remote)
 	local d = new_doc()
 	local s = ECC_STATE[item.state] or ECC_STATE.unknown
@@ -1228,8 +1229,8 @@ local function preview_text(item)
 	local tool = item.tool
 	local thl = TOOL_HL[tool.name]
 
-	-- BẮT BUỘC early-return cho install: nhánh past ở cuối hàm đọc item.entry
-	-- (nil với install) -> lỗi ngay trong finder, picker không mở nổi.
+	-- install REQUIRES an early return: the past branch at the end reads item.entry
+	-- (nil for install) -> an error inside the finder, and the picker cannot open.
 	if item.kind == "install" then
 		doc_title(d, "install", "Install " .. tool.name, "DiagnosticWarn")
 		doc_row(d, "f_cmd", "command", tool.install, "DiagnosticWarn")
@@ -1242,7 +1243,7 @@ local function preview_text(item)
 		return doc_done(d)
 	end
 
-	-- Cũng BẮT BUỘC early-return, cùng lý do với install: không có item.entry.
+	-- Also REQUIRES an early return, same reason as install: no item.entry.
 	if item.kind == "ecc" then
 		local e = ecc()
 		if not e then
@@ -1324,8 +1325,8 @@ local function preview_text(item)
 	end
 	doc_row(d, "f_id", "id", e.id)
 
-	-- prompt_lines GIỮ NGUYÊN xuống dòng (aiterm_history). e.prompt là bản gộp 1
-	-- dòng cho matcher -> chỉ dùng làm fallback khi thiếu prompt_lines.
+	-- prompt_lines KEEPS line breaks (aiterm_history). e.prompt is the 1-line join
+	-- for the matcher -> only a fallback when prompt_lines is missing.
 	local prompt = e.prompt_lines or (e.prompt and { e.prompt })
 	if prompt then
 		doc_section(d, "f_prompt", "Last prompt")
@@ -1337,7 +1338,7 @@ local function preview_text(item)
 	return doc_done(d)
 end
 
--- Bề rộng hiển thị của một list {text, hl}.
+-- Display width of a {text, hl} list.
 local function meta_width(meta)
 	local w = 0
 	for _, chunk in ipairs(meta) do
@@ -1346,12 +1347,12 @@ local function meta_width(meta)
 	return w
 end
 
-local MIN_TITLE = 24 -- title không bao giờ bị bóp nhỏ hơn mức này
+local MIN_TITLE = 24 -- the title is never squeezed below this
 
--- Ghép các segment metadata thành list {text, hl}, BỎ DẦN segment ưu tiên thấp
--- cho tới khi vừa chỗ. nvim KHÔNG tự đẩy right_align virt_text nên nếu không trim
--- thì meta sẽ đè lên title ở window hẹp (list chỉ ~38 cột khi terminal 80 cột).
---   segs = { { text, hl, drop = <số càng lớn càng bị bỏ trước> }, ... }
+-- Join metadata segments into a {text, hl} list, DROPPING low-priority segments
+-- until it fits. nvim does NOT push right_align virt_text aside, so without trimming
+-- the meta overlaps the title in narrow windows (the list is only ~38 cols in an 80-col terminal).
+--   segs = { { text, hl, drop = <higher is dropped first> }, ... }
 local function fit_meta(segs, budget)
 	local keep = vim.deepcopy(segs)
 	local function build()
@@ -1362,12 +1363,12 @@ local function fit_meta(segs, budget)
 			end
 			out[#out + 1] = { s[1], s[2] }
 		end
-		out[#out + 1] = { " " } -- chừa 1 cột trước viền phải
+		out[#out + 1] = { " " } -- 1 column before the right border
 		return out
 	end
 	local meta = build()
 	while meta_width(meta) > budget and #keep > 1 do
-		-- bỏ segment có `drop` lớn nhất (gặp đầu tiên nếu bằng nhau)
+		-- drop the segment with the highest `drop` (the first one on ties)
 		local worst, worst_i = -1, nil
 		for i, s in ipairs(keep) do
 			if (s.drop or 0) > worst then
@@ -1383,36 +1384,36 @@ local function fit_meta(segs, budget)
 	return meta
 end
 
--- Title đứng ngay sau icon; metadata dán LỀ PHẢI bằng extmark right_align nên lề
--- phải luôn thẳng bất kể title dài ngắn (recipe của snacks format.file_git_status).
+-- The title sits right after the icon; metadata is pinned to the RIGHT EDGE with a right_align
+-- extmark, so the right edge stays straight whatever the title length (snacks format.file_git_status recipe).
 --
--- Hai điểm cố ý:
---   * icon dùng virtual = true -> render thành virt_text overlay, buffer thật chỉ
---     có dấu cách => icon KHÔNG lọt vào text mà matcher chấm điểm, cũng không lọt
---     vào yank. (gõ "magic"/"code"/"terminal" sẽ không match nhầm vì icon)
---   * title phải truncate theo (bề rộng list - bề rộng meta) vì nvim KHÔNG tự đẩy
---     right_align virt_text; không trừ là hai bên đè nhau.
+-- Two deliberate points:
+--   * the icon uses virtual = true -> rendered as a virt_text overlay, the real buffer only
+--     has a space => the icon NEVER enters the text the matcher scores, nor
+--     yanks. (typing "magic"/"code"/"terminal" will not mis-match on icons)
+--   * the title must be truncated by (list width - meta width) because nvim does NOT push
+--     right_align virt_text aside; without subtracting they overlap.
 local function format_item(item, picker)
 	local ret = {}
 	local ic = M.icons()
 	local tool = item.tool
 
-	-- icon dài 1 cột + 1 dấu cách -> luôn chiếm đúng 2 cột với cả 3 bộ icon.
+	-- a 1-column icon + 1 space -> always exactly 2 columns with all 3 icon sets.
 	ret[#ret + 1] = { (ic[item.kind] or ic.past) .. " ", KIND_HL[item.kind] or KIND_HL.past, virtual = true }
 
-	-- Cột tool CỐ ĐỊNH bên trái. Trước đây tool nằm trong meta dán lề phải nên rơi
-	-- vào toạ độ khác nhau ở từng dòng -> mắt phải dò ngang từng dòng mới biết tool.
-	-- Để là TEXT THẬT (không virtual): phần highlight match của snacks chạy trên
-	-- text đã render của cả dòng, nên gõ "codex" sẽ highlight luôn ở cột này.
+	-- FIXED tool column on the left. The tool used to sit in the right-aligned meta, so it landed
+	-- at different positions on each row -> the eye had to scan every row to find the tool.
+	-- Kept as REAL TEXT (not virtual): snacks' match highlighting runs over the
+	-- rendered text of the whole line, so typing "codex" highlights this column too.
 	ret[#ret + 1] = {
 		Snacks.picker.util.align(tool_icon(tool) .. " " .. tool.name, TOOL_W),
 		TOOL_HL[tool.name] or "SnacksPickerDimmed",
 	}
 
-	-- segs: metadata theo thứ tự hiển thị; `drop` càng lớn càng bị bỏ trước khi hẹp.
-	-- KHÔNG còn tool ở đây nữa (đã có cột trái) -> nhường chỗ cho title.
+	-- segs: metadata in display order; higher `drop` is dropped first when narrow.
+	-- The tool is NO longer here (it has the left column) -> more room for the title.
 	local segs = {}
-	-- title dựng sẵn ở build_items (item.title là field thật để lọc `title:`).
+	-- title is prebuilt in build_items (item.title is a real field for `title:` filtering).
 	local title, title_hl = item.title or "", "SnacksPickerFile"
 
 	if item.kind == "live" then
@@ -1426,30 +1427,30 @@ local function format_item(item, picker)
 		if e.time and e.time > 0 then
 			segs[#segs + 1] = { Snacks.picker.util.reltime(e.time), "SnacksPickerTime", drop = 1 }
 		end
-		-- Hiện cwd cả ở scope cwd: cho thấy edge case codex/opencode lưu cwd là
-		-- thư mục cha, thay vì để nó gây bối rối ngầm. Bỏ đầu tiên khi hẹp.
+		-- Show cwd even in cwd scope: it exposes the codex/opencode edge case of recording the
+		-- parent dir as cwd, instead of letting it confuse silently. Dropped first when narrow.
 		if e.cwd then
 			segs[#segs + 1] = { vim.fn.fnamemodify(e.cwd, ":~"), "SnacksPickerDir", drop = 3 }
 		end
 	elseif item.kind == "new" then
-		-- cột trái đã ghi tên tool -> title không lặp lại ("New session").
+		-- the left column already names the tool -> the title does not repeat it ("New session").
 		title_hl = "SnacksPickerLabel"
 	elseif item.kind == "install" then
-		-- phải có nhánh riêng: rơi vào else sẽ đọc tool.browse_label -> meta sai.
+		-- needs its own branch: falling into else reads tool.browse_label -> wrong meta.
 		title_hl = "DiagnosticWarn"
 		segs[#segs + 1] = { "install", "DiagnosticWarn", drop = 1 }
 	elseif item.kind == "ecc" then
-		-- cũng phải có nhánh riêng, cùng lý do với install.
+		-- also needs its own branch, same reason as install.
 		title_hl = "SnacksPickerSpecial"
 		segs[#segs + 1] = { "not installed", "SnacksPickerDimmed", drop = 1 }
 	else
-		-- title chỉ là args; binary đã nằm ở cột tool -> đọc thành "claude  --resume".
+		-- the title is just the args; the binary is in the tool column -> reads as "claude  --resume".
 		title_hl = "SnacksPickerCode"
 		segs[#segs + 1] = { tool.browse_label or "own picker", "SnacksPickerSpecial", drop = 1 }
 	end
 
-	-- Đo bề rộng THẬT của list window (win:size() tính lại từ config chứ không
-	-- phải kích thước hiện hành). Chưa mở window thì lấy 80 làm mức an toàn.
+	-- Measure the list window's REAL width (win:size() recomputes from config rather than
+	-- the current size). Before the window opens, 80 is the safe default.
 	local list_w = 80
 	local lwin = picker and picker.list and picker.list.win and picker.list.win.win
 	if lwin and vim.api.nvim_win_is_valid(lwin) then
@@ -1467,19 +1468,19 @@ local function format_item(item, picker)
 		col = 0,
 		virt_text = meta,
 		virt_text_pos = "right_align",
-		hl_mode = "combine", -- không đè mất CursorLine ở dòng đang chọn
+		hl_mode = "combine", -- keeps CursorLine on the selected row
 	}
 	return ret
 end
 
--- Key hints nằm luôn trong viền dưới. Ba điều kiện của snacks phải thoả:
---   * footer PHẢI gắn ở BOX có border: win="list" trong preset default có
---     border="none", mà snacks xoá title/footer của window không border
+-- Key hints live in the bottom border. Three snacks conditions must hold:
+--   * the footer MUST be attached to a BOX with a border: win="list" in the default preset has
+--     border="none", and snacks clears the title/footer of borderless windows
 --     (win.lua M:win_opts).
---   * footer KHÔNG được template hoá (update_titles chỉ đụng title) -> tuple tĩnh.
---   * win:update() re-apply self.opts nên footer dính qua các lần layout update.
--- Ký hiệu phím dùng notation của vim (ASCII thuần): "⏎"/"⌥" không có ở mọi font
--- và "⌥" còn là ký hiệu riêng của macOS, sang Linux/Windows đọc thành sai phím.
+--   * the footer must NOT be templated (update_titles only touches the title) -> static tuple.
+--   * win:update() re-applies self.opts, so the footer survives layout updates.
+-- Key symbols use vim notation (plain ASCII): "⏎"/"⌥" are not in every font,
+-- and "⌥" is macOS-specific, so on Linux/Windows it reads as the wrong key.
 local FOOTER = {
 	{ " <CR> ", "SnacksPickerLabel" },
 	{ "open  ", "SnacksPickerDimmed" },
@@ -1497,9 +1498,9 @@ local FOOTER = {
 	{ "keys ", "SnacksPickerDimmed" },
 }
 
--- Footer riêng cho M.workflows: bộ phím khác hẳn (không resume/fork/delete), mà dùng
--- chung FOOTER thì quảng cáo phím không tồn tại. M-t là phím DUY NHẤT ở picker đó
--- không đoán được từ nội dung, nên bắt buộc phải có mặt.
+-- Footer for M.workflows: a completely different key set (no resume/fork/delete), and sharing
+-- FOOTER would advertise keys that do not exist. M-t is the ONLY key in that picker
+-- that cannot be guessed from the content, so it must be shown.
 local WF_FOOTER = {
 	{ " <CR> ", "SnacksPickerLabel" },
 	{ "run  ", "SnacksPickerDimmed" },
@@ -1526,7 +1527,7 @@ local SKILL_FOOTER = {
 	{ "keys ", "SnacksPickerDimmed" },
 }
 
--- Footer của M.ecc. M-u là phím DUY NHẤT đi mạng trong cả plugin nên phải hiện rõ.
+-- M.ecc footer. M-u is the ONLY key in the whole plugin that hits the network, so it must be visible.
 local ECC_FOOTER = {
 	{ " <CR> ", "SnacksPickerLabel" },
 	{ "run  ", "SnacksPickerDimmed" },
@@ -1536,11 +1537,11 @@ local ECC_FOOTER = {
 	{ "keys ", "SnacksPickerDimmed" },
 }
 
--- Tự khai layout.layout thì snacks BỎ QUA toàn bộ preset resolution
--- (config/init.lua: `if not (layout.layout and layout.layout[1])`), nghĩa là mất
--- luôn fallback sang "vertical" khi terminal hẹp. Nên phải tự branch, dùng đúng
--- ngưỡng 120 cột mà preset mặc định của snacks đang dùng.
----@param footer table[] key hints của chính picker gọi nó (xem FOOTER / WF_FOOTER)
+-- Declaring layout.layout makes snacks SKIP all preset resolution
+-- (config/init.lua: `if not (layout.layout and layout.layout[1])`), which also loses
+-- the fallback to "vertical" in narrow terminals. So branch here, using the same
+-- 120-column threshold snacks' default preset uses.
+---@param footer table[] key hints of the calling picker (see FOOTER / WF_FOOTER)
 local function build_layout(footer)
 	if vim.o.columns < 120 then
 		return {
@@ -1581,8 +1582,8 @@ local function build_layout(footer)
 	}
 end
 
--- Thứ tự nhóm: live -> past (mới nhất trước) -> new -> browse. Giữ được khi prompt
--- rỗng vì snacks default matcher.sort_empty = false -> không cần sort riêng.
+-- Group order: live -> past (newest first) -> new -> browse. Holds with an empty prompt
+-- because snacks' default matcher.sort_empty = false -> no extra sort needed.
 local function build_items(all_dirs)
 	local items = {}
 
@@ -1593,28 +1594,28 @@ local function build_items(all_dirs)
 				session = s,
 				tool = s.tool,
 				cwd = s.cwd,
-				-- item.text là BẮT BUỘC: matcher score theo nó.
+				-- item.text is REQUIRED: the matcher scores on it.
 				text = table.concat({ "live", s.tool.name, s.id, s.title or "" }, " "),
 			}
 		end
 	end
 
-	-- KHÔNG viết `all_dirs and nil or cwd`: nil là falsy nên nhánh and sập, biểu
-	-- thức luôn trả cwd -> scope "all dirs" không bao giờ có tác dụng. Dùng if.
+	-- Do NOT write `all_dirs and nil or cwd`: nil is falsy, so the and branch collapses and the
+	-- expression always returns cwd -> the "all dirs" scope never takes effect. Use if.
 	local scope_cwd
 	if not all_dirs then
-		-- scope_cwd() trả cwd RAW; history tự thêm realpath vào tập ứng viên nên
-		-- khớp cả path mount (vd /app trong container) lẫn realpath.
+		-- scope_cwd() returns the RAW cwd; history adds the realpath to the candidate set, so
+		-- both the mount path (e.g. /app in a container) and the realpath match.
 		scope_cwd = history().scope_cwd()
 	end
 
-	-- Session live đang chạy cũng ĐƯỢC CHÍNH TOOL GHI VÀO ĐĨA (claude jsonl,
-	-- codex threads, opencode session) nên history() sẽ trả lại chính nó ở nhóm
-	-- past -> cùng một session hiện 2 dòng (1 live + 1 past cùng tên). Loại bỏ
-	-- mục past trùng khỏi picker:
-	--   * entry có (tool, id) khớp real_id của session live -> resume biết trước.
-	--   * session new/fork/browse chưa biết id -> tự dò entry cùng tool trong list,
-	--     mới nhất chưa ai chiếm, thời điểm >= lúc launch; pin lại ngay lần đầu.
+	-- A running live session IS ALSO WRITTEN TO DISK BY THE TOOL ITSELF (claude jsonl,
+	-- codex threads, opencode session), so history() returns it again in the
+	-- past group -> one session shows 2 rows (1 live + 1 past with the same name). Drop
+	-- the duplicate past entries from the picker:
+	--   * an entry whose (tool, id) matches a live session's real_id -> resume knew it up front.
+	--   * new/fork/browse sessions with an unknown id -> find an entry of the same tool in the list,
+	--     the newest unclaimed one, at or after launch time; pin it on the first match.
 	local function tool_key(tool_name, id)
 		return tool_name .. "\0" .. tostring(id)
 	end
@@ -1623,8 +1624,8 @@ local function build_items(all_dirs)
 	for _, s in ipairs(sessions) do
 		if is_alive(s) then
 			if s.real_id then
-				-- id đã biết -> giữ chỗ trước để discovery của session khác không
-				-- cướp mất entry của mình.
+				-- id already known -> claim it first so another session's discovery cannot
+				-- steal this entry.
 				claimed[s.real_id] = true
 			else
 				local best, best_d
@@ -1649,24 +1650,24 @@ local function build_items(all_dirs)
 
 	for _, e in ipairs(hist) do
 		local tool = find_tool(e.tool)
-		-- KHÔNG thêm mục past trùng với session đang chạy (đã ở nhóm live).
+		-- Do NOT add past entries that duplicate a running session (already in the live group).
 		if tool and not live_ids[tool_key(e.tool, e.id)] then
 			items[#items + 1] = {
 				kind = "past",
 				tool = tool,
 				entry = e,
 				cwd = e.cwd,
-				-- nhồi tool + title + cwd + branch + id -> query "codex redis" và
-				-- "dotfiles main" đều trúng. KHÔNG dùng item.file cho e.jsonl:
-				-- matcher.filename_bonus sẽ cho điểm cộng filename giả.
+				-- pack tool + title + cwd + branch + id -> queries "codex redis" and
+				-- "dotfiles main" both hit. Do NOT use item.file for e.jsonl:
+				-- matcher.filename_bonus would award a fake filename bonus.
 				text = table.concat({ e.tool, e.title or "", e.cwd or "", e.branch or "", e.id }, " "),
 			}
 		end
 	end
 
-	-- Tool chưa cài mà có script cài -> thay new + browse bằng ĐÚNG 1 dòng install.
-	-- Bấm vào new/browse của tool chưa cài chỉ ra "binary not found" nên giữ lại
-	-- chúng chỉ tạo dòng chết. Tính trạng thái một lần rồi dùng cho cả hai vòng.
+	-- Tool not installed but has an install script -> replace new + browse with EXACTLY 1 install row.
+	-- Pressing new/browse of a missing tool only yields "binary not found", so keeping
+	-- them just adds dead rows. Compute the state once and use it for both loops.
 	local needs_install = {}
 	for _, t in ipairs(M.config.tools) do
 		needs_install[t.name] = tool_cmd(t) == nil and t.install ~= nil
@@ -1685,8 +1686,8 @@ local function build_items(all_dirs)
 		end
 	end
 
-	-- Đã có binary nhưng chưa có command của ECC -> mời cài. Cài xong dò lại thấy có
-	-- command nên dòng này tự biến mất; đường cập nhật về sau là M.ecc() (<leader>aE).
+	-- Binary present but no ECC commands -> offer an install. After installing, the re-scan finds
+	-- commands so this row disappears; later updates go through M.ecc() (<leader>aE).
 	for _, t in ipairs(M.config.tools) do
 		if not needs_install[t.name] then
 			local e = ecc()
@@ -1696,9 +1697,9 @@ local function build_items(all_dirs)
 		end
 	end
 
-	-- item.title là field THẬT trên item, không phải chỉ để hiển thị: matcher lọc
-	-- `title:redis` bằng item[field] (matcher.lua M:match -> item[mods.field]),
-	-- chứ KHÔNG đọc text đã render. Không set ở đây thì `title:` luôn ra 0 kết quả.
+	-- item.title is a REAL field on the item, not just for display: the matcher filters
+	-- `title:redis` via item[field] (matcher.lua M:match -> item[mods.field]),
+	-- NOT the rendered text. Without it here `title:` always yields 0 results.
 	for _, it in ipairs(items) do
 		if it.kind == "live" then
 			it.title = it.session.title or it.session.id
@@ -1707,15 +1708,15 @@ local function build_items(all_dirs)
 		elseif it.kind == "new" then
 			it.title = "New session"
 		elseif it.kind == "install" then
-			-- nhánh riêng: else phía dưới trả browse args -> sai cho install.
+			-- own branch: the else below returns browse args -> wrong for install.
 			it.title = "not installed"
 		elseif it.kind == "ecc" then
 			it.title = "Add ECC skills & commands"
 		else
 			it.title = table.concat(it.tool.browse or {}, " ")
 		end
-		-- preview_text trả sẵn { text, extmarks }. KHÔNG đặt ft: bố cục là bảng canh
-		-- cột, để markdown vào thì dòng thụt lề bị hiểu thành code block.
+		-- preview_text returns { text, extmarks }. NO ft: the layout is a column-aligned
+		-- table, and markdown would read indented lines as code blocks.
 		it.preview = preview_text(it)
 	end
 	return items
@@ -1723,7 +1724,7 @@ end
 
 -- public -----------------------------------------------------------------
 
--- Tạo session mới cho tool (theo tên) rồi attach. Dùng cho lệnh/keymap tạo nhanh.
+-- Create a new session for a tool (by name) and attach. Used by quick-create commands/keymaps.
 ---@param name string
 ---@param opts? { args?: string[], cwd?: string, title?: string }
 function M.open(name, opts)
@@ -1737,8 +1738,8 @@ function M.open(name, opts)
 	attach(new_session(tool, opts))
 end
 
---- Resume một session cũ trên đĩa vào pane AI.
----@param e table entry từ aiterm_history.list()
+--- Resume an old on-disk session into the AI pane.
+---@param e table entry from aiterm_history.list()
 function M.resume(e)
 	local tool = e and find_tool(e.tool)
 	if not (tool and tool.resume) then
@@ -1748,7 +1749,7 @@ function M.resume(e)
 	attach(new_session(tool, { args = tool.resume(e.id), cwd = e.cwd, title = e.title, real_id = e.id }))
 end
 
--- Resume session mới nhất của cwd, không qua picker. Chưa có gì -> mở picker.
+-- Resume the newest session of the cwd, without the picker. Nothing yet -> open the picker.
 function M.resume_last()
 	local e = history().list(history().scope_cwd(), 1)[1]
 	if not e then
@@ -1757,37 +1758,37 @@ function M.resume_last()
 	M.resume(e)
 end
 
--- Chẩn đoán vì sao picker không thấy session (cwd scoping / thiếu sqlite3...).
+-- Diagnose why the picker does not see a session (cwd scoping / missing sqlite3...).
 function M.doctor()
-	-- Mục ECC nối vào cùng buffer với history doctor. Có nó vì trạng thái "installer
-	-- chạy xong rồi mà tool vẫn không thấy command" (opencode dàn file ra ~/.opencode,
-	-- không phải chỗ nó đọc) nhìn y hệt "chưa cài" - không có cách nào tự phát hiện.
+	-- The ECC section is appended to the same buffer as the history doctor. It exists because
+	-- "the installer finished but the tool still sees no commands" (opencode lays files out in ~/.opencode,
+	-- not where it reads) looks exactly like "not installed" - there is no way to detect it automatically.
 	local e = ecc()
 	local lines
 	if e then
-		lines = { "## ECC (skills/commands cho AI tool)", "clone       : " .. e.dir() }
+		lines = { "## ECC (skills/commands for AI tools)", "clone       : " .. e.dir() }
 		for _, t in ipairs(M.config.tools) do
 			local n = e.count(t.name)
-			-- commands = quy trình cấp repo (<leader>aw); skills = tài liệu áp lên đoạn
-			-- code đang chọn (<leader>ai). Hai con số này lệch nhau là bình thường.
+			-- commands = repo-level workflows (<leader>aw); skills = docs applied to the selected
+			-- code (<leader>ai). These two numbers differing is normal.
 			local sk = vim.tbl_count(e.skills(t.name))
 			local dir = e.source_dirs(t.name)[1] or "?"
 			lines[#lines + 1] = ("%-12s: %3d commands  %3d skills  %s"):format(t.name, n, sk, dir)
 			local pinned, pn = e.anthropic_pins(t.name)
 			if pinned then
-				lines[#lines + 1] = ("%-12s  ! %d chỗ pin model anthropic/* trong %s"):format("", pn, pinned)
-				lines[#lines + 1] = ("%-12s    -> chạy lại <leader>aE để gỡ pin"):format("")
+				lines[#lines + 1] = ("%-12s  ! %d anthropic/* model pin(s) in %s"):format("", pn, pinned)
+				lines[#lines + 1] = ("%-12s    -> run <leader>aE again to remove the pins"):format("")
 			end
 		end
-		lines[#lines + 1] = "Gợi ý: 0 commands -> <leader>ai gửi prompt viết tay thay cho /command."
-		lines[#lines + 1] = "Cài/cập nhật bằng <leader>aE, hoặc dòng ECC trong picker <leader>aa."
+		lines[#lines + 1] = "Hint: 0 commands -> <leader>ai sends a hand-written prompt instead of a /command."
+		lines[#lines + 1] = "Install/update with <leader>aE, or the ECC row in the <leader>aa picker."
 	else
 		lines = {
-			"## ECC (skills/commands cho AI tool)",
-			"module 'customize.aiterm_ecc' không tải được - bỏ qua mục này.",
+			"## ECC (skills/commands for AI tools)",
+			"module 'customize.aiterm_ecc' failed to load - section skipped.",
 		}
 	end
-	-- Trạng thái treehouse / no-mistakes / gnhf / firstmate (<leader>ap/ag/aW/aF).
+	-- treehouse / no-mistakes / gnhf / firstmate status (<leader>ap/ag/aW/aF).
 	local ok_flow, flow = pcall(require, "customize.aiterm_flow")
 	if ok_flow then
 		vim.list_extend(lines, flow.doctor_lines())
@@ -1795,7 +1796,7 @@ function M.doctor()
 	history().doctor(lines)
 end
 
---- Picker chính: live session + session cũ trên đĩa + tạo mới + fallback.
+--- Main picker: live sessions + old on-disk sessions + create new + fallback.
 ---@param opts? { scope?: "cwd"|"all" }
 function M.pick(opts)
 	if not (_G.Snacks and Snacks.picker) then
@@ -1805,7 +1806,7 @@ function M.pick(opts)
 	ensure_hl()
 	local scope = (opts and opts.scope) or M.config.history.scope
 
-	-- Đóng picker TRƯỚC rồi mới mở terminal: tránh tranh chấp focus với pane AI.
+	-- Close the picker BEFORE opening the terminal: avoids a focus fight with the AI pane.
 	local function run(picker, fn)
 		picker:close()
 		vim.schedule(fn)
@@ -1813,11 +1814,11 @@ function M.pick(opts)
 
 	Snacks.picker({
 		title = "AI Sessions",
-		-- Scope là một opt BOOLEAN, không phải upvalue closure. snacks tự sinh
-		-- action `toggle_all_dirs` + hl group cho mỗi entry trong toggles, và
-		-- `{flags}` trong title tự chèn badge khi all_dirs = true.
-		-- Quan trọng: finder đọc opts.all_dirs (tham số đầu CHÍNH LÀ picker.opts)
-		-- nên chỉ có một đường đọc state -> hết cả lớp bug "title đổi mà list không".
+		-- Scope is a BOOLEAN opt, not a closure upvalue. snacks generates the
+		-- `toggle_all_dirs` action + an hl group for each toggles entry, and
+		-- `{flags}` in the title inserts a badge when all_dirs = true.
+		-- Important: the finder reads opts.all_dirs (its first parameter IS picker.opts),
+		-- so there is a single path reading the state -> no more "title changed but the list did not" bugs.
 		all_dirs = scope == "all",
 		toggles = { all_dirs = { icon = M.icons().all_dirs, value = true } },
 		finder = function(popts)
@@ -1851,13 +1852,13 @@ function M.pick(opts)
 			end)
 		end,
 		actions = {
-			-- <C-x>: bỏ qua resume, mở session TRẮNG cùng tool + cùng cwd của item.
+			-- <C-x>: skip resume, open a BLANK session with the item's tool + cwd.
 			aiterm_fresh = function(picker, item)
 				if not item then
 					return
 				end
-				-- trên dòng install thì new_session chỉ ra "binary not found"
-				-- -> chuyển sang cài luôn, để <C-x> không thành đường chết.
+				-- on an install row new_session only yields "binary not found"
+				-- -> install instead, so <C-x> is not a dead end.
 				if item.kind == "install" then
 					run(picker, function()
 						install_tool(item.tool)
@@ -1875,7 +1876,7 @@ function M.pick(opts)
 					attach(new_session(item.tool, { cwd = cwd }))
 				end)
 			end,
-			-- <C-o>: fork session cũ -> không ghi tiếp vào history gốc.
+			-- <C-o>: fork an old session -> the original history is not appended to.
 			aiterm_fork = function(picker, item)
 				if not (item and item.kind == "past" and item.tool.fork) then
 					return
@@ -1889,8 +1890,8 @@ function M.pick(opts)
 					}))
 				end)
 			end,
-			-- Tab đánh dấu nhiều session; Esc rồi dd xóa các session cũ đã chọn.
-			-- Codex archive hoàn tác được; opencode/claude KHÔNG -> confirm mặc định No.
+			-- Tab marks several sessions; Esc then dd deletes the selected old sessions.
+			-- Codex archive is undoable; opencode/claude are NOT -> confirm defaults to No.
 			aiterm_delete = function(picker, item)
 				local marked = picker:selected()
 				local candidates = #marked > 0 and marked or (item and { item } or {})
@@ -1952,13 +1953,13 @@ function M.pick(opts)
 				notify(summary, #failed > 0 and "warn" or "info")
 			end,
 		},
-		-- `desc` không phải trang trí: overlay `?` (toggle_help_input) đọc keymap
-		-- THẬT của buffer và render desc. Không đặt thì snacks tự suy từ tên action
-		-- ("aiterm_fresh" -> "aiterm fresh"), đọc rất xấu.
-		-- `?` mặc định chỉ chạy ở normal mode, mà picker mở ra là insert -> thêm
-		-- <a-?> để xem key ngay khi đang gõ (không map `?` cho insert vì nó sẽ gõ
-		-- luôn dấu ? vào query).
-		-- desc <= ~18 ký tự: overlay help của snacks.win cắt ở col_width mặc định.
+		-- `desc` is not decoration: the `?` overlay (toggle_help_input) reads the buffer's
+		-- REAL keymaps and renders desc. Without it snacks derives one from the action name
+		-- ("aiterm_fresh" -> "aiterm fresh"), which reads badly.
+		-- `?` only works in normal mode by default, but the picker opens in insert -> add
+		-- <a-?> to see keys while typing (`?` is not mapped in insert since it would type
+		-- a ? into the query).
+		-- desc <= ~18 chars: snacks.win's help overlay cuts at the default col_width.
 		win = {
 			input = {
 				keys = {
@@ -1982,8 +1983,8 @@ function M.pick(opts)
 	})
 end
 
--- <C-w>p trong editor: focus pane nếu đang mở; nếu không -> attach session gần nhất
--- hoặc session còn sống đầu tiên; chưa có gì -> mở picker.
+-- <C-w>p in the editor: focus the pane if open; otherwise attach the most recent session
+-- or the first live one; nothing yet -> open the picker.
 function M.focus()
 	if win_valid() then
 		vim.api.nvim_set_current_win(win)
@@ -2009,7 +2010,7 @@ function M.focus()
 	end
 end
 
--- Chỉ focus AI nếu nó là cửa sổ liền bên phải; caller giữ điều hướng gốc nếu false.
+-- Focus AI only if it is the window directly to the right; the caller keeps the original navigation on false.
 function M.focus_if_right()
 	if not win_valid() or vim.api.nvim_get_current_win() == win or vim.fn.win_getid(vim.fn.winnr("l")) ~= win then
 		return false
@@ -2018,20 +2019,20 @@ function M.focus_if_right()
 	return true
 end
 
--- Ẩn pane AI: ĐÓNG window nhưng KHÔNG đụng tới job.
--- Buffer để bufhidden="hide" nên terminal chạy tiếp dưới nền; <C-w>p / <leader>aa
--- attach lại đúng session đó (nó vẫn nằm trong `sessions`, is_alive vẫn true).
--- Gọi được từ bất kỳ đâu, không cần đang focus trong pane.
+-- Hide the AI pane: CLOSE the window but do NOT touch the job.
+-- The buffer has bufhidden="hide", so the terminal keeps running in the background; <C-w>p / <leader>aa
+-- reattach that same session (it stays in `sessions`, is_alive is still true).
+-- Callable from anywhere, no need to be focused in the pane.
 function M.hide()
 	if not win_valid() then
 		return
 	end
-	-- nvim_win_close lỗi "cannot close last window" nếu đây là window duy nhất.
+	-- nvim_win_close errors with "cannot close last window" if this is the only window.
 	if #vim.api.nvim_tabpage_list_wins(0) <= 1 then
 		notify("cannot hide: AI pane is the only window", "warn")
 		return
 	end
-	-- rời terminal-mode trước, nếu không con trỏ kẹt lại ở insert sau khi đóng.
+	-- leave terminal mode first, otherwise the cursor stays stuck in insert after closing.
 	if vim.api.nvim_get_current_win() == win and vim.fn.mode() == "t" then
 		vim.cmd("stopinsert")
 	end
@@ -2039,15 +2040,15 @@ function M.hide()
 	win = nil
 end
 
--- Đóng pane AI trước khi auto-session lưu: tránh mksession ghi buffer terminal ->
--- setlocal buftype=terminal (E474) làm hỏng restore. Job chết theo nvim khi thoát
--- nên không cần giữ. Đảm bảo không phải window cuối để nvim_win_close không lỗi.
+-- Close the AI pane before auto-session saves: keeps mksession from writing the terminal buffer ->
+-- setlocal buftype=terminal (E474) breaks restore. The job dies with nvim on exit,
+-- so nothing needs keeping. Make sure it is not the last window so nvim_win_close does not error.
 function M.close_for_session()
 	if not win_valid() then
 		return
 	end
 	if #vim.api.nvim_tabpage_list_wins(0) <= 1 then
-		vim.cmd("new") -- chừa 1 window trống để đóng được pane
+		vim.cmd("new") -- leave 1 empty window so the pane can close
 	end
 	if vim.api.nvim_get_current_win() == win and vim.fn.mode() == "t" then
 		vim.cmd("stopinsert")
@@ -2056,15 +2057,15 @@ function M.close_for_session()
 	win = nil
 end
 
--- Rời focus khỏi pane nhưng GIỮ pane mở. Đây là hành vi của <C-Space> trong
--- terminal-mode (map thẳng tới <C-w>p, không đi qua hàm này).
+-- Move focus off the pane but KEEP it open. This is <C-Space>'s behavior in
+-- terminal mode (mapped straight to <C-w>p, not through this function).
 function M.blur()
 	if win_valid() and vim.api.nvim_get_current_win() == win then
 		vim.cmd("wincmd p")
 	end
 end
 
--- Toggle: pane đang mở -> ẩn; chưa mở -> focus/attach.
+-- Toggle: pane open -> hide; not open -> focus/attach.
 function M.toggle()
 	if win_valid() then
 		M.hide()
@@ -2073,22 +2074,22 @@ function M.toggle()
 	end
 end
 
--- code interaction (ask / explain ... kiểu CodeCompanion) ------------------
--- Không cần plugin LLM: aiterm chạy CLI trong PTY nên "tương tác source code" =
--- dựng message (file/selection + instruction) rồi CHANSEND vào job của session.
+-- code interaction (ask / explain ... CodeCompanion style) ------------------
+-- No LLM plugin needed: aiterm runs CLIs in a PTY, so "interacting with source code" =
+-- building a message (file/selection + instruction) and CHANSENDing it to the session's job.
 
--- default tool (chuỗi fallback + override lưu qua các lần khởi động) ------
--- default_override: tên tool người dùng chốt (qua M.set_default_tool / <leader>aD),
--- đọc lại từ state file lúc require. Ưu tiên hơn M.config.send.default_tools.
+-- default tool (fallback list + override persisted across startups) ------
+-- default_override: the tool name the user pinned (via M.set_default_tool / <leader>aD),
+-- read back from the state file on require. Takes priority over M.config.send.default_tools.
 local default_override
-local refresh_hints -- forward-declare: định nghĩa ở mục inline hints bên dưới
+local refresh_hints -- forward declaration: defined in the inline hints section below
 
 local function state_file()
 	return vim.fs.joinpath(vim.fn.stdpath("state"), "aiterm-default-tool")
 end
 
--- Tool để auto-tạo session: override (nếu hợp lệ) trước, rồi tool ĐÃ CÀI đầu tiên
--- trong default_tools; không cái nào cài -> tool hợp lệ đầu (new_session sẽ gợi ý cài).
+-- Tool for auto-created sessions: the override (if valid) first, then the first INSTALLED tool
+-- in default_tools; none installed -> the first valid tool (new_session will suggest installing).
 local function resolve_default_tool()
 	local order, first = {}, nil
 	if default_override then
@@ -2107,14 +2108,14 @@ local function resolve_default_tool()
 	return first or M.config.tools[1]
 end
 
--- Tên tool mặc định (cùng luật với picker/send) cho module ngoài, vd aiterm_flow
--- mở session trong worktree treehouse.
+-- Default tool name (same rules as picker/send) for external modules, e.g. aiterm_flow
+-- opening a session in a treehouse worktree.
 ---@return string
 function M.default_tool_name()
 	return resolve_default_tool().name
 end
 
--- Đọc lựa chọn đã lưu (pcall-safe: file thiếu/rác -> không override).
+-- Read the saved choice (pcall-safe: missing/garbage file -> no override).
 local function load_default()
 	local ok, lines = pcall(vim.fn.readfile, state_file())
 	local name = ok and lines[1] and vim.trim(lines[1]) or ""
@@ -2123,9 +2124,9 @@ local function load_default()
 	end
 end
 
--- favorites (pin) cho picker skill/command --------------------------------
--- Ghim theo TÊN, tách theo kind ("skills"/"commands"). Lưu qua các lần mở nvim, cùng
--- khuôn state file như default tool. Picker mặc định chỉ hiện mục đã ghim (xem M.skill_pick).
+-- favorites (pins) for the skill/command picker --------------------------
+-- Pins by NAME, split by kind ("skills"/"commands"). Persisted across nvim runs, same
+-- state file shape as the default tool. The picker shows only pinned entries by default (see M.skill_pick).
 local fav = { skills = {}, commands = {} } -- kind -> { name -> true }
 local function fav_file()
 	return vim.fs.joinpath(vim.fn.stdpath("state"), "aiterm-favorites.json")
@@ -2152,7 +2153,7 @@ local function fav_count(kind)
 	return vim.tbl_count(fav[kind])
 end
 
---- Chốt tool mặc định (auto-tạo) và LƯU qua các lần khởi động.
+--- Pin the default (auto-create) tool and PERSIST it across startups.
 ---@param name string
 function M.set_default_tool(name)
 	if not find_tool(name) then
@@ -2164,7 +2165,7 @@ function M.set_default_tool(name)
 	notify("AI default tool: " .. name, "info")
 end
 
---- Menu chọn tool mặc định (<leader>aD), có icon + đánh dấu (current).
+--- Default tool menu (<leader>aD), with icons + a (current) marker.
 function M.pick_default()
 	local ic, names = M.icons(), {}
 	for _, t in ipairs(M.config.tools) do
@@ -2178,21 +2179,21 @@ function M.pick_default()
 	}, function(choice)
 		if choice then
 			M.set_default_tool(choice)
-			refresh_hints() -- badge phản ánh ngay tool vừa chọn
+			refresh_hints() -- the badge reflects the just-picked tool immediately
 		end
 	end)
 end
 
--- Session còn sống mà thao tác gửi sẽ nhắm tới. Ưu tiên:
---   1. session đang hiển thị trong pane AI (nếu pane đang focus)
---   2. last_session nếu còn sống
---   3. session còn sống đầu tiên
--- Trả nil nếu không có session nào sống. KHÔNG tự tạo: M.send cần biết "chưa có
--- session" để nhúng prompt vào lệnh launch thay vì paste vào TUI đang boot.
--- `tool` (tuỳ chọn) khoá kết quả về đúng tool đó. Cần cho M.workflows: lệnh ECC có
--- tiền tố riêng từng tool (/ecc-code-review của codex), dán nhầm vào session opencode
--- là gửi đi một dòng chữ vô nghĩa. Lọc phải áp cho CẢ BA nhánh - sót một nhánh là nó
--- lặng lẽ trả về session sai tool.
+-- The live session a send targets. Priority:
+--   1. the session shown in the AI pane (if the pane is focused)
+--   2. last_session if alive
+--   3. the first live session
+-- Returns nil when no session is alive. Does NOT create one: M.send needs to know "no
+-- session" to embed the prompt in the launch command instead of pasting into a booting TUI.
+-- `tool` (optional) restricts the result to that tool. Needed by M.workflows: ECC commands have
+-- per-tool prefixes (codex's /ecc-code-review), and pasting into an opencode session by mistake
+-- sends a meaningless line. The filter must apply to ALL THREE branches - missing one makes it
+-- silently return a session of the wrong tool.
 local function target_session(tool)
 	local function usable(s)
 		return is_alive(s) and (tool == nil or s.tool == tool)
@@ -2214,11 +2215,11 @@ local function target_session(tool)
 			return cand
 		end
 	end
-	return nil -- CHỈ tìm, không tạo: M.send tự quyết cách tạo (xem M.send).
+	return nil -- ONLY looks, never creates: M.send decides how to create (see M.send).
 end
 
--- Chữ ký nội dung terminal để phát hiện "đã vẽ xong rồi im" (quiescence): số dòng
--- + vài dòng cuối. Đủ nhạy để thấy CLI in gì đó, đủ rẻ để poll mỗi ~120ms.
+-- Terminal content signature to detect "finished drawing, now quiet" (quiescence): line count
+-- + the last few lines. Sensitive enough to see the CLI print something, cheap enough to poll every ~120ms.
 local function term_signature(buf)
 	if not vim.api.nvim_buf_is_valid(buf) then
 		return nil
@@ -2227,9 +2228,9 @@ local function term_signature(buf)
 	return n .. "\0" .. table.concat(vim.api.nvim_buf_get_lines(buf, math.max(0, n - 3), n, false), "\n")
 end
 
--- Chờ session "sẵn sàng" rồi gọi cb. Sẵn sàng = ĐÃ thấy terminal đổi khác lúc mới
--- mở (CLI in gì đó -> đã boot) VÀ nội dung im quiet_ms, sau khi qua min_ms; hết
--- max_ms thì flush luôn. Thay cho delay cố định cũ (gửi sớm -> mất/lộn xộn request).
+-- Wait for the session to be "ready", then call cb. Ready = the terminal HAS changed since it
+-- opened (the CLI printed something -> booted) AND the content stayed quiet for quiet_ms, after min_ms;
+-- at max_ms flush anyway. Replaces the old fixed delay (sending early -> lost/garbled requests).
 local function when_ready(session, cb)
 	local r = M.config.send.ready
 	local start = vim.uv.now()
@@ -2267,26 +2268,26 @@ local function when_ready(session, cb)
 	)
 end
 
--- Bracketed paste: TUI coi cả block (kể cả xuống dòng) là MỘT lần dán, không
--- submit từng dòng. \27[200~ ... \27[201~ là mã chuẩn của bracketed-paste.
+-- Bracketed paste: the TUI treats the whole block (newlines included) as ONE paste and does not
+-- submit line by line. \27[200~ ... \27[201~ are the standard bracketed-paste codes.
 local function chan_paste(job, text)
 	vim.fn.chansend(job, "\27[200~" .. text .. "\27[201~")
 end
 
---- Gửi text vào session AI đang chạy (tạo mới nếu chưa có), tuỳ chọn submit luôn.
+--- Send text to the running AI session (creating one if needed), optionally submitting it.
 ---@param text string
 ---@param opts? { submit?: boolean, tool?: table }
 function M.send(text, opts)
 	opts = opts or {}
-	-- opts.tool: khoá đích về đúng tool (M.workflows). Không truyền -> hành vi y hệt
-	-- trước: bất kỳ session nào đang sống.
-	local session = target_session(opts.tool) -- CHỈ tìm session đang sống
+	-- opts.tool: restrict the target to that tool (M.workflows). Omitted -> same behavior as
+	-- before: any live session.
+	local session = target_session(opts.tool) -- ONLY finds a live session
 
 	if not session then
-		-- ĐƯỜNG CHÍNH khi chưa có session: nhúng prompt thẳng vào lệnh launch.
-		-- Không paste => không có đua tranh với lúc TUI đang boot. Đây là chỗ từng
-		-- mất request: opencode boot chậm, paste rơi vào giữa lúc nó còn đang đàm
-		-- phán capability với terminal nên request bay mất và tiến trình thoát.
+		-- MAIN PATH when there is no session: embed the prompt straight in the launch command.
+		-- No paste => no race with the TUI booting. This is where requests used to get
+		-- lost: opencode boots slowly, the paste landed while it was still negotiating
+		-- capabilities with the terminal, so the request vanished and the process exited.
 		local tool = opts.tool or resolve_default_tool()
 		if tool.prompt_args and #text <= M.config.send.max_arg_bytes then
 			attach(new_session(tool, {
@@ -2296,23 +2297,23 @@ function M.send(text, opts)
 			}))
 			return
 		end
-		-- Tool không hỗ trợ prompt lúc launch, hoặc message quá to cho argv
-		-- -> quay về đường cũ: tạo, chờ boot, rồi paste.
+		-- The tool does not support a launch prompt, or the message is too big for argv
+		-- -> old path: create, wait for boot, then paste.
 		session = new_session(tool, { cwd = history().project_cwd() })
 		if not session then
-			return -- new_session đã notify lý do (binary not found ...)
+			return -- new_session already notified the reason (binary not found ...)
 		end
 		session.ready = false
 	end
 
-	attach(session) -- mở + focus pane; job nhận input bất kể focus nên không đua.
+	attach(session) -- open + focus the pane; the job takes input regardless of focus, so no race.
 	local function deliver()
 		if not is_alive(session) then
 			return
 		end
 		chan_paste(session.job, text)
 		if opts.submit then
-			-- Enter tách khỏi paste một nhịp: Ink của claude cần kịp xử lý paste.
+			-- Enter one beat after the paste: claude's Ink needs time to process the paste.
 			vim.defer_fn(function()
 				if is_alive(session) then
 					vim.fn.chansend(session.job, "\r")
@@ -2320,9 +2321,9 @@ function M.send(text, opts)
 			end, M.config.send.submit_delay)
 		end
 	end
-	-- session vừa tạo (ready=false): CLI chưa boot xong -> gửi sớm là mất/lộn xộn
-	-- (bracketed-paste chưa bật). Chờ terminal vẽ xong + im rồi mới gửi; flip ready
-	-- để lần gửi sau tới cùng session là tức thì. Session cũ (ready=nil) gửi ngay.
+	-- just-created session (ready=false): the CLI has not finished booting -> sending early is lost/garbled
+	-- (bracketed paste not enabled yet). Wait until the terminal is drawn + quiet before sending; flip ready
+	-- so later sends to the same session are instant. Old sessions (ready=nil) send immediately.
 	if session.ready == false then
 		notify(("waiting for %s to start…"):format(session.tool.name), "info")
 		when_ready(session, function()
@@ -2334,10 +2335,10 @@ function M.send(text, opts)
 	end
 end
 
--- Node treesitter bao con trỏ ở window hiện tại, đi ngược lên tới type khớp
--- M.config.ts_node_types. nil nếu buffer không có parser hoặc con trỏ ở top-level.
+-- Treesitter node around the cursor in the current window, walking up to a type matching
+-- M.config.ts_node_types. nil when the buffer has no parser or the cursor is at top level.
 local function enclosing_node()
-	local ok, node = pcall(vim.treesitter.get_node) -- mặc định con trỏ + curbuf
+	local ok, node = pcall(vim.treesitter.get_node) -- defaults to cursor + curbuf
 	if not ok or not node then
 		return nil
 	end
@@ -2353,11 +2354,11 @@ local function enclosing_node()
 	return nil
 end
 
--- Bắt context TẠI THỜI ĐIỂM gọi (phải còn trong visual mode để đọc selection).
--- Keymap bằng Lua function giữ nguyên visual mode nên getpos('v')/getpos('.') đọc
--- được vùng chọn. Buffer scratch/không tên -> bỏ @ref, chỉ giữ code (nếu có).
+-- Capture context AT CALL TIME (still in visual mode, to read the selection).
+-- A Lua function keymap keeps visual mode, so getpos('v')/getpos('.') can read
+-- the selection. Scratch/unnamed buffer -> drop the @ref, keep only the code (if any).
 local function capture_context()
-	local file = vim.fn.expand("%:.") -- tương đối với cwd; "" nếu chưa đặt tên
+	local file = vim.fn.expand("%:.") -- relative to cwd; "" when unnamed
 	if file == "" then
 		file = nil
 	end
@@ -2374,18 +2375,18 @@ local function capture_context()
 			l2 = math.max(a[2], b[2]),
 		}
 	end
-	-- normal mode: thử lấy function/class dưới con trỏ qua treesitter (act-on-scope
-	-- kiểu CodeCompanion); ở top-level / không parser -> fallback @ref cả file.
+	-- normal mode: try the function/class under the cursor via treesitter (CodeCompanion-style
+	-- act-on-scope); at top level / without a parser -> fall back to @ref of the whole file.
 	local node = enclosing_node()
 	if node then
-		local sr, _, er = node:range() -- row 0-indexed, er tính cả dòng cuối của node
+		local sr, _, er = node:range() -- 0-indexed rows, er includes the node's last line
 		local lines = vim.api.nvim_buf_get_lines(0, sr, er + 1, false)
 		return { file = file, lang = lang, code = table.concat(lines, "\n"), l1 = sr + 1, l2 = er + 1 }
 	end
 	return { file = file, lang = lang }
 end
 
--- Message hybrid: @ref (agent tự đọc cả file) + fenced block ghim đúng dòng đã chọn.
+-- Hybrid message: @ref (the agent reads the whole file) + a fenced block pinned to the selected lines.
 local function build_message(instruction, ctx)
 	local l = { instruction, "" }
 	if ctx.file then
@@ -2399,16 +2400,16 @@ local function build_message(instruction, ctx)
 	return table.concat(l, "\n")
 end
 
--- Tool message SẼ tới, giải y hệt M.send: session đang sống trước, không có thì tool
--- mặc định. Phải khớp, vì tiền tố command của ECC khác nhau theo tool.
+-- The tool the message WILL reach, resolved exactly like M.send: the live session first, else the
+-- default tool. Must match, because ECC command prefixes differ per tool.
 local function target_tool()
 	local s = target_session()
 	return (s and s.tool) or resolve_default_tool()
 end
 
--- Skill của ECC cho action này trên tool này, hoặc nil. Tra bảng ĐÃ DÒ TRÊN ĐĨA nên
--- không bao giờ gọi tên một skill mà tool không có: nhắc tên không tồn tại chỉ khiến
--- agent đi tìm rồi bịa ra nội dung.
+-- The ECC skill for this action on this tool, or nil. Looks up the table DETECTED ON DISK, so it
+-- never names a skill the tool lacks: naming a nonexistent one only makes the
+-- agent go looking and then make up its content.
 local function ecc_skill(action, tool)
 	if not (action.skill and tool) then
 		return nil
@@ -2420,23 +2421,23 @@ local function ecc_skill(action, tool)
 	return e.skills(tool.name)[action.skill] and action.skill or nil
 end
 
--- Picker action (explain/ask/fix...). Gọi từ normal + visual (<leader>ai).
--- Mọi thứ ở đây là CẤP SELECTION: message luôn kèm @ref + khối code của đoạn đang chọn.
--- Lệnh cấp repo của ECC nằm ở M.workflows() - xem comment ở M.config.actions.
+-- Action picker (explain/ask/fix...). Called from normal + visual (<leader>ai).
+-- Everything here is SELECTION-LEVEL: the message always carries @ref + the selected code block.
+-- ECC's repo-level commands live in M.workflows() - see the comment at M.config.actions.
 function M.actions()
-	local ctx = capture_context() -- BẮT trước khi mở menu (menu thoát visual mode)
+	local ctx = capture_context() -- CAPTURE before opening the menu (the menu leaves visual mode)
 	if not (ctx.file or ctx.code) then
 		notify("aiterm: no file or selection to send", "warn")
 		return
 	end
-	-- Giải MỘT LẦN trước khi mở menu: format_item chạy cho từng dòng, để trong đó thì
-	-- mỗi lần vẽ menu lại đi stat thư mục.
+	-- Resolve ONCE before opening the menu: format_item runs per row, so doing it there would
+	-- stat directories on every menu redraw.
 	local tool = target_tool()
 	vim.ui.select(M.config.actions, {
 		prompt = "AI action:",
 		format_item = function(a)
 			local icon = a.key and M.icons()[a.key]
-			-- Hiện skill sẽ được nhắc kèm -> nhìn là biết mục nào có ECC đỡ lưng.
+			-- Show the skill that will be referenced -> at a glance, which entries ECC backs.
 			local skill = ecc_skill(a, tool)
 			return (icon and icon .. "  " or "") .. a.label .. (skill and ("   " .. skill) or "")
 		end,
@@ -2451,7 +2452,7 @@ function M.actions()
 				return
 			end
 		else
-			-- Câu hỏi tự do (input) thì không gắn skill: người dùng tự quyết định hỏi gì.
+			-- A free-form question (input) gets no skill: the user decides what to ask.
 			local skill = ecc_skill(choice, tool)
 			if skill then
 				instr = instr .. ("\nFollow the `%s` skill."):format(skill)
@@ -2461,18 +2462,18 @@ function M.actions()
 	end)
 end
 
--- Lệnh ECC CẤP REPO (<leader>aw). Tách hẳn khỏi M.actions vì chúng bỏ qua context:
--- template của /code-review mở đầu bằng `git diff --name-only HEAD`, /build-fix bằng
--- `npx tsc --noEmit`, /refactor-clean bằng `npx knip` - gửi kèm @ref hay khối code chỉ
--- là nhiễu. Dùng Snacks picker chứ không vim.ui.select: có cả trăm lệnh, cần fuzzy.
--- Tool có chạy được /slash command natively không (mặc định: có, trừ khi bảng ghi false).
+-- REPO-LEVEL ECC commands (<leader>aw). Fully separate from M.actions because they ignore context:
+-- the /code-review template starts with `git diff --name-only HEAD`, /build-fix with
+-- `npx tsc --noEmit`, /refactor-clean with `npx knip` - sending @ref or a code block is just
+-- noise. A Snacks picker rather than vim.ui.select: there are hundreds of commands, fuzzy is needed.
+-- Whether the tool runs /slash commands natively (default: yes, unless the table says false).
 local function slash_native(tool)
 	return M.config.send.slash_native[tool.name] ~= false
 end
 
--- Nội dung file lệnh ECC (đúng cái /command sẽ bung ra), dùng cho tool KHÔNG chạy
--- slash natively (codex). Thay $ARGUMENTS bằng arg; không có placeholder mà có arg
--- thì nối "Input: arg". nil nếu đọc file lỗi -> caller quay về gửi /token.
+-- Content of the ECC command file (exactly what the /command expands to), for tools that do NOT run
+-- slash commands natively (codex). Replaces $ARGUMENTS with arg; with no placeholder but an arg,
+-- appends "Input: arg". nil when reading the file fails -> the caller falls back to sending the /token.
 local function command_body(cm, arg)
 	local ok, lines = pcall(vim.fn.readfile, cm.path)
 	if not ok or not lines or #lines == 0 then
@@ -2480,9 +2481,9 @@ local function command_body(cm, arg)
 	end
 	local body = table.concat(lines, "\n")
 	if body:find("$ARGUMENTS", 1, true) then
-		-- %$ escape $ trong pattern; escape % trong chuỗi thay thế (gsub coi % là đặc biệt).
-		-- Gán repl vào local TRƯỚC: (...):gsub trả (chuỗi, count); truyền thẳng vào gsub
-		-- ngoài thì count=0 rơi vào tham số n -> gsub thay 0 lần. Local cắt còn 1 giá trị.
+		-- %$ escapes $ in the pattern; % is escaped in the replacement (gsub treats % as special).
+		-- Assign repl to a local FIRST: (...):gsub returns (string, count); passing it straight into the outer
+		-- gsub puts count=0 into the n parameter -> gsub replaces 0 times. The local keeps 1 value.
 		local repl = (arg or ""):gsub("%%", "%%%%")
 		body = body:gsub("%$ARGUMENTS", repl)
 	elseif arg and arg ~= "" then
@@ -2501,10 +2502,10 @@ function M.workflows()
 		notify("aiterm: ECC module unavailable", "warn")
 		return
 	end
-	-- cwd để kèm command CỤC BỘ repo (scope=project). Dùng project_cwd (realpath thật).
+	-- cwd to include the repo's LOCAL commands (scope=project). Uses project_cwd (the real realpath).
 	local cwd = history().project_cwd()
-	-- Chỉ xoay qua tool ĐÃ CÓ lệnh ECC: cho xoay vào một danh sách rỗng thì <A-t> nhìn
-	-- như bị hỏng.
+	-- Only cycle through tools that HAVE ECC commands: cycling into an empty list makes <A-t> look
+	-- broken.
 	local tools = {}
 	for _, t in ipairs(M.config.tools) do
 		if #e.command_list(t.name, cwd) > 0 then
@@ -2515,7 +2516,7 @@ function M.workflows()
 		notify("ECC not installed for any tool - use <leader>aE", "warn")
 		return
 	end
-	-- Bắt đầu từ tool sẽ nhận message nếu nó có ECC (session đang sống > tool mặc định).
+	-- Start from the tool that will receive the message if it has ECC (live session > default tool).
 	local idx = 1
 	local cur = target_tool()
 	for i, t in ipairs(tools) do
@@ -2531,12 +2532,12 @@ function M.workflows()
 	end
 	local ask_args = M.config.workflow_args.ask
 	local ic = M.icons()
-	-- Lệnh hiện trong chế độ pinned: đã ghim HOẶC là lệnh của repo (project luôn hiện).
+	-- Commands shown in pinned mode: pinned OR the repo's own (project always shows).
 	local function shown_in_pinned(cm)
 		return is_fav("commands", cm.name) or cm.scope == "project"
 	end
-	-- Có lệnh pin/project hiện được ở cwd này không -> KHÔNG mở pinned nếu rỗng (tránh
-	-- "No Results" khi chỉ pin project command của repo khác).
+	-- Whether any pinned/project command is visible in this cwd -> do NOT open pinned when empty (avoids
+	-- "No Results" when only another repo's project command is pinned).
 	local function pinned_has_items(t)
 		for _, cm in ipairs(e.command_list(t.name, cwd)) do
 			if shown_in_pinned(cm) then
@@ -2557,20 +2558,20 @@ function M.workflows()
 		return ("ECC workflows (%s) · %s"):format(t.name, mode)
 	end
 
-	-- Chỉ mở pinned khi CÓ lệnh pin/project hiện được ở cwd này (tránh "No Results").
+	-- Open pinned only when a pinned/project command IS visible in this cwd (avoids "No Results").
 	local start_pinned = fav_count("commands") > 0 and pinned_has_items(tools[idx])
 	Snacks.picker({
 		title = title_for(tools[idx], start_pinned),
-		-- Tool nằm trong PICKER OPTS chứ không phải upvalue: finder đọc popts nên chỉ có
-		-- một đường đọc state. Bug "title đổi mà list không đổi" của scope lần trước sinh
-		-- ra đúng từ chỗ có hai đường.
+		-- The tool lives in the PICKER OPTS, not an upvalue: the finder reads popts, so there is only
+		-- one path reading the state. The scope's earlier "title changed but the list did not" bug came
+		-- from exactly having two paths.
 		wf_tool = tools[idx].name,
 		pinned = start_pinned,
 		finder = function(popts)
 			local t = find_tool(popts.wf_tool) or tools[1]
 			local list = e.command_list(t.name, cwd)
-			-- pinned: lọc còn ghim + project. Lọc ra RỖNG (hoặc all) -> hiện hết, sort
-			-- project/ghim lên đầu. Fallback rỗng -> all để không bao giờ "No Results".
+			-- pinned: filter to pinned + project. If that is EMPTY (or all) -> show everything, sorting
+			-- project/pinned first. The empty -> all fallback means never "No Results".
 			local shown = {}
 			if popts.pinned then
 				for _, cm in ipairs(list) do
@@ -2593,8 +2594,8 @@ function M.workflows()
 					return a.name < b.name
 				end)
 			end
-			-- Canh cột theo lệnh dài nhất CỦA CHÍNH TOOL NÀY: tiền tố codex là /ecc-*
-			-- nên dài hơn claude/opencode một quãng.
+			-- Align columns on THIS TOOL's longest command: codex's prefix is /ecc-*,
+			-- so it is noticeably longer than claude/opencode.
 			local w = 0
 			for _, cm in ipairs(shown) do
 				w = math.max(w, #cm.invoke)
@@ -2603,14 +2604,14 @@ function M.workflows()
 			for _, cm in ipairs(shown) do
 				items[#items + 1] = {
 					cmd = cm,
-					-- tool + pad gắn thẳng lên item: format/confirm khỏi đọc upvalue đã cũ
-					-- sau khi đổi tool.
+					-- tool + pad attached to the item: format/confirm do not read an upvalue that went stale
+					-- after switching tools.
 					tool = t,
 					pad = string.rep(" ", w - #cm.invoke + 2),
-					-- desc + "fav" vào text để gõ "dead code"/"fav" cũng lọc được.
+					-- desc + "fav" in text so typing "dead code"/"fav" filters too.
 					text = (is_fav("commands", cm.name) and "fav " or "") .. cm.name .. " " .. cm.desc,
-					-- file = đường dẫn thật -> dùng luôn preview file của snacks, khỏi tự
-					-- dựng doc và khỏi đọc cả trăm file markdown lúc mở picker.
+					-- file = the real path -> reuse snacks' file preview, no custom
+					-- doc and no reading hundreds of markdown files when the picker opens.
 					file = cm.path,
 				}
 			end
@@ -2629,20 +2630,20 @@ function M.workflows()
 			if cm.scope == "project" then
 				row[#row + 1] = { "  project", "SnacksPickerGitBranch" }
 			end
-			-- Tool không chạy slash natively: /ecc-* sẽ gửi dưới dạng NỘI DUNG file, không
-			-- phải slash command -> báo rõ để cái /ecc-… hiện ra không gây hiểu lầm.
+			-- Tool without native slash commands: /ecc-* is sent as the file CONTENT, not
+			-- a slash command -> say so, so the /ecc-… shown does not mislead.
 			if not slash_native(item.tool) then
 				row[#row + 1] = { "  " .. ic.f_prompt .. " prompt", "SnacksPickerDimmed" }
 			end
 			return row
 		end,
 		preview = "file",
-		-- Cùng layout với picker session (kèm fallback dọc khi terminal hẹp), nhưng
-		-- footer riêng: M-t là phím duy nhất ở đây không đoán được từ nội dung.
+		-- Same layout as the session picker (with the vertical fallback for narrow terminals), but
+		-- its own footer: M-t is the only key here that cannot be guessed from the content.
 		layout = build_layout(WF_FOOTER),
 		actions = {
-			-- <A-t>: xoay tool. Đổi opts + title rồi find() - find() tự gọi update_titles
-			-- và update_titles đọc picker.title, nên hai thứ luôn đổi cùng một nhịp.
+			-- <A-t>: cycle the tool. Change opts + title then find() - find() calls update_titles
+			-- and update_titles reads picker.title, so both always change in the same beat.
 			aiterm_wf_tool = function(picker)
 				if #tools < 2 then
 					notify(("only %s has ECC commands"):format(tools[1].name), "info")
@@ -2653,7 +2654,7 @@ function M.workflows()
 				picker.title = title_for(tools[idx], picker.opts.pinned)
 				picker:find({ refresh = true })
 			end,
-			-- <A-f>: ghim/bỏ ghim lệnh dưới con trỏ, lưu ngay.
+			-- <A-f>: pin/unpin the command under the cursor, saved immediately.
 			aiterm_fav_toggle = function(picker, item)
 				if not item then
 					return
@@ -2662,7 +2663,7 @@ function M.workflows()
 				picker.title = title_for(find_tool(picker.opts.wf_tool) or tools[1], picker.opts.pinned)
 				picker:find({ refresh = true })
 			end,
-			-- <A-a>: đổi giữa chỉ-ghim và tất-cả.
+			-- <A-a>: toggle between pinned-only and all.
 			aiterm_fav_all = function(picker)
 				picker.opts.pinned = not picker.opts.pinned
 				picker.title = title_for(find_tool(picker.opts.wf_tool) or tools[1], picker.opts.pinned)
@@ -2692,18 +2693,19 @@ function M.workflows()
 				return
 			end
 			local cm = item.cmd
-			-- Tính ARG một lần: lệnh path -> "."; lệnh ask -> hỏi (huỷ thì không gửi).
+			-- Compute ARG once: path commands -> "."; ask commands -> prompt (cancel sends nothing).
 			local arg
 			if path_args[cm.name] then
-				arg = "." -- lệnh nhận [path]; "." = cả project
+				arg = "." -- the command takes [path]; "." = the whole project
 			elseif ask_args[cm.name] then
 				arg = vim.fn.input(ask_args[cm.name])
 				if arg == "" then
-					return -- huỷ input thì KHÔNG gửi lệnh cụt
+					return -- a cancelled input does NOT send a truncated command
 				end
 			end
-			-- Tool chạy slash natively -> gửi /token (+arg). Không (codex) -> DÁN NỘI DUNG
-			-- file lệnh (đúng cái /command bung ra); đọc lỗi thì quay về /token best-effort.
+			-- Tool runs slash commands natively -> send the /token (+arg). Otherwise (codex) PASTE
+			-- THE CONTENT of the command file (exactly what the /command expands to); on a read
+			-- error fall back to the /token best-effort.
 			local msg
 			if slash_native(item.tool) then
 				msg = cm.invoke .. (arg and (" " .. arg) or "")
@@ -2716,25 +2718,25 @@ function M.workflows()
 			end
 			picker:close()
 			vim.schedule(function()
-				-- tool LẤY TỪ ITEM, không phải target_tool(): sau <A-t> thì tool đang hiện
-				-- khác tool mặc định, mà /ecc-* của codex dán vào session opencode là vô nghĩa.
+				-- the tool COMES FROM THE ITEM, not target_tool(): after <A-t> the shown tool
+				-- differs from the default, and codex's /ecc-* pasted into an opencode session is meaningless.
 				M.send(msg, { submit = true, tool = item.tool })
 			end)
 		end,
 	})
 end
 
--- Picker skill (<leader>as). KHÁC M.workflows: command là quy trình cấp repo (chạy
--- git diff / npx), còn skill là TÀI LIỆU HƯỚNG DẪN nên áp được lên đoạn code đang chọn
--- -> message dựng theo ngữ cảnh y như <leader>ai.
--- Hiện ĐỦ mọi skill, phân nhóm theo nguồn: ecc (ECC cài) / builtin (skill gốc của tool,
--- ví dụ 6 cái .system của codex) / user (bạn tự viết).
+-- Skill picker (<leader>as). UNLIKE M.workflows: commands are repo-level workflows (running
+-- git diff / npx), while skills are GUIDANCE DOCS that apply to the selected code
+-- -> the message is built from context just like <leader>ai.
+-- Shows EVERY skill, grouped by source: ecc (installed by ECC) / builtin (the tool's own skills,
+-- e.g. codex's 6 .system ones) / user (hand-written).
 local SKILL_ORIGIN = {
-	project = { "project", "SnacksPickerGitBranch" }, -- skill CỤC BỘ repo, hiện đầu
-	ecc = { "ECC", nil }, -- nil -> lấy màu theo tool
+	project = { "project", "SnacksPickerGitBranch" }, -- the repo's LOCAL skills, shown first
+	ecc = { "ECC", nil }, -- nil -> colored per tool
 	builtin = { "built-in", "SnacksPickerSpecial" },
 	user = { "user", "SnacksPickerLabel" },
-	shared = { "shared", "DiagnosticWarn" }, -- ~/.agents/skills, chưa activate (amber)
+	shared = { "shared", "DiagnosticWarn" }, -- ~/.agents/skills, not activated (amber)
 }
 
 function M.skill_pick()
@@ -2747,9 +2749,9 @@ function M.skill_pick()
 		notify("aiterm: ECC module unavailable", "warn")
 		return
 	end
-	-- cwd để kèm skill CỤC BỘ repo (origin=project). Dùng project_cwd (realpath thật).
+	-- cwd to include the repo's LOCAL skills (origin=project). Uses project_cwd (the real realpath).
 	local cwd = history().project_cwd()
-	-- Chỉ xoay qua tool CÓ skill: xoay vào danh sách rỗng thì <A-t> nhìn như bị hỏng.
+	-- Only cycle through tools WITH skills: cycling into an empty list makes <A-t> look broken.
 	local tools = {}
 	for _, t in ipairs(M.config.tools) do
 		if #e.skill_list(t.name, cwd) > 0 then
@@ -2767,17 +2769,17 @@ function M.skill_pick()
 			idx = i
 		end
 	end
-	-- BẮT context TRƯỚC khi mở picker: mở picker là đổi buffer/window, capture_context
-	-- lúc confirm sẽ đọc nhầm chính cửa sổ picker.
+	-- CAPTURE context BEFORE opening the picker: opening it switches buffer/window, so capture_context
+	-- at confirm time would read the picker window itself.
 	local ctx = capture_context()
 	ensure_hl()
 
-	-- Mục hiện trong chế độ pinned: đã ghim HOẶC là skill của repo (project luôn hiện).
+	-- Entries shown in pinned mode: pinned OR the repo's own skills (project always shows).
 	local function shown_in_pinned(s)
 		return is_fav("skills", s.name) or s.origin == "project"
 	end
-	-- Có mục nào pin/project hiện được ở cwd hiện tại không. Dùng để KHÔNG mở chế độ
-	-- pinned khi tập pin rỗng ở đây (vd chỉ pin 1 project skill của repo khác) -> tránh
+	-- Whether any pinned/project entry is visible in the current cwd. Used to NOT open pinned
+	-- mode when the pinned set is empty here (e.g. only another repo's project skill is pinned) -> avoids
 	-- picker "No Results".
 	local function pinned_has_items(t)
 		for _, s in ipairs(e.skill_list(t.name, cwd)) do
@@ -2799,8 +2801,8 @@ function M.skill_pick()
 		return ("Skills (%s) · %s"):format(t.name, mode)
 	end
 
-	-- Chỉ mở pinned khi CÓ mục pin/project hiện được ở cwd này (tránh "No Results"
-	-- khi chỉ pin project skill của repo khác).
+	-- Open pinned only when a pinned/project entry IS visible in this cwd (avoids "No Results"
+	-- when only another repo's project skill is pinned).
 	local start_pinned = fav_count("skills") > 0 and pinned_has_items(tools[idx])
 	Snacks.picker({
 		title = title_for(tools[idx], start_pinned),
@@ -2809,8 +2811,8 @@ function M.skill_pick()
 		finder = function(popts)
 			local t = find_tool(popts.sk_tool) or tools[1]
 			local list = e.skill_list(t.name, cwd)
-			-- pinned: lọc còn ghim + project. Nếu lọc ra RỖNG (hoặc chế độ all) -> hiện
-			-- hết, sort project/ghim lên đầu. Fallback rỗng-> all để không bao giờ "No Results".
+			-- pinned: filter to pinned + project. If that is EMPTY (or all mode) -> show
+			-- everything, sorting project/pinned first. The empty -> all fallback means never "No Results".
 			local shown = {}
 			if popts.pinned then
 				for _, s in ipairs(list) do
@@ -2839,8 +2841,8 @@ function M.skill_pick()
 			end
 			local items = {}
 			for _, s in ipairs(shown) do
-				-- scope: project / shared (~/.agents/skills, chưa activate) / global.
-				-- source: provenance nếu skill do aiterm add qua skills CLI.
+				-- scope: project / shared (~/.agents/skills, not activated) / global.
+				-- source: provenance if aiterm added the skill via the skills CLI.
 				local scope = (s.origin == "project" or s.origin == "shared") and s.origin or "global"
 				local prov = skill_source(t.name, s.name)
 				local source = prov and prov.source or nil
@@ -2850,8 +2852,8 @@ function M.skill_pick()
 					scope = scope,
 					source = source,
 					pad = string.rep(" ", w - #s.name + 2),
-					-- origin/scope/source/"fav" vào text -> gõ "ecc"/"project"/"global"/
-					-- "vercel"/"fav" đều lọc theo nhóm.
+					-- origin/scope/source/"fav" in text -> typing "ecc"/"project"/"global"/
+					-- "vercel"/"fav" filters by group.
 					text = table.concat({
 						s.origin,
 						scope,
@@ -2860,7 +2862,7 @@ function M.skill_pick()
 						s.name,
 						s.desc,
 					}, " "),
-					file = s.path, -- preview thẳng SKILL.md, khỏi tự dựng doc
+					file = s.path, -- preview SKILL.md directly, no custom doc
 				}
 			end
 			return items
@@ -2875,12 +2877,12 @@ function M.skill_pick()
 				{ item.pad },
 				{ item.skill.desc, "SnacksPickerDimmed" },
 			}
-			-- badge scope (project/shared/global) + source thật (nếu có provenance).
+			-- scope badge (project/shared/global) + the real source (if there is provenance).
 			local scope_hl = "SnacksPickerDimmed"
 			if item.scope == "project" then
 				scope_hl = "SnacksPickerGitBranch"
 			elseif item.scope == "shared" then
-				scope_hl = "DiagnosticWarn" -- amber: chưa activate cho tool này
+				scope_hl = "DiagnosticWarn" -- amber: not activated for this tool
 			end
 			row[#row + 1] = { "  " .. item.scope, scope_hl }
 			if item.source then
@@ -2901,7 +2903,7 @@ function M.skill_pick()
 				picker.title = title_for(tools[idx], picker.opts.pinned)
 				picker:find({ refresh = true })
 			end,
-			-- <A-f>: ghim/bỏ ghim skill dưới con trỏ, lưu ngay.
+			-- <A-f>: pin/unpin the skill under the cursor, saved immediately.
 			aiterm_fav_toggle = function(picker, item)
 				if not item then
 					return
@@ -2910,7 +2912,7 @@ function M.skill_pick()
 				picker.title = title_for(find_tool(picker.opts.sk_tool) or tools[1], picker.opts.pinned)
 				picker:find({ refresh = true })
 			end,
-			-- <A-a>: đổi giữa chỉ-ghim và tất-cả.
+			-- <A-a>: toggle between pinned-only and all.
 			aiterm_fav_all = function(picker)
 				picker.opts.pinned = not picker.opts.pinned
 				picker.title = title_for(find_tool(picker.opts.sk_tool) or tools[1], picker.opts.pinned)
@@ -2940,11 +2942,14 @@ function M.skill_pick()
 				return
 			end
 			local s = item.skill
-			-- Skill 'shared' (~/.agents/skills) chưa nằm trong dir tool ĐỌC -> "Use the x
-			-- skill" tool không thấy. Symlink vào dir tool trước rồi mới gửi.
+			-- A 'shared' skill (~/.agents/skills) is not in a dir the tool READS -> the tool cannot see "Use the x
+			-- skill". Symlink it into the tool's dir first, then send.
 			if s.origin == "shared" then
 				local yes = vim.fn.confirm(
-					("'%s' chưa active cho %s.\nSymlink vào dir tool rồi dùng?"):format(s.name, item.tool.name),
+					("'%s' is not active for %s.\nSymlink it into the tool's dir and use it?"):format(
+						s.name,
+						item.tool.name
+					),
 					"&Yes\n&No",
 					1
 				)
@@ -2952,7 +2957,7 @@ function M.skill_pick()
 					return
 				end
 				if activate_skill(item.tool, s.name) == "error" then
-					notify(("không symlink được %s vào %s"):format(s.name, item.tool.name), "warn")
+					notify(("could not symlink %s into %s"):format(s.name, item.tool.name), "warn")
 					return
 				end
 				local e = ecc()
@@ -2962,8 +2967,8 @@ function M.skill_pick()
 			end
 			local instr = ("Use the `%s` skill."):format(s.name)
 			if s.hint then
-				-- Skill khai argument-hint nghĩa là nó CẦN tham số (tdd-workflow cần
-				-- đường dẫn plan). Huỷ input thì không gửi, đừng gửi lệnh cụt.
+				-- A skill declaring argument-hint NEEDS an argument (tdd-workflow needs a
+				-- plan path). A cancelled input sends nothing; never send a truncated command.
 				local answer = vim.fn.input(("%s %s: "):format(s.name, s.hint))
 				if answer == "" then
 					return
@@ -2972,20 +2977,20 @@ function M.skill_pick()
 			end
 			picker:close()
 			vim.schedule(function()
-				-- Không có context thì gửi thẳng instr: build_message luôn chèn một dòng
-				-- trống sau instruction (để tách với @ref), không có @ref thì dòng trống
-				-- đó thành rác đuôi. M.actions không gặp ca này vì nó chặn từ đầu khi
-				-- thiếu cả file lẫn code.
+				-- Without context send instr directly: build_message always inserts a blank line
+				-- after the instruction (to separate it from @ref); without @ref that blank line
+				-- becomes trailing junk. M.actions never hits this case because it refuses up front when
+				-- both file and code are missing.
 				local msg = (ctx.file or ctx.code) and build_message(instr, ctx) or instr
-				-- tool LẤY TỪ ITEM: <A-t> cho phép chọn tool khác session đang mở.
+				-- the tool COMES FROM THE ITEM: <A-t> allows a tool other than the open session's.
 				M.send(msg, { submit = true, tool = item.tool })
 			end)
 		end,
 	})
 end
 
--- Trạng thái ECC từng tool + cài/cập nhật. Dòng "ecc" trong picker biến mất sau khi
--- cài xong, nên đây là đường để cập nhật (git pull) về sau. <leader>aE.
+-- Per-tool ECC status + install/update. The "ecc" picker row disappears after
+-- installing, so this is the path for later updates (git pull). <leader>aE.
 function M.ecc()
 	local e = ecc()
 	if not e then
@@ -2999,12 +3004,12 @@ function M.ecc()
 	ensure_hl()
 
 	local clone = e.clone_info()
-	-- Kết quả <A-u> giữ ở đây để find() vẽ lại vẫn còn. nil = chưa hỏi GitHub lần nào;
-	-- KHÔNG hỏi lúc mở picker: ls-remote đo được ~1s, chặn chừng đó là thấy rõ.
+	-- The <A-u> result is kept here so a find() redraw keeps it. nil = GitHub never asked;
+	-- NOT asked when the picker opens: ls-remote measured ~1s, blocking that long is noticeable.
 	local remote, remote_err
 	local function title()
 		if not clone then
-			return "ECC  (chưa clone)"
+			return "ECC  (not cloned)"
 		end
 		local t = ("ECC  %s"):format(clone.version or "?")
 		if clone.short then
@@ -3013,8 +3018,8 @@ function M.ecc()
 		if remote_err then
 			return t .. "  (github: " .. remote_err .. ")"
 		elseif remote then
-			-- ASCII trong literal: file này đã ba lần bị ký tự lạ lọt vào, nên gate glyph
-			-- giữ ở 0 cho dòng mới. Mũi tên/dấu ba chấm không đáng để phá lệ.
+			-- ASCII in literals: odd characters slipped into this file three times, so the glyph gate
+			-- stays at 0 for new lines. Arrows/ellipses are not worth an exception.
 			return t .. (remote == clone.short and "  = origin" or ("  <- origin " .. remote))
 		end
 		return t
@@ -3052,13 +3057,13 @@ function M.ecc()
 				{ ("%4d cmd  %4d skills"):format(item.cmds, item.skills), "SnacksPickerDimmed" },
 			}
 		end,
-		-- item.preview = { text, extmarks } dựng sẵn trong finder, đúng khuôn đã dùng ở
-		-- M.pick: khỏi phải đụng API preview-function của snacks.
+		-- item.preview = { text, extmarks } prebuilt in the finder, the same shape M.pick
+		-- uses: no need to touch snacks' preview-function API.
 		preview = "preview",
 		layout = build_layout(ECC_FOOTER),
 		actions = {
-			-- <A-u>: lần DUY NHẤT plugin đi mạng, và chỉ khi bạn bấm. ls-remote chỉ hỏi
-			-- HEAD của origin, không tải gì về.
+			-- <A-u>: the ONLY time the plugin hits the network, and only when you press it. ls-remote only asks
+			-- for origin's HEAD, downloads nothing.
 			aiterm_ecc_remote = function(picker)
 				notify("asking GitHub...", "info")
 				e.remote_head(function(sha, err)
@@ -3096,13 +3101,13 @@ function M.ecc()
 	})
 end
 
--- inline hints (inlay kiểu code-lens) ------------------------------------
--- 1 dòng ảo phía trên function/class ĐANG chứa con trỏ, quảng cáo <leader>ai.
--- Terminal virt_text KHÔNG click được -> hint chỉ là gợi ý trực quan, kích hoạt
--- vẫn qua <leader>ai (tác động lên đúng node dưới con trỏ, xem capture_context).
+-- inline hints (code-lens style inlays) ------------------------------------
+-- 1 virtual line above the function/class CONTAINING the cursor, advertising <leader>ai.
+-- Terminal virt_text is NOT clickable -> the hint is only a visual cue; activation
+-- still goes through <leader>ai (acting on the node under the cursor, see capture_context).
 local hint_ns = vim.api.nvim_create_namespace("aiterm_hints")
-local hints_on -- nil tới lần đọc đầu -> lấy từ M.config.hints.enabled
-local hint_state = {} -- buf -> start-row của node đã vẽ (bỏ vẽ lại khi chưa đổi node)
+local hints_on -- nil until the first read -> taken from M.config.hints.enabled
+local hint_state = {} -- buf -> start row of the drawn node (skip redraws while the node is unchanged)
 
 local function hints_enabled()
 	if hints_on == nil then
@@ -3111,7 +3116,7 @@ local function hints_enabled()
 	return hints_on
 end
 
--- Buffer file thường (buftype rỗng) và có parser treesitter.
+-- Regular file buffer (empty buftype) with a treesitter parser.
 local function hintable_buf(buf)
 	if not vim.api.nvim_buf_is_valid(buf) or vim.bo[buf].buftype ~= "" then
 		return false
@@ -3125,8 +3130,8 @@ local function clear_hints(buf)
 	hint_state[buf] = nil
 end
 
--- Vẽ lại hint cho buf. Chỉ vẽ khi buf là window hiện tại (hint theo con trỏ).
-refresh_hints = function(buf) -- gán vào local đã forward-declare ở mục default tool
+-- Redraw the hint for buf. Only draws when buf is in the current window (the hint follows the cursor).
+refresh_hints = function(buf) -- assigned to the local forward-declared in the default tool section
 	buf = buf or vim.api.nvim_get_current_buf()
 	if not (hints_enabled() and hintable_buf(buf) and buf == vim.api.nvim_get_current_buf()) then
 		clear_hints(buf)
@@ -3134,7 +3139,7 @@ refresh_hints = function(buf) -- gán vào local đã forward-declare ở mục 
 	end
 	local node = enclosing_node()
 	local sr = node and select(1, node:range()) or nil
-	if sr == hint_state[buf] then -- cùng node -> không nhấp nháy
+	if sr == hint_state[buf] then -- same node -> no flicker
 		return
 	end
 	pcall(vim.api.nvim_buf_clear_namespace, buf, hint_ns, 0, -1)
@@ -3142,11 +3147,11 @@ refresh_hints = function(buf) -- gán vào local đã forward-declare ở mục 
 	if not sr then
 		return
 	end
-	-- căn theo indent dòng đầu node cho dòng ảo thẳng với code.
+	-- align with the indent of the node's first line so the virtual line lines up with the code.
 	local first = vim.api.nvim_buf_get_lines(buf, sr, sr + 1, false)[1] or ""
 	local indent = first:match("^%s*") or ""
 
-	-- Badge: icon+tên tool mặc định (tô màu theo tool) + action có icon + phím mờ.
+	-- Badge: icon+name of the default tool (colored per tool) + actions with icons + dimmed keys.
 	local tool = resolve_default_tool()
 	local ic = M.icons()
 	local thl = TOOL_HL[tool.name] or "Special"
@@ -3175,10 +3180,10 @@ refresh_hints = function(buf) -- gán vào local đã forward-declare ở mục 
 	})
 end
 
--- Đăng ký autocmd refresh (idempotent). Gọi từ bootstrap VeryLazy và toggle.
+-- Register the refresh autocmds (idempotent). Called from the VeryLazy bootstrap and toggle.
 local hints_group
 function M.setup_hints()
-	ensure_hl() -- đăng ký AitermClaude/Codex/Opencode để badge có màu tool (Snacks đã load ở VeryLazy)
+	ensure_hl() -- registers AitermClaude/Codex/Opencode so the badge gets tool colors (Snacks is loaded at VeryLazy)
 	if not hints_enabled() or hints_group then
 		return
 	end
@@ -3192,7 +3197,7 @@ function M.setup_hints()
 	refresh_hints()
 end
 
--- Bật/tắt hint. Tắt -> xoá hết extmark ở mọi buffer.
+-- Toggle hints. Off -> clear every extmark in every buffer.
 function M.toggle_hints()
 	hints_on = not hints_enabled()
 	if hints_on then
@@ -3206,7 +3211,7 @@ function M.toggle_hints()
 	notify("AI code hints " .. (hints_on and "on" or "off"), "info")
 end
 
--- Đọc default tool + favorites + provenance skill đã lưu ngay khi require.
+-- Read the saved default tool + favorites + skill provenance right on require.
 load_default()
 load_favorites()
 load_skill_src()

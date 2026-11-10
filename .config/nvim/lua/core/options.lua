@@ -72,9 +72,9 @@ vim.opt.visualbell = false
 vim.cmd("set t_vb=")
 vim.opt.tm = 500
 
--- Statusline theo TỪNG window: mỗi split (neo-tree, buffer code...) có bar riêng ở
--- đáy của nó -> tên file hiện ngay dưới buffer đang mở, không dồn về mép trái/neo-tree.
--- (Đổi về 3 nếu muốn một bar chung cho toàn màn hình.)
+-- Per-window statusline: each split (neo-tree, code buffer...) gets its own bar at
+-- its bottom, so the file name sits right under its buffer instead of the far left/neo-tree.
+-- (Set back to 3 for one global bar.)
 vim.opt.laststatus = 2
 
 -- set cusorline

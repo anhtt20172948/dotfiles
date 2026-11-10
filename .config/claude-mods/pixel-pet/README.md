@@ -13,9 +13,9 @@ and a background colour).
 | When | The cat |
 | --- | --- |
 | idle | walks back and forth and blinks |
-| a turn or a tool runs | paws tap, `đang chạy Bash...` |
-| a turn ends | closed eyes and blush, `xong rồi! ♥`, for 4 seconds |
-| a tool fails or a turn is interrupted | a tear, `Bash lỗi rồi…` |
+| a turn or a tool runs | paws tap, `running Bash...` |
+| a turn ends | closed eyes and blush, `done! ♥`, for 4 seconds |
+| a tool fails or a turn is interrupted | a tear, `Bash failed…` |
 | idle for 3 minutes | sleeps, `zZz` |
 
 `/pet` hides or shows it. Its name is the Pet name row of `/config` (type `pet`),

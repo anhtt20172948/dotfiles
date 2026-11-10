@@ -341,8 +341,8 @@ return {
                         { icon = icons.ui.SignOut, key = "q", desc = "Quit", action = ":qa" },
                     },
 				},
-				-- Phải khai sections tường minh mới chèn được mục AI (default chỉ
-				-- gồm header / keys / startup).
+				-- Sections must be explicit to insert the AI entry (the default only
+				-- has header / keys / startup).
 				sections = {
 					function(self)
 						local compact = vim.api.nvim_win_get_width(self.win) < 90 or vim.env.NVIM_ASCII == "1"

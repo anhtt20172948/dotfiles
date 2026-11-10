@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Test install.sh trên một repo giả và một $HOME tạm.
-# ~/... trong chuỗi chỉ là nhãn hiển thị, không cần expand.
+# Tests install.sh against a fake repo and a temp $HOME.
+# ~/... in strings is only a display label, no expansion needed.
 # shellcheck disable=SC2088
 set -euo pipefail
 
@@ -15,7 +15,7 @@ fail() {
 	exit 1
 }
 
-# Đích phải là symlink trỏ đúng vào entry tương ứng trong repo.
+# The target must be a symlink to the matching entry in the repo.
 assert_link() {
 	[[ -L "$HOME/$1" ]] || fail "~/$1 is not a symlink"
 	[[ "$(readlink -f "$HOME/$1")" == "$(readlink -f "$REPO/$1")" ]] ||
@@ -30,7 +30,7 @@ assert_absent() {
 	[[ ! -e "$HOME/$1" && ! -L "$HOME/$1" ]] || fail "~/$1 should not exist"
 }
 
-# Mỗi entry dưới $HOME với loại và đích symlink; find -printf chỉ GNU mới có.
+# Every entry under $HOME with its type and symlink target; find -printf is GNU-only.
 snapshot() {
 	(cd "$HOME" && find . | LC_ALL=C sort | while IFS= read -r p; do
 		if [[ -L "$p" ]]; then
@@ -43,7 +43,7 @@ snapshot() {
 	done)
 }
 
-# Repo giả mô phỏng layout thật, gồm cả các entry chỉ thuộc repo.
+# The fake repo mirrors the real layout, including repo-only entries.
 mkdir -p "$REPO"/.config/{nvim/lua,tmux,yazi} "$REPO"/.local/bin "$REPO"/.no-mistakes \
 	"$REPO"/{docs,tests,.claude,.git,.github,.superpowers}
 cp "$ROOT/install.sh" "$REPO/install.sh"
@@ -59,20 +59,20 @@ for f in README.md LICENSE .gitignore .no-mistakes.yaml .config/nvim/init.lua~; 
 	echo x >"$REPO/$f"
 done
 
-# Trạng thái $HOME có sẵn trên máy đích.
-# ~/.config là symlink sang ổ khác: phải giữ nguyên và link vào bên trong.
+# $HOME state already present on the target machine.
+# ~/.config is a symlink to another disk: keep it and link inside it.
 mkdir -p "$TMP/xdg/nvim" "$HOME/.local/share/app" "$TMP/elsewhere"
 ln -s "$TMP/xdg" "$HOME/.config"
 echo mine >"$HOME/.config/nvim/local.lua"
 echo old >"$HOME/.tmux.conf"
 ln -s "$TMP/elsewhere" "$HOME/.config/yazi"
-# Symlink tương đối kiểu stow từng tạo: phải được coi là đã link.
+# Relative symlink as stow used to make: must count as already linked.
 ln -s ../dotfiles/.zshrc "$HOME/.zshrc"
-# Thư mục NO_FOLD bị stow cũ gập vào repo: phải tách lại thành thư mục thật.
+# NO_FOLD directory folded into the repo by old stow: must be split back into a real directory.
 mkdir -p "$HOME/.local"
 ln -s ../../dotfiles/.local/bin "$HOME/.local/bin"
 
-# Dry-run không được đụng tới $HOME.
+# Dry-run must not touch $HOME.
 before=$(snapshot)
 out=$("$REPO/install.sh" --dry-run)
 after=$(snapshot)
@@ -85,33 +85,33 @@ grep -q '^link    ~/.local/bin/show ' <<<"$out" || fail "dry-run did not link un
 
 out=$("$REPO/install.sh")
 
-# Đích chưa có -> link nguyên thư mục.
+# Missing target -> link the whole directory.
 assert_link .config/tmux
 assert_link .tmux.conf
 [[ "$(readlink "$HOME/.config")" == "$TMP/xdg" ]] || fail "~/.config symlink replaced"
-# Đích là thư mục thật -> đi vào trong, giữ file riêng của máy.
+# Target is a real directory -> descend, keeping machine-local files.
 assert_real_dir .config/nvim
 assert_link .config/nvim/init.lua
 assert_link .config/nvim/lua
 [[ "$(cat "$HOME/.config/nvim/local.lua")" == mine ]] || fail "local file in ~/.config/nvim lost"
-# ~/.local luôn là thư mục thật, kể cả khi chưa có.
+# ~/.local is always a real directory, even when missing.
 assert_real_dir .local
 assert_real_dir .local/bin
 assert_link .local/bin/show
 [[ "$(ls -A "$REPO/.local/bin")" == show ]] || fail "repo .local/bin changed: $(ls -A "$REPO/.local/bin")"
 [[ -d "$HOME/.local/share/app" ]] || fail "~/.local/share lost"
-# Thư mục state của tool agent cũng không gập (DB/run log không rơi vào repo).
+# Agent tool state directories are not folded either (DBs/run logs stay out of the repo).
 assert_real_dir .no-mistakes
 assert_link .no-mistakes/config.yaml
-# File và symlink lạ -> vào backup, không mất nội dung.
+# Unknown files and symlinks -> backup, no content lost.
 assert_link .config/yazi
 backup=$(find "$HOME/.dotfiles-backup" -mindepth 1 -maxdepth 1)
 [[ $(wc -l <<<"$backup") -eq 1 ]] || fail "want one backup dir, got: $backup"
 [[ "$(cat "$backup/.tmux.conf")" == old ]] || fail "~/.tmux.conf not backed up"
 [[ "$(readlink "$backup/.config/yazi")" == "$TMP/elsewhere" ]] || fail "foreign symlink not backed up"
-# Link kiểu stow giữ nguyên.
+# Stow-style links are kept.
 [[ "$(readlink "$HOME/.zshrc")" == ../dotfiles/.zshrc ]] || fail "stow-style link was replaced"
-# Entry chỉ thuộc repo không ra $HOME.
+# Repo-only entries do not reach $HOME.
 for f in docs tests .claude .git .github .superpowers README.md LICENSE .gitignore \
 	.no-mistakes.yaml install.sh; do
 	assert_absent "$f"
@@ -119,14 +119,14 @@ done
 assert_absent .config/nvim/init.lua~
 grep -q '^done: .* 1 already linked, 0 untracked skipped$' <<<"$out" || fail "summary: $out"
 
-# Chạy lại: không đổi gì, không tạo backup mới.
+# Re-run: nothing changes, no new backup.
 out=$("$REPO/install.sh")
 grep -q '^done: 0 linked, 0 backed up, ' <<<"$out" || fail "re-run not idempotent: $out"
 [[ $(find "$HOME/.dotfiles-backup" -mindepth 1 -maxdepth 1 | wc -l) -eq 1 ]] ||
 	fail "re-run created another backup"
 
-# Repo là git checkout: chỉ thứ git track (hoặc đã git add) được link. Một bản
-# clone untracked nằm trong repo (firstmate) không bị link ra $HOME từng file.
+# The repo is a git checkout: only what git tracks (or has been git added) is linked. An
+# untracked clone inside the repo (firstmate) is not linked into $HOME file by file.
 REPO="$TMP/tracked"
 export HOME="$TMP/home-tracked"
 mkdir -p "$HOME" "$REPO"/.config/app "$REPO"/.local/share/firstmate/{bin,config,data,state}
@@ -144,8 +144,8 @@ for f in .DS_Store .config/app/local.conf .local/share/firstmate/AGENTS.md \
 done
 
 out=$("$REPO/install.sh" --dry-run)
-grep -q '^skip    ~/.DS_Store (git không track)$' <<<"$out" || fail "dry-run did not report untracked skip: $out"
-grep -q '^skip    ~/.local/share/firstmate/bin (git không track)$' <<<"$out" ||
+grep -q '^skip    ~/.DS_Store (untracked)$' <<<"$out" || fail "dry-run did not report untracked skip: $out"
+grep -q '^skip    ~/.local/share/firstmate/bin (untracked)$' <<<"$out" ||
 	fail "dry-run did not skip the untracked clone: $out"
 
 out=$("$REPO/install.sh")

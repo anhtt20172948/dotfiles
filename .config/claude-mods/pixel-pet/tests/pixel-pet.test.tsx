@@ -50,7 +50,7 @@ test('a turn works, celebrates, then settles back to idle', async () => {
     { type: 'tool', now: 20, tool: 'Bash' },
   ])
   expect(working).toMatchObject({ mood: 'working', tool: 'Bash', tools: 1 })
-  expect(caption('working', working).text).toMatch(/^đang chạy Bash\.+$/)
+  expect(caption('working', working).text).toMatch(/^running Bash\.+$/)
 
   const happy = run(working, [
     { type: 'toolDone', now: 30, tool: 'Bash', isError: false },
@@ -60,7 +60,7 @@ test('a turn works, celebrates, then settles back to idle', async () => {
 
   const settled = run(happy, ticks(40, Math.ceil(REACT_MS / 400)))
   expect(settled.mood).toBe('idle')
-  expect(stats(settled)).toBe('1 lượt · 1 tool')
+  expect(stats(settled)).toBe('1 turn · 1 tool')
 })
 
 test('a failed tool and an interrupted turn make it sad', async () => {
@@ -69,11 +69,11 @@ test('a failed tool and an interrupted turn make it sad', async () => {
     { type: 'toolDone', now: 5, tool: 'Bash', isError: true },
   ])
   expect(failed).toMatchObject({ mood: 'sad', errors: 1 })
-  expect(caption('sad', failed).text).toBe('Bash lỗi rồi…')
-  expect(stats(failed)).toBe('0 lượt · 1 tool · 1 lỗi')
+  expect(caption('sad', failed).text).toBe('Bash failed…')
+  expect(stats(failed)).toBe('0 turns · 1 tool · 1 error')
 
   const aborted = run(INITIAL, [{ type: 'turn', now: 0, isAborted: true }])
-  expect(caption(aborted.mood, aborted).text).toBe('bị ngắt rồi…')
+  expect(caption(aborted.mood, aborted).text).toBe('interrupted…')
 })
 
 test('idle it walks within its room and falls asleep, a prompt wakes it', async () => {
@@ -119,8 +119,8 @@ test('the band draws the pet above what lies beneath, and /pet hides it', async 
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const band = await $.ui.mount({ ...BAND, surface })
-    expect((await band.find({ type: 'Text', text: /Mochi/ }))?.text).toMatch(/Mochi · đang chờ bạn/)
-    expect((await band.find({ type: 'Text', text: /lượt/ }))?.text).toBe('0 lượt · 0 tool')
+    expect((await band.find({ type: 'Text', text: /Mochi/ }))?.text).toMatch(/Mochi · waiting for you/)
+    expect((await band.find({ type: 'Text', text: /turns/ }))?.text).toBe('0 turns · 0 tools')
     expect((await band.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')
     await band.unmount()
   }
@@ -131,7 +131,7 @@ test('the band draws the pet above what lies beneath, and /pet hides it', async 
     origin: { kind: 'composer' },
     presentation: { isFullscreen: false, columns: 100 },
   })
-  expect(toggled.text).toMatch(/Mochi đi ngủ/)
+  expect(toggled.text).toMatch(/Mochi is asleep/)
   const hidden = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await hidden.find({ type: 'Text', text: /Mochi/ })).toBeUndefined()
   expect((await hidden.find({ type: 'Text', text: /engine/ }))?.text).toBe('engine')

@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# Cài bộ agent workflow của kunchenguid lên HOST:
-#   treehouse   - pool git worktree tái dùng (binary Go)
-#   no-mistakes - git remote cục bộ chặn push: review -> test -> lint -> PR -> CI fix
-#   gnhf        - vòng lặp agent chạy qua đêm, mỗi iteration một commit
-#   firstmate   - orchestrator: agent chính sinh crewmate trong tmux window
-#   AXI skills  - gh-axi, chrome-devtools-axi, lavish-axi (chỉ skill, KHÔNG hooks)
+# Installs kunchenguid's agent workflow on the HOST:
+#   treehouse   - reusable git worktree pool (Go binary)
+#   no-mistakes - local git remote gating pushes: review -> test -> lint -> PR -> CI fix
+#   gnhf        - overnight agent loop, one commit per iteration
+#   firstmate   - orchestrator: a main agent spawns crewmates in tmux windows
+#   AXI skills  - gh-axi, chrome-devtools-axi, lavish-axi (skills only, NO hooks)
 #
-# Idempotent: tool nào đã đúng version thì bỏ qua. --update để cài lại bản pin.
+# Idempotent: tools already at the right version are skipped. --update reinstalls the pins.
 # Config (install.sh): ~/.config/treehouse/config.toml, ~/.no-mistakes/config.yaml,
-# ~/.gnhf/config.yml. Phím: tmux prefix F / N, nvim <leader>ap/aP/ag/aW/aF.
+# ~/.gnhf/config.yml. Keys: tmux prefix F / N, nvim <leader>ap/aP/ag/aW/aF.
 set -euo pipefail
 
 TREEHOUSE_VER="3.1.2"
 NO_MISTAKES_VER="1.84.0"
 GNHF_VER="0.1.51"
-# Pin commit chứ không theo main: firstmate là repo AGENTS.md + script, main đổi
-# hằng ngày và có thể đổi hành vi của agent mà không báo.
+# Pin a commit rather than following main: firstmate is a repo of AGENTS.md + scripts, main changes
+# daily and can change agent behavior without notice.
 FIRSTMATE_REV="${FIRSTMATE_REV:-20dcbf91520b1816663b81873ad67d0b93b3e4d6}"
 FIRSTMATE_DIR="${FIRSTMATE_DIR:-$HOME/.local/share/firstmate}"
 FIRSTMATE_REPO="${FIRSTMATE_REPO:-https://github.com/kunchenguid/firstmate}"
-# <repo>:<tên thư mục skill> - tên skill không luôn trùng tên repo
-# (lavish-axi cài thành skill "lavish").
+# <repo>:<skill directory name> - the skill name does not always match the repo name
+# (lavish-axi installs as skill "lavish").
 AXI_SKILLS="gh-axi:gh-axi chrome-devtools-axi:chrome-devtools-axi lavish-axi:lavish"
 
 BIN_DIR="$HOME/.local/bin"
@@ -30,7 +30,7 @@ usage() {
 	cat <<'EOF'
 Usage: install_agent_workflow [--update] [--help]
 
-  --update   cài lại các bản đã pin dù đã có sẵn
+  --update   reinstall the pinned versions even if already present
 EOF
 }
 
@@ -57,14 +57,14 @@ die() {
 }
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# --- Kiểm tra phụ thuộc -------------------------------------
+# --- Dependency checks -------------------------------------
 check_deps() {
 	local missing=()
 	local bin
 	for bin in git tmux curl tar node npm npx; do
 		have "$bin" || missing+=("$bin")
 	done
-	# macOS < 15 không có sha256sum, nhưng luôn có shasum.
+	# macOS < 15 has no sha256sum, but always has shasum.
 	if have sha256sum; then
 		SHA256=(sha256sum)
 	elif have shasum; then
@@ -72,11 +72,11 @@ check_deps() {
 	else
 		missing+=(sha256sum)
 	fi
-	((${#missing[@]} == 0)) || die "thiếu: ${missing[*]}"
+	((${#missing[@]} == 0)) || die "missing: ${missing[*]}"
 
 	local node_major
 	node_major=$(node -p 'process.versions.node.split(".")[0]')
-	((node_major >= 20)) || die "cần node >= 20 (đang có $(node --version))"
+	((node_major >= 20)) || die "node >= 20 required (found $(node --version))"
 
 	local platform
 	platform="$(uname -s)-$(uname -m)"
@@ -85,7 +85,7 @@ check_deps() {
 	Linux-aarch64) RELEASE_PLATFORM=linux-arm64 ;;
 	Darwin-x86_64) RELEASE_PLATFORM=darwin-amd64 ;;
 	Darwin-arm64) RELEASE_PLATFORM=darwin-arm64 ;;
-	*) die "chỉ hỗ trợ Linux/macOS x86_64/arm64 (đang chạy $platform)" ;;
+	*) die "only Linux/macOS x86_64/arm64 are supported (running $platform)" ;;
 	esac
 
 	if [[ "$platform" == Darwin-* ]]; then
@@ -97,20 +97,20 @@ check_deps() {
 		fi
 	fi
 
-	# gh không chặn việc cài, nhưng no-mistakes / firstmate cần nó để mở PR.
+	# gh does not block the install, but no-mistakes / firstmate need it to open PRs.
 	if ! have gh; then
 		if [[ "$platform" == Darwin-* ]]; then
-			warn "chưa có 'gh': brew install gh && gh auth login"
+			warn "'gh' is missing: brew install gh && gh auth login"
 		else
-			warn "chưa có 'gh': sudo pacman -S github-cli && gh auth login"
+			warn "'gh' is missing: sudo pacman -S github-cli && gh auth login"
 		fi
 	elif ! gh auth status >/dev/null 2>&1; then
-		warn "'gh' chưa đăng nhập: gh auth login"
+		warn "'gh' is not logged in: gh auth login"
 	fi
 }
 
-# --- Binary Go từ GitHub release, có kiểm checksum ---------
-# installed_version <bin>: in version đang cài ("" nếu chưa có).
+# --- Go binaries from GitHub releases, checksum-verified ---
+# installed_version <bin>: print the installed version ("" when missing).
 installed_version() {
 	local bin="$BIN_DIR/$1"
 	[[ -x "$bin" ]] || return 0
@@ -120,7 +120,7 @@ installed_version() {
 install_go_release() {
 	local name=$1 ver=$2
 	if [[ "$UPDATE" == false && "$(installed_version "$name")" == "$ver" ]]; then
-		log "$name v$ver đã có, bỏ qua"
+		log "$name v$ver already present, skipping"
 		return
 	fi
 
@@ -128,21 +128,21 @@ install_go_release() {
 	local asset="$name-v$ver-$RELEASE_PLATFORM.tar.gz"
 	local tmp
 	tmp=$(mktemp -d)
-	# Không dùng trap RETURN: nó còn dính sau khi hàm return và đụng biến local.
-	log "tải $asset"
+	# No trap RETURN: it lingers after the function returns and touches local variables.
+	log "downloading $asset"
 	if ! curl -fsSL -o "$tmp/$asset" "$base/$asset" ||
 		! curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt"; then
 		rm -rf "$tmp"
-		die "tải $name thất bại"
+		die "downloading $name failed"
 	fi
 
-	# Tự so hash thay vì `sha256sum -c` để chỉ kiểm đúng một dòng của asset này.
+	# Compare the hash by hand instead of `sha256sum -c` to check only this asset's line.
 	local want got
 	want=$(awk -v f="$asset" '$2 == f || $2 == "*" f { print $1 }' "$tmp/checksums.txt")
 	got=$("${SHA256[@]}" "$tmp/$asset" | awk '{ print $1 }')
 	if [[ -z "$want" || "$want" != "$got" ]]; then
 		rm -rf "$tmp"
-		die "checksum $asset không khớp (want=${want:-?} got=$got)"
+		die "checksum mismatch for $asset (want=${want:-?} got=$got)"
 	fi
 
 	tar -xzf "$tmp/$asset" -C "$tmp" "$name"
@@ -154,42 +154,42 @@ install_go_release() {
 # --- gnhf (npm) ---------------------------------------------
 install_gnhf() {
 	if [[ "$UPDATE" == false && "$(installed_version gnhf)" == "$GNHF_VER" ]]; then
-		log "gnhf v$GNHF_VER đã có, bỏ qua"
+		log "gnhf v$GNHF_VER already present, skipping"
 	else
-		# Ép prefix ~/.local: prefix mặc định của npm hệ thống là /usr -> EACCES.
+		# Force the ~/.local prefix: the system npm's default prefix is /usr -> EACCES.
 		log "npm i -g --prefix ~/.local gnhf@$GNHF_VER"
 		npm install -g --prefix "$HOME/.local" "gnhf@$GNHF_VER"
 	fi
 	local resolved
 	resolved=$(command -v gnhf || true)
 	[[ "$resolved" == "$BIN_DIR/gnhf" ]] ||
-		warn "'gnhf' trên PATH là ${resolved:-<không có>}, không phải $BIN_DIR/gnhf (v$GNHF_VER); gỡ bản kia hoặc đưa $BIN_DIR lên trước PATH"
+		warn "'gnhf' on PATH is ${resolved:-<none>}, not $BIN_DIR/gnhf (v$GNHF_VER); remove the other copy or put $BIN_DIR first on PATH"
 }
 
 # --- AXI skills ---------------------------------------------
-# Chỉ cài skill (-g -> ~/.claude/skills ...). Cố ý KHÔNG chạy `<tool> setup hooks`:
-# mỗi cái thêm một SessionStart hook chồng lên hook của ECC, tốn context mỗi phiên.
+# Skills only (-g -> ~/.claude/skills ...). Deliberately does NOT run `<tool> setup hooks`:
+# each one adds a SessionStart hook on top of ECC's, costing context every session.
 install_axi_skills() {
 	local pair repo skill
 	for pair in $AXI_SKILLS; do
 		repo=${pair%%:*}
 		skill=${pair#*:}
-		# skills CLI đặt bản gốc ở ~/.agents/skills rồi symlink sang từng agent.
+		# The skills CLI puts the original in ~/.agents/skills and symlinks it to each agent.
 		if [[ "$UPDATE" == false && (-d "$HOME/.agents/skills/$skill" || -d "$HOME/.claude/skills/$skill") ]]; then
-			log "skill $skill đã có, bỏ qua"
+			log "skill $skill already present, skipping"
 			continue
 		fi
 		log "npx skills add kunchenguid/$repo -g"
 		npx -y skills add "kunchenguid/$repo" -g -y ||
-			warn "cài skill $repo thất bại (bỏ qua, chạy lại sau)"
+			warn "installing skill $repo failed (skipped, run again later)"
 	done
 }
 
 # --- firstmate (git checkout, pin commit) -------------------
-# install.sh đã link config/ và data/ vào $FIRSTMATE_DIR trước khi clone, nên thư
-# mục có thể tồn tại mà chưa có .git và `git clone` vào đó sẽ lỗi. Entry nào
-# KHÔNG phải symlink trỏ vào repo này (file thật, link trỏ chỗ khác): in ra, mỗi
-# dòng một đường dẫn.
+# install.sh links config/ and data/ into $FIRSTMATE_DIR before the clone, so the
+# directory can exist without a .git and `git clone` into it would fail. Prints every entry
+# that is NOT a symlink into this repo (a real file, a link pointing elsewhere), one
+# path per line.
 foreign_entries() {
 	local dir=$1 entry
 	while IFS= read -r -d '' entry; do
@@ -200,15 +200,15 @@ foreign_entries() {
 	done < <(find "$dir" -mindepth 1 ! -type d -print0)
 }
 
-# Clone vào thư mục cạnh rồi chuyển .git sang: các link của dotfiles giữ nguyên,
-# không xoá hay ghi đè gì. Không bao giờ rm -rf $FIRSTMATE_DIR.
+# Clone into a sibling directory, then move .git over: the dotfiles links stay as they are,
+# nothing is deleted or overwritten. Never rm -rf $FIRSTMATE_DIR.
 adopt_firstmate_dir() {
 	local foreign
 	foreign=$(foreign_entries "$FIRSTMATE_DIR")
 	if [[ -n "$foreign" ]]; then
-		warn "$FIRSTMATE_DIR đã tồn tại, chưa có .git và chứa thứ không phải link của dotfiles, bỏ qua clone firstmate:"
+		warn "$FIRSTMATE_DIR exists, has no .git and holds things that are not dotfiles links, skipping the firstmate clone:"
 		printf '  %s\n' "${foreign//$'\n'/$'\n'  }" >&2
-		warn "dời hoặc xoá các đường dẫn trên (hoặc cả $FIRSTMATE_DIR nếu không cần), rồi chạy lại"
+		warn "move or delete the paths above (or all of $FIRSTMATE_DIR if unneeded), then run again"
 		return 1
 	fi
 
@@ -216,22 +216,22 @@ adopt_firstmate_dir() {
 	tmp=$(mktemp -d "$FIRSTMATE_DIR.clone.XXXXXX")
 	if ! git clone --quiet --no-checkout "$FIRSTMATE_REPO" "$tmp/repo"; then
 		rm -rf "$tmp"
-		die "clone firstmate thất bại"
+		die "cloning firstmate failed"
 	fi
-	# Link nằm đúng chỗ file mà firstmate track thì checkout sẽ đè mất link.
+	# A link sitting exactly on a file firstmate tracks would be overwritten by the checkout.
 	while IFS= read -r -d '' link; do
 		rel=${link#"$FIRSTMATE_DIR"/}
 		if [[ -n "$(git -C "$tmp/repo" ls-tree --name-only HEAD -- "$rel")" ]]; then
 			rm -rf "$tmp"
-			warn "$link trùng đường dẫn firstmate track, bỏ qua clone firstmate; dời link đó đi rồi chạy lại"
+			warn "$link collides with a path firstmate tracks, skipping the firstmate clone; move that link away and run again"
 			return 1
 		fi
 	done < <(find "$FIRSTMATE_DIR" -mindepth 1 -type l -print0)
 
 	mv "$tmp/repo/.git" "$FIRSTMATE_DIR/.git"
 	rm -rf "$tmp"
-	# Index đang trống: dựng lại từ HEAD rồi chỉ ghi file còn thiếu (checkout-index
-	# không có -f sẽ không đè gì có sẵn).
+	# The index is empty: rebuild it from HEAD, then write only the missing files (checkout-index
+	# without -f never overwrites anything).
 	git -C "$FIRSTMATE_DIR" reset --quiet
 	git -C "$FIRSTMATE_DIR" checkout-index --all
 }
@@ -252,13 +252,13 @@ install_firstmate() {
 	local head
 	head=$(git -C "$FIRSTMATE_DIR" rev-parse HEAD)
 	if [[ "$head" == "$FIRSTMATE_REV" ]]; then
-		log "firstmate @ ${FIRSTMATE_REV:0:7} đã có, bỏ qua"
+		log "firstmate @ ${FIRSTMATE_REV:0:7} already present, skipping"
 		return
 	fi
-	# firstmate ghi state (projects/, data/) vào chính checkout -> không checkout
-	# đè khi cây đang bẩn, tránh mất state của nó.
+	# firstmate writes state (projects/, data/) into its own checkout -> do not check out
+	# over a dirty tree, so its state is never lost.
 	if [[ -n "$(git -C "$FIRSTMATE_DIR" status --porcelain --untracked-files=no)" ]]; then
-		warn "firstmate có thay đổi chưa commit, giữ nguyên @ ${head:0:7}"
+		warn "firstmate has uncommitted changes, keeping @ ${head:0:7}"
 		return
 	fi
 	git -C "$FIRSTMATE_DIR" fetch --quiet origin "$FIRSTMATE_REV" 2>/dev/null || true
@@ -266,12 +266,12 @@ install_firstmate() {
 	log "firstmate -> ${FIRSTMATE_REV:0:7}"
 }
 
-# --- Thư mục state phải là thư mục THẬT ---------------------
-# Bản cài bằng stow cũ: thư mục chưa có lúc stow bị gập cả thành một symlink vào
-# dotfiles và DB/worktree/run log của tool rơi luôn vào repo (install.sh không
-# gập các thư mục này). Chỉ gỡ symlink trỏ vào CHÍNH
-# repo này (symlink tự đặt sang chỗ khác thì giữ), tạo thư mục thật rồi link lại
-# từng file theo đúng dạng stow tạo: "../<đích của symlink gập>/<tên>".
+# --- State directories must be REAL directories -------------
+# Old stow installs: a directory missing at stow time got folded into one symlink into
+# dotfiles, and the tools' DBs/worktrees/run logs landed in the repo (install.sh does not
+# fold these directories). Only removes a symlink pointing into THIS
+# repo (a symlink you set up elsewhere is kept), creates a real directory, then relinks
+# each file in the shape stow makes: "../<target of the folded symlink>/<name>".
 REPO_DIR=$(dirname "$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")")
 
 unfold_dir() {
@@ -281,13 +281,13 @@ unfold_dir() {
 		return
 	fi
 	if [[ "$(readlink -f "$dir")" != "$REPO_DIR/${dir#"$HOME"/}" ]]; then
-		warn "$dir là symlink không trỏ vào $REPO_DIR, giữ nguyên"
+		warn "$dir is a symlink not pointing into $REPO_DIR, keeping it"
 		return
 	fi
 	target=$(readlink "$dir")
 	[[ "$target" == /* ]] || target="../$target"
 	src=$(readlink -f "$dir")
-	log "tách $dir khỏi symlink stow"
+	log "splitting $dir out of the stow symlink"
 	rm "$dir"
 	mkdir -p "$dir"
 	for entry in "$src"/* "$src"/.[!.]*; do
@@ -311,13 +311,13 @@ main() {
 
 	cat <<EOF
 
-Xong. Bước tiếp:
-  1. link lại dotfiles để có config: ~/dotfiles/install.sh
-  2. Trong mỗi repo muốn chặn push: no-mistakes init
-  3. Kiểm tra: no-mistakes doctor
-  4. tmux: prefix F (menu workflow), prefix N (no-mistakes TUI)
+Done. Next steps:
+  1. relink dotfiles to get the config: ~/dotfiles/install.sh
+  2. In every repo whose pushes should be gated: no-mistakes init
+  3. Check: no-mistakes doctor
+  4. tmux: prefix F (workflow menu), prefix N (no-mistakes TUI)
 EOF
 }
 
-# Cho phép test `source` file này mà không chạy cả bộ cài.
+# Lets tests `source` this file without running the whole installer.
 [[ "${BASH_SOURCE[0]}" != "$0" ]] || main "$@"

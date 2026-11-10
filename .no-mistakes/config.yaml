@@ -1,15 +1,15 @@
-# no-mistakes - config toàn cục (~/.no-mistakes/config.yaml, qua install.sh).
-# Repo-level: .no-mistakes.yaml ở root repo, ưu tiên hơn file này.
-# Tham chiếu: https://github.com/kunchenguid/no-mistakes (docs/reference/global-config.md)
+# no-mistakes - global config (~/.no-mistakes/config.yaml, via install.sh).
+# Repo level: .no-mistakes.yaml at the repo root overrides this file.
+# Reference: https://github.com/kunchenguid/no-mistakes (docs/reference/global-config.md)
 
-# Thử theo thứ tự; agent không chạy được thì sang cái kế tiếp.
-# Chạy trên HOST (~/.local/bin/claude ...). Docker để phase sau qua
-# agent_path_override trỏ vào wrapper docker exec.
+# Tried in order; if an agent cannot run, the next one is used.
+# Runs on the HOST (~/.local/bin/claude ...). Docker comes in a later phase via
+# agent_path_override pointing at a docker exec wrapper.
 agent: [claude, codex, opencode]
 
-# Daemon chạy bằng systemd, không đọc .zshenv: Claude đi qua ai-acct để mỗi lần
-# chạy agent đều nạp token của tài khoản đang chọn (ai-acct use NAME), không cần
-# restart daemon khi đổi tài khoản.
+# The daemon runs under systemd and does not read .zshenv: Claude goes through ai-acct so every
+# agent run loads the token of the selected account (ai-acct use NAME), no daemon
+# restart needed when switching accounts.
 agent_path_override:
   claude: ai-acct-claude
 
@@ -17,7 +17,7 @@ agent_timeout: "30m"
 review_agent_timeout: "30m"
 test_agent_timeout: "30m"
 
-# Số vòng tự sửa tối đa mỗi bước. review = 0: phát hiện review thì dừng hỏi người.
+# Max auto-fix rounds per step. review = 0: review findings stop and ask a human.
 auto_fix:
   rebase: 3
   review: 0

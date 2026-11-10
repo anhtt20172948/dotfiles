@@ -4,7 +4,7 @@ package.path = root .. "/.config/nvim/lua/?.lua;" .. root .. "/.config/nvim/lua/
 
 local flow = require("customize.aiterm_flow")
 
--- Stub mọi tiến trình: ghi lại lệnh thay vì chạy.
+-- Stub every process: record the command instead of running it.
 local calls, notes, opened
 local git_root, lease
 local function reset(opts)
@@ -17,7 +17,7 @@ local function reset(opts)
 	vim.env.TMUX = opts.tmux and "/tmp/tmux-1000/default,1,0" or nil
 end
 
--- executable() phải đúng; macOS không có /bin/true nên lấy đường dẫn thật.
+-- executable() must be true; macOS has no /bin/true, so use the real path.
 local script = vim.fn.exepath("true")
 assert(script ~= "", "true not found")
 flow.config.script = script
@@ -115,7 +115,7 @@ test("firstmate refuses outside tmux and opens its pickers in a tmux popup insid
 	assert(d >= 0 and cmd[d + 2] == vim.fn.getcwd(), "popup must start in nvim's cwd")
 end)
 
--- treehouse không có trên máy test -> giả executable() cho riêng nó.
+-- treehouse is not on the test machine -> fake executable() for it alone.
 local real_executable = vim.fn.executable
 vim.fn.executable = function(bin)
 	if bin == "treehouse" then

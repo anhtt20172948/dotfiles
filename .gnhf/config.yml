@@ -1,15 +1,15 @@
-# gnhf - config toàn cục (~/.gnhf/config.yml, qua install.sh).
-# Giới hạn iteration/token là cờ runtime (--max-iterations, --max-tokens), không
-# lưu ở đây; menu tmux (prefix F) và <leader>ag tự truyền cờ mặc định.
+# gnhf - global config (~/.gnhf/config.yml, via install.sh).
+# Iteration/token limits are runtime flags (--max-iterations, --max-tokens), not
+# stored here; the tmux menu (prefix F) and <leader>ag pass default flags.
 
 agent: claude
 
-# Commit kiểu feat:/fix: cho khớp quy ước commit của dotfiles.
+# feat:/fix: commits, matching the dotfiles commit convention.
 commitMessage:
   preset: conventional
 
-# Hỏng liên tiếp chừng này iteration thì dừng, khỏi đốt token cả đêm.
+# Stop after this many consecutive failed iterations instead of burning tokens all night.
 maxConsecutiveFailures: 3
 
-# Chạy qua đêm: giữ máy không ngủ (systemd-inhibit).
+# Overnight runs: keep the machine awake (systemd-inhibit).
 preventSleep: true
