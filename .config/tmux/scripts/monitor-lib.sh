@@ -25,9 +25,10 @@ C_CYAN=$'\033[1;36m'
 C_BLUE=$'\033[1;34m'
 C_GREEN=$'\033[1;32m'
 C_YELLOW=$'\033[1;33m'
-C_MAGENTA=$'\033[1;35m'
+# Bright magenta (95), not magenta (35): DMS's palette makes ANSI 5 a dark
+# container tone that is unreadable as text.
+C_MAGENTA=$'\033[1;95m'
 C_RED=$'\033[1;31m'
-C_ORANGE=$'\033[38;5;214m'
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -39,7 +40,7 @@ color_name_to_ansi() {
   case "$key" in
     black)   echo '0;30'  ;; red)     echo '1;31'  ;;
     green)   echo '1;32'  ;; yellow)  echo '1;33'  ;;
-    blue)    echo '1;34'  ;; magenta) echo '1;35'  ;;
+    blue)    echo '1;34'  ;; magenta) echo '1;95'  ;;
     cyan)    echo '1;36'  ;; white)   echo '1;37'  ;;
     dim)     echo '2'     ;; bold)    echo '1'     ;;
     reset)   echo '0'     ;;

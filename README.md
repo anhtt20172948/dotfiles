@@ -82,6 +82,7 @@ for f in data/captain.md; do p=~/.local/share/firstmate/$f; [ -L "$p" ] && cp --
 | `.config/btop` | Resource monitor settings and themes. |
 | `.config/atuin` | Shell history settings. |
 | `.config/lazygit`, `.config/lazydocker` | Git and Docker TUI settings. |
+| `.config/git`, `.config/bat`, `.config/fzf` | Shared git settings (delta diffs; identity stays in `~/.gitconfig`), bat and fzf colours; see [Colour consistency](#colour-consistency). |
 | `.config/clangd` | C/C++ language server settings. |
 
 ### tmux
@@ -743,14 +744,31 @@ the ASCII fallback. Theme reloads recompute from the original icon colours.
 plugins, run `nvim --headless -u NONE -i NONE -l tests/helpers/check_devicon_colors.lua "$PWD"`
 (and repeat with `NVIM_ASCII=1`) to check the providers and picker formatter.
 
-Other terminal tools use ANSI colours, including btop's built-in `TTY` theme.
+Other terminal tools use ANSI colours, including btop's built-in `TTY` theme,
+bat (`.config/bat`), delta (the `[delta]` section of `.config/git/config`, also
+used by lazygit) and fzf (`.config/fzf/fzfrc` for the shell, read through
+`FZF_DEFAULT_OPTS_FILE`; the tmux pickers use the same spec from
+`.config/tmux/scripts/fzf-colors.sh`). They follow one slot contract, because
+DMS's dank16 palette gives two slots dark tones whatever the wallpaper:
+
+- text uses ANSI 1-4, 6, 7, 9-15 or the default foreground;
+- ANSI 5 (magenta) is never text: dank16 makes it a dark container tone, about
+  2.5:1 on the background (use bright magenta, 13);
+- ANSI 8 (bright black) is a surface and border tone, never text;
+- ANSI 0 (black) equals the background, so it is no selection surface;
+- the accent is ANSI 6 (cyan), the DMS primary.
+
 Do not add hex colour literals to active tool configuration. Neovim highlights
 must use the active Catppuccin palette, preserving the existing highlight roles
 without retaining an independent fixed palette. `tests/palette_consistency_test.sh`
 enforces this for tracked files. Its commented exceptions cover kitty palettes,
 vendored Yazi flavour assets (the active Yazi theme uses ANSI), crew-watch named
 palettes, pixel-pet sprite artwork, test fixtures/assertions, documentation, and
-generated dependency locks.
+generated dependency locks. `tests/palette_contract.py` (run by the same test)
+also rejects truecolor and 256-colour escapes, enforces the slot contract in
+tmux, fzf, shell, yazi, lazygit, lazydocker and duckdb configuration, and checks
+every text slot they use at 4.5:1 against Catppuccin Mocha and recorded DMS
+dark and light palettes (`tests/fixtures/palettes/`).
 
 On macOS, `install.sh` installs Homebrew coreutils for tmux-which-key's GNU
 `realpath --relative-to`; tmux includes Homebrew's GNU tools in the plugin

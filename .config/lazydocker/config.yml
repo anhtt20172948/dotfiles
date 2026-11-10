@@ -1,0 +1,15 @@
+# Same ANSI-only theme as lazygit (.config/lazygit/config.yml), limited to the
+# keys lazydocker has: the panels follow the terminal palette (kitty, and
+# through it DMS). cyan = DMS primary; the selected row is reverse video so its
+# text keeps its contrast on every palette.
+gui:
+  theme:
+    activeBorderColor:
+      - cyan
+      - bold
+    inactiveBorderColor:
+      - default
+    selectedLineBgColor:
+      - reverse
+    optionsTextColor:
+      - blue

@@ -112,6 +112,22 @@ done
 rendered=$(tm display -p '#{T:window-status-current-format}')
 assert_contains "current window renders as a pill" "${open_cap}#[fg=black,bg=cyan,bold]" "$rendered"
 
+# --- built-in UI colours -------------------------------------------------------
+# Menus (the key-hint menu included) and copy-mode matches use the palette's
+# slots, and tmux 3.8's built-in theme maps onto the terminal's 16 colours.
+if version_ge 3.2; then
+  [[ $(tm show -gwv copy-mode-match-style) == "bg=blue,fg=black" ]] || fail "copy-mode-match-style"
+  [[ $(tm show -gwv copy-mode-current-match-style) == "bg=cyan,fg=black" ]] || fail "copy-mode-current-match-style"
+fi
+if version_ge 3.4; then
+  [[ $(tm show -gwv menu-style) == "bg=default,fg=default" ]] || fail "menu-style"
+  [[ $(tm show -gwv menu-selected-style) == "bg=cyan,fg=black" ]] || fail "menu-selected-style"
+  [[ $(tm show -gwv menu-border-style) == "fg=cyan" ]] || fail "menu-border-style"
+fi
+if version_ge 3.8; then
+  [[ $(tm show -gv theme) == terminal ]] || fail "tmux 3.8 theme must follow the terminal"
+fi
+
 # --- active pane ---------------------------------------------------------------
 if version_ge 3.3; then
   [[ $(tm show -gwv pane-border-indicators) == both ]] || fail "pane-border-indicators not set on tmux >= 3.3"
@@ -179,21 +195,29 @@ for key in a A F N C g G b M f / s T Q E S m ','; do
   [[ $bound == *" $key "* ]] || fail "prefix $key is documented in the menu but not bound"
 done
 # --- picker colours ------------------------------------------------------------
-# Every fzf picker shares ONE ANSI-slot --color spec (AI_FZF_COLORS in ai-lib.sh),
-# so the popups follow the terminal palette and bg:-1 keeps kitty's opacity. No
-# picker may carry its own colour string, and no hex may sneak into the spec.
+# Every fzf picker shares ONE ANSI-slot --color spec (PICKER_FZF_COLORS in
+# fzf-colors.sh), so the popups follow the terminal palette and bg:-1 keeps
+# kitty's opacity. No picker may carry its own colour string, and no hex may
+# sneak into the spec (tests/palette_contract.py checks the slots themselves).
 # shellcheck source=/dev/null
-source "$ROOT/.config/tmux/scripts/ai-lib.sh"
-[[ $AI_FZF_COLORS == *'bg:-1'* ]] || fail "fzf spec must keep bg:-1 (transparent)"
-[[ $AI_FZF_COLORS != *'#'* ]] || fail "fzf spec must use ANSI slots, not hex"
-for f in ai-workflow ai-sessions ai-picker ai-location ai-account crew-view; do
+source "$ROOT/.config/tmux/scripts/fzf-colors.sh"
+[[ $PICKER_FZF_COLORS == *'bg:-1'* ]] || fail "fzf spec must keep bg:-1 (transparent)"
+[[ $PICKER_FZF_COLORS != *'#'* ]] || fail "fzf spec must use ANSI slots, not hex"
+for f in ai-workflow ai-sessions ai-picker ai-location ai-account crew-view \
+  file-finder grep-finder monitor sesh-picker; do
   script="$ROOT/.config/tmux/scripts/$f.sh"
-  # shellcheck disable=SC2016 # the literal text "$AI_FZF_COLORS" is the pattern
-  grep -qF -- '--color="$AI_FZF_COLORS"' "$script" || fail "$f.sh must use \$AI_FZF_COLORS"
+  # shellcheck disable=SC2016 # the literal text "$PICKER_FZF_COLORS" is the pattern
+  grep -qF -- '--color="$PICKER_FZF_COLORS"' "$script" || fail "$f.sh must use \$PICKER_FZF_COLORS"
   if grep -nE -- "--color='" "$script"; then fail "$f.sh carries its own fzf colour string"; fi
 done
+# Every script that runs fzf is in the list above.
+for script in "$ROOT"/.config/tmux/scripts/*.sh; do
+  grep -qE '\| *fzf( |$)' "$script" || continue
+  # shellcheck disable=SC2016 # the literal text "$PICKER_FZF_COLORS" is the pattern
+  grep -qF -- '--color="$PICKER_FZF_COLORS"' "$script" || fail "${script##*/} runs fzf without \$PICKER_FZF_COLORS"
+done
 if command -v fzf >/dev/null; then
-  printf 'a\n' | fzf --filter=a --color="$AI_FZF_COLORS" >/dev/null || fail "fzf rejects AI_FZF_COLORS"
+  printf 'a\n' | fzf --filter=a --color="$PICKER_FZF_COLORS" >/dev/null || fail "fzf rejects PICKER_FZF_COLORS"
 fi
 # yazi: ANSI colour names only, no catppuccin flavor.
 yz="$ROOT/.config/yazi/theme.toml"

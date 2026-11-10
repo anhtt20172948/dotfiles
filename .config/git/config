@@ -1,0 +1,29 @@
+# Shared git settings, read from ~/.config/git/config on every host. No identity
+# or credentials here: those stay in ~/.gitconfig, which git reads after this
+# file, so it also wins on any key both set. Keep ~/.gitconfig present
+# (install.sh creates an empty one): without it `git config --global` writes
+# into this file, which is a symlink into the dotfiles checkout.
+#
+# Diffs go through delta with ANSI colours only, so they follow the terminal
+# palette (kitty, and through it DMS) like the rest of the terminal. Syntax
+# highlighting stays off: delta's ANSI themes paint keywords in magenta (ANSI 5),
+# a dark container tone in DMS's palette (about 2.5:1 on the background), and
+# every other theme is fixed RGB. delta reads [delta] when lazygit runs it too.
+# Hosts without delta fall back to less / no filter instead of failing.
+[core]
+	pager = "if command -v delta >/dev/null 2>&1; then exec delta; else exec less; fi"
+[interactive]
+	diffFilter = "if command -v delta >/dev/null 2>&1; then exec delta --color-only; else exec cat; fi"
+[delta]
+	navigate = true
+	syntax-theme = none
+	minus-style = red
+	minus-emph-style = bold red reverse
+	plus-style = green
+	plus-emph-style = bold green reverse
+	file-style = bold blue
+	file-decoration-style = blue ul
+	hunk-header-style = file line-number syntax
+	hunk-header-decoration-style = cyan box
+	hunk-header-file-style = blue
+	hunk-header-line-number-style = cyan

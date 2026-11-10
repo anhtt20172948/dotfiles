@@ -450,7 +450,7 @@ selection=$(
     --preview-window='right,60%,wrap,border-left' \
     --preview-label=' Details & Usage ' \
     --bind='ctrl-j:down,ctrl-k:up' \
-    --color="$AI_FZF_COLORS" \
+    --color="$PICKER_FZF_COLORS" \
     --preview="$preview_command"
 ) || {
   fzf_status=$?

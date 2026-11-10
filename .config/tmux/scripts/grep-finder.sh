@@ -2,6 +2,10 @@
 # Grep finder: rg → fzf → nvim (jumps to the exact line)
 set -uo pipefail
 export PATH="$HOME/.local/bin:$PATH"
+LIB_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=./fzf-colors.sh
+source "$LIB_DIR/fzf-colors.sh"
 
 for bin in rg fzf bat nvim; do
   command -v "$bin" >/dev/null 2>&1 || {
@@ -18,6 +22,7 @@ rg --column --line-number --no-heading --color=always --smart-case \
    --max-columns=200 --max-columns-preview --no-messages . 2>/dev/null | \
   fzf --ansi --delimiter=: --reverse \
       --prompt '🔎 ' --border-label ' Grep Finder ' \
+      --color="$PICKER_FZF_COLORS" \
       --preview 'bat --color=always --highlight-line {2} -- {1}' \
       --preview-window 'up,60%,border-bottom,+{2}+3/3' \
       --bind 'enter:become(nvim +{2} -- {1})'

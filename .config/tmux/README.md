@@ -20,6 +20,7 @@ configuration with `install.sh`.
 ├── monitor.conf                → Monitor Center config
 ├── ai-popup.conf               → minimal config for persistent AI sessions
 └── scripts/
+    ├── fzf-colors.sh           → the one fzf --color spec every picker shares
     ├── ai-lib.sh               → shared helpers for the ai-* scripts
     ├── ai-picker.sh            → fzf picker + previews for AI coding CLIs
     ├── ai-sessions.sh          → per-tool new, live and saved session picker
@@ -46,8 +47,10 @@ There is no `theme.conf` - the theme lives in `status.conf` and uses ANSI colour
 names only (`green`, `brightblack`, `default`, ...), never hex. tmux therefore
 follows the terminal palette (kitty, and through it DMS) live and looks the same
 over SSH. The fzf pickers do the same: they share one ANSI-slot `--color` spec
-(`AI_FZF_COLORS` in `scripts/ai-lib.sh`) with `bg:-1`, so kitty's opacity shows
-through. `options.conf` also enables kitty terminal-features and extended keys.
+(`PICKER_FZF_COLORS` in `scripts/fzf-colors.sh`, also the shell's
+`~/.config/fzf/fzfrc`) with `bg:-1`, so kitty's opacity shows through. tmux 3.8's
+built-in theme is set to `terminal`, and menus and copy-mode matches use the same
+slots (cyan = DMS primary). `options.conf` also enables kitty terminal-features and extended keys.
 
 ## Load order
 

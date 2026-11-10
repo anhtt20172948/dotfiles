@@ -4,6 +4,8 @@
 # url_color), blue = color4 (DMS secondary), red = color1, yellow = color3.
 # `default` keeps the terminal background and foreground.
 gui:
+  # File and branch icons; kitty draws Nerd Fonts v3 glyphs.
+  nerdFontsVersion: "3"
   theme:
     activeBorderColor:
       - cyan
@@ -15,8 +17,13 @@ gui:
       - bold
     optionsTextColor:
       - blue
+    # reverse, not a background colour: lazygit takes only the 8 base colour
+    # names (or hex) here, and none of them is a surface every palette keeps
+    # readable text on (default text on blue is 1.6:1 with DMS, and lazygit's
+    # red file-status letter on it 1.1:1). reverse swaps each cell's own
+    # colours, so every glyph of the row keeps its contrast.
     selectedLineBgColor:
-      - blue
+      - reverse
     inactiveViewSelectedLineBgColor:
       - bold
     cherryPickedCommitFgColor:
@@ -31,3 +38,11 @@ gui:
       - red
     defaultFgColor:
       - default
+# Diffs go through delta, styled by the [delta] section of ~/.config/git/config
+# (ANSI colours only). This is the lazygit 0.66 schema: lazygit 0.48 ignores the
+# key and shows git's plain colour diff. The 0.48 key (git.paging) is
+# deliberately absent: lazygit 0.66 migrates old keys by rewriting this file,
+# which is a symlink into the dotfiles checkout.
+git:
+  diffRenderers:
+    - command: delta --{{colorScheme}} --paging=never

@@ -98,7 +98,7 @@ selection=$(
     --preview-window='right,55%,wrap,border-left' \
     --preview-label=' Details ' \
     --bind='ctrl-j:down,ctrl-k:up' \
-    --color="$AI_FZF_COLORS" \
+    --color="$PICKER_FZF_COLORS" \
     --preview="$preview_command"
 ) || {
   fzf_status=$?

@@ -609,7 +609,7 @@ while :; do
     --preview-window='right,48%,wrap,border-left' \
     --preview-label=' Session Details ' \
     --bind='ctrl-j:down,ctrl-k:up' \
-    --color="$AI_FZF_COLORS" \
+    --color="$PICKER_FZF_COLORS" \
     --preview="$preview_command")
   fzf_status=$?
   case "$fzf_status" in 0) ;; 1|130) exit 0 ;; *) exit "$fzf_status" ;; esac

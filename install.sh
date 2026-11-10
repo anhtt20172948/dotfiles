@@ -176,6 +176,32 @@ link_entry() {
 	make_link "$rel" "$src"
 }
 
+# Without ~/.gitconfig, `git config --global` writes to ~/.config/git/config,
+# which is a symlink into this repo: identity, credential helpers and
+# safe.directory entries would land in the checkout. An empty ~/.gitconfig takes
+# those writes; git reads it after ~/.config/git/config, so it changes nothing.
+ensure_gitconfig() {
+	[[ -f "$REPO/.config/git/config" ]] || return 0
+	[[ -e "$HOME/.gitconfig" || -L "$HOME/.gitconfig" ]] && return 0
+	echo "create  ~/.gitconfig (empty, takes git config --global writes)"
+	run touch "$HOME/.gitconfig"
+}
+
+# bat loads ~/.config/bat/themes only from its cache, so rebuild the cache when
+# there is none or a tracked theme is newer than it. A failed build only warns:
+# bat then keeps its built-in themes.
+build_bat_cache() {
+	local themes="$REPO/.config/bat/themes" cache
+	[[ -d "$themes" ]] && command -v bat >/dev/null || return 0
+	cache=$(bat --cache-dir 2>/dev/null) || return 0
+	if [[ -f "$cache/themes.bin" ]] &&
+		[[ -z "$(find "$themes" -name '*.tmTheme' -newer "$cache/themes.bin" 2>/dev/null)" ]]; then
+		return 0
+	fi
+	echo "build   bat cache (themes from ~/.config/bat/themes)"
+	run bat cache --build >/dev/null || echo "warning: bat cache --build failed" >&2
+}
+
 # fresh: thư mục đích vừa được tạo (hoặc sẽ được tạo, khi dry-run) nên rỗng.
 link_children() {
 	local rel=$1 fresh=${2:-} path child
@@ -230,6 +256,8 @@ main() {
 	fi
 	load_tracked
 	link_children ""
+	ensure_gitconfig
+	build_bat_cache
 	# Global Claude instructions live outside the repo-only .claude directory.
 	if [[ -f "$REPO/.config/agents/CLAUDE.md" ]]; then
 		link_entry .claude/CLAUDE.md "" "$REPO/.config/agents/CLAUDE.md"
