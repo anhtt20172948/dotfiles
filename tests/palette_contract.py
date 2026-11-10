@@ -13,8 +13,9 @@ The checks, over every tracked file outside the documented exceptions:
 
   1. no truecolor or 256-colour escapes (38;2 / 48;2 / 38;5 / 48;5), no rgb()
      literals outside the Hyprland baselines, no tmux colourN;
-  2. no text in ANSI 5 or 8 in tmux styles, fzf specs, shell SGR escapes, yazi,
-     lazygit/lazydocker and duckdb; no ANSI 0 selection surface; the fzf spec
+  2. no text in ANSI 0, 5 or 8 in tmux styles, fzf specs, shell SGR escapes,
+     yazi, lazygit/lazydocker, duckdb and Starship (black on its own coloured
+     background, a pill, is fine); no ANSI 0 selection surface; the fzf spec
      in fzf-colors.sh and fzfrc identical;
   3. every text slot those configs use reaches 4.5:1 against the background of
      the fixture palettes: Catppuccin Mocha (kitty's fallback) and a recorded
@@ -217,11 +218,49 @@ def check_fzf():
 def check_yazi():
     name = ".config/yazi/theme.toml"
     for number, line in enumerate((ROOT / name).read_text().splitlines(), 1):
-        for colour in re.findall(r"\bfg\s*=\s*\"(\w+)\"", line.split("#")[0]):
+        code = line.split("#")[0]
+        # Text on its own coloured background (the hovered-row indicator) is a
+        # pill, not text on the terminal background.
+        has_bg = re.search(r"\bbg\s*=\s*\"(\w+)\"", code) is not None
+        for colour in re.findall(r"\bfg\s*=\s*\"(\w+)\"", code):
             if colour not in YAZI_NAMES:
                 fail("{}:{}".format(name, number), "unknown yazi colour '{}'".format(colour))
-            else:
+            elif not has_bg:
                 use_text(YAZI_NAMES[colour], "{}:{}".format(name, number))
+
+
+# Starship styles: `style = "bold cyan"` keys and inline `[text](fg:x bg:y)`.
+STARSHIP_NAMES = dict(
+    {n: i for i, n in enumerate(["black", "red", "green", "yellow", "blue", "purple", "cyan", "white"])},
+    **{"bright-" + n: i + 8 for i, n in enumerate(["black", "red", "green", "yellow", "blue", "purple", "cyan", "white"])}
+)
+STARSHIP_ATTRS = {"bold", "italic", "underline", "dimmed", "inverted", "blink", "hidden", "strikethrough", "none"}
+STARSHIP_STYLE = re.compile(r"\b\w*style\s*=\s*\"([^\"]*)\"|\]\(([^)$]*)\)")
+
+
+def check_starship(name):
+    for number, line in enumerate((ROOT / name).read_text().splitlines(), 1):
+        where = "{}:{}".format(name, number)
+        for match in STARSHIP_STYLE.finditer(line.split(" #")[0]):
+            tokens = (match.group(1) or match.group(2) or "").split()
+            colours = [tok for tok in tokens if tok not in STARSHIP_ATTRS]
+            has_bg = any(tok.startswith("bg:") for tok in colours)
+            for tok in colours:
+                if tok.startswith("bg:"):
+                    continue
+                colour = tok[3:] if tok.startswith("fg:") else tok
+                if colour.isdigit():
+                    if int(colour) > 15:
+                        fail(where, "starship colour {} is a 256-colour index".format(colour))
+                        continue
+                    slot = int(colour)
+                elif colour in STARSHIP_NAMES:
+                    slot = STARSHIP_NAMES[colour]
+                else:
+                    fail(where, "unknown starship colour '{}'".format(colour))
+                    continue
+                if not has_bg:
+                    use_text(slot, where)
 
 
 def check_lazy(name):
@@ -309,6 +348,9 @@ def main():
     check_lazy(".config/lazygit/config.yml")
     check_lazy(".config/lazydocker/config.yml")
     check_duckdb()
+    for name in (".config/starship.toml", ".config/starship-plain.toml"):
+        if (ROOT / name).is_file():
+            check_starship(name)
     check_contrast()
     if FAILURES:
         sys.exit("ANSI slot contract violations:\n" + "\n".join(sorted(set(FAILURES))))
