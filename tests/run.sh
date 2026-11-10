@@ -24,6 +24,7 @@ export PATH="$HOME/.local/bin:$PATH"
 LINT_FILES=(
 	.github/install-ci-tools.sh
 	.config/tmux/scripts/*.sh
+	docs/demo/render.sh
 	.local/bin/ai-acct
 	.local/bin/ai-acct-claude
 	.local/bin/agent-statusline-claude

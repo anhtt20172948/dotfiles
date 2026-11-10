@@ -598,6 +598,12 @@ release until the config moves on deliberately. The
 [lazy-lock update](.github/workflows/lazy-lock.yml) workflow runs `Lazy! update`
 weekly and opens a pull request when the updated plugins boot cleanly.
 
+A separate, non-blocking [demo workflow](.github/workflows/demo.yml) renders
+tmux, Neovim, yazi and lazygit under the Mocha fallback and the recorded DMS
+dark and light palettes with VHS on every pull request that touches the
+configuration, and uploads the GIFs and stills to compare
+([docs/demo](docs/demo/README.md)).
+
 ## License
 
 [MIT](LICENSE). Vendored components (the yazi plugins and the test fixtures)

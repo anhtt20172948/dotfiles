@@ -53,3 +53,6 @@ __pycache__/
 
 # Firstmate captain preferences are per host: never track them.
 .local/share/firstmate/data/captain.md
+
+# docs/demo/render.sh output (CI uploads it as an artifact instead).
+docs/demo/out/
