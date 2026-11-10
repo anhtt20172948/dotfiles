@@ -2,6 +2,7 @@ return { -- If you want neo-tree's file operations to work with LSP (updating im
 	-- https://github.com/antosha417/nvim-lsp-file-operations:
 	{
 		"antosha417/nvim-lsp-file-operations",
+		event = "VeryLazy",
 		dependencies = { "nvim-lua/plenary.nvim", "nvim-neo-tree/neo-tree.nvim" },
 		config = function()
 			require("lsp-file-operations").setup()

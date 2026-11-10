@@ -1,7 +1,6 @@
 return {
 	{
 		"nvzone/showkeys",
-		lazy = false,
 		cmd = "ShowkeysToggle",
 		opts = {
 			-- position = "bottom-right",

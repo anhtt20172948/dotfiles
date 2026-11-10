@@ -23,6 +23,9 @@ return {
 
 	{
 		"WhoIsSethDaniel/mason-tool-installer.nvim",
+		-- setup() requires mason-nvim-dap, which drags in the whole DAP stack; installs
+		-- start after start_delay anyway, so keep it off the startup path.
+		event = "VeryLazy",
 		dependencies = {
 			"mason-org/mason.nvim",
 		},
