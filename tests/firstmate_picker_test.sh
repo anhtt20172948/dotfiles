@@ -173,7 +173,9 @@ for QUOTA_MODE in fail invalid empty slow; do
   export QUOTA_MODE
   SECONDS=0
   run; first claude; started 'ai-acct exec --account a claude'
-  [[ $SECONDS -lt 7 ]] || fail 'quota lookup was not bounded'
+  # The lookup is capped at 5 s and the slow mock takes 15 s: 12 s tells them
+  # apart and leaves the rest of the run room on a loaded machine (7 s did not).
+  [[ $SECONDS -lt 12 ]] || fail 'quota lookup was not bounded'
   header 'Quota  claude quota ?  codex quota ?'
 done
 export QUOTA_MODE=cold
