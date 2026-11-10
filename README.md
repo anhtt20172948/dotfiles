@@ -271,6 +271,10 @@ Lualine stays under each split, with extra details at wider widths. Snacks owns
 pickers, input and notifications; Noice owns command messages, Blink completion,
 and native LSP owns hover/signature help. Session selection retains Telescope
 on demand to preserve auto-session's delete/copy/alternate actions.
+Pickers put the preview beside the list from 110 columns, below it from 25
+lines, and start list-only in smaller terminals (`<a-p>` toggles it). The
+dashboard follows its window: the artwork gives way to a one-line name when it
+does not fit, and recent AI sessions show their age.
 
 Set `NVIM_ASCII=1` before launching Neovim for ASCII diagnostic/git symbols,
 file icons and dashboard actions, and mini.icons' ASCII folder style. This is a

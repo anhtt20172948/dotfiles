@@ -12,6 +12,8 @@ return {
 				min_length = 3,
 				hl = { underline = true },
 			},
+			-- Dashboard labels are actions, not words to match across lines.
+			disable_filetypes = { "snacks_dashboard" },
 		})
 	end,
 }
