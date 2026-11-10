@@ -25,8 +25,10 @@ it on Ubuntu and on stock macOS.
 - **One palette source.** kitty's active palette is the only place colours are
   defined: DMS writes it from the wallpaper on Arch, and macOS uses the
   Catppuccin Mocha fallback. Every other tool uses ANSI colour names, so a new
-  wallpaper re-themes everything without editing a config.
-  `tests/palette_consistency_test.sh` rejects hex colours in active
+  wallpaper re-themes everything without editing a config. A slot contract
+  keeps those names readable on any wallpaper (see
+  [The ANSI slot contract](#the-ansi-slot-contract)), and the palette tests
+  reject hex colours, truecolor escapes and forbidden slots in active
   configuration.
 - **Transparent surfaces.** Neovim (including sidebars, status lines and
   popups), tmux's status bar and btop draw no background of their own, so
@@ -42,9 +44,12 @@ it on Ubuntu and on stock macOS.
   and caps; `starship-plain.toml` is its ASCII twin for terminals without a
   Nerd Font (`STARSHIP_CONFIG=~/.config/starship-plain.toml`).
 - **Readable by construction.** Neovim computes every text colour, file icons
-  included, to at least 4.5:1 contrast against the actual background, and tests
-  hold it there (`tests/nvim_visual.lua`, `tests/nvim_icons.lua`,
-  `tests/nvim_lualine.lua`).
+  included, to at least 4.5:1 contrast against the actual background
+  (`tests/nvim_visual.lua`, `tests/nvim_icons.lua`, `tests/nvim_lualine.lua`).
+  Every ANSI slot another tool uses as text is checked at 4.5:1 against
+  Catppuccin Mocha and recorded DMS dark and light palettes
+  (`tests/palette_contract.py`), and Hyprland picks its group bar title colours
+  for contrast against the tab colours DMS sets.
 - **The palette travels.** The local shell exports the palette and SSH forwards
   it; a watcher pushes it to servers on every theme change. Remote Neovim reads
   it without a reconnect, and ANSI-only tools follow automatically because the
@@ -60,7 +65,7 @@ flowchart LR
   wallpaper[Wallpaper] --> dms["DMS + matugen"]
   dms --> hypr["Hyprland colours"]
   dms --> palette["kitty palette<br/>dank-theme.conf<br/>(Mocha fallback on macOS)"]
-  palette -- "16 ANSI colours" --> tuis["tmux, Starship, yazi,<br/>lazygit, btop, fzf"]
+  palette -- "16 ANSI colours" --> tuis["tmux, Starship, fzf, bat, delta,<br/>yazi, lazygit, btop"]
   palette -- "LC_KITTY_PALETTE" --> nvim["Neovim"]
   palette -- "SSH SendEnv +<br/>palette push" --> remote["Neovim on servers"]
 ```
@@ -100,9 +105,12 @@ workflow.
 2. Workflow, `make converge-local`: pinned CLI tools in `~/.local/bin` (Neovim,
    yazi, lazygit, fzf, bat, delta, atuin, btop, ...), the bash/zsh rc files,
    the `LC_KITTY_PALETTE` export, SSH `SendEnv`, and a systemd user unit that
-   pushes the palette to servers on every DMS theme change. Installing Starship
-   and running `starship init` for the tracked prompt is workflow's job too;
-   until workflow does it, hosts keep workflow's powerlevel10k prompt.
+   pushes the palette to servers on every DMS theme change. Two pieces for
+   configs tracked here are workflow's job too and not in workflow yet:
+   installing Starship and running `starship init` (until then hosts keep
+   workflow's powerlevel10k prompt), and exporting
+   `FZF_DEFAULT_OPTS_FILE=~/.config/fzf/fzfrc` so shell fzf takes the palette
+   colours (the tmux pickers already do).
 3. Dotfiles: `./install.sh`.
 
 **macOS workstation**
@@ -167,6 +175,11 @@ for the agent settings merge. Keep `~/.local/bin` on `PATH` to use the helpers.
   directories stay real; existing directory symlinks outside this checkout are
   preserved, so runtime data stays outside the checkout.
 - Root documentation, tests and project-only settings are excluded from linking.
+- An empty `~/.gitconfig` is created when none exists, so `git config --global`
+  writes land there instead of in the linked `~/.config/git/config` (git reads
+  both; identity and credentials stay in `~/.gitconfig`).
+- bat's theme cache is rebuilt when it is missing or older than a tracked theme
+  in `.config/bat/themes`, since bat loads custom themes only from its cache.
 - A file deleted from the repository leaves its old link behind. From the
   checkout, `find ~ -maxdepth 4 -xtype l -lname "$PWD/*"` lists links into it
   that no longer resolve; remove them by hand.
@@ -228,12 +241,12 @@ for f in data/captain.md; do p=~/.local/share/firstmate/$f; [ -L "$p" ] && cp --
 | `.config/extrakto` | Extra extrakto filters (git hashes) for picking text out of a pane. | [tmux README](.config/tmux/README.md) |
 | `.config/kitty` | Terminal: font, palette include order, slanted tab bar, `kitten ssh` settings. | [kitty README](.config/kitty/README.md) |
 | `.config/starship.toml`, `.config/starship-plain.toml` | Shell prompt for bash and zsh (Nerd Font and ASCII variants). | [Design principles](#design-principles) |
-| `.config/hypr` | Hyprland 0.57 Lua config; loads the DMS-generated colours, layout and rules last. | [How the palette flows](#how-the-palette-flows) |
+| `.config/hypr` | Hyprland 0.57 Lua config; loads the DMS-generated colours, layout and rules last, then computes readable group bar titles (`groupbar.lua`). | [How the palette flows](#how-the-palette-flows) |
 | `.config/yazi` | File manager: ANSI-only theme with Material folder icons, keymaps, and the duckdb, center-media and toggle-pane plugins. | |
 | `.duckdbrc` | DuckDB CLI highlight colours (ANSI names), also used by yazi's duckdb previews. | |
 | `.config/btop` | Resource monitor: built-in `TTY` theme, transparent background. | |
-| `.config/lazygit` | Git TUI: ANSI-only theme. | |
-| `.config/lazydocker` | Docker TUI: an empty placeholder, so lazydocker's defaults apply. | |
+| `.config/lazygit`, `.config/lazydocker` | Git and Docker TUIs: ANSI-only themes and a reverse-video selected row; lazygit adds Nerd Font icons and delta diffs. | |
+| `.config/git`, `.config/bat`, `.config/fzf` | Shared git settings (delta as pager with ANSI-only styles; identity stays in `~/.gitconfig`), bat's `ansi` theme, and fzf's palette colours for the shell. | [The ANSI slot contract](#the-ansi-slot-contract) |
 | `.config/atuin` | Shell history settings. | |
 | `.config/clangd` | C/C++ language server: a trimmed clang-tidy check set. | |
 | `.config/agents`, `.config/opencode` | Global agent rules for Claude Code, Codex and OpenCode. | [Agent settings](#agent-settings) |
@@ -303,17 +316,36 @@ the ASCII fallback. Theme reloads recompute from the original icon colours.
 plugins, run `nvim --headless -u NONE -i NONE -l tests/helpers/check_devicon_colors.lua "$PWD"`
 (and repeat with `NVIM_ASCII=1`) to check the providers and picker formatter.
 
-### Other tools and the ANSI rule
+### The ANSI slot contract
 
-Other terminal tools use ANSI colours, including btop's built-in `TTY` theme
-and yazi's built-in theme (no flavour). Do not add hex colour literals to
-active tool configuration. Neovim highlights must use the active Catppuccin
-palette, preserving the existing highlight roles without retaining an
-independent fixed palette. `tests/palette_consistency_test.sh` enforces this for
-tracked files. Its commented exceptions cover kitty palettes, crew-watch named
-palettes, pixel-pet sprite artwork, test fixtures/assertions, documentation,
-and generated dependency locks. kitty's `kitten themes` downloads other terminal
-themes on demand, so none are vendored here.
+Every tool except Neovim uses ANSI colours: btop's built-in `TTY` theme, yazi's
+built-in theme (no flavour), tmux, lazygit, lazydocker, duckdb, Starship, bat
+(`.config/bat`), delta (the `[delta]` section of `.config/git/config`, also
+used by lazygit) and fzf (`.config/fzf/fzfrc` for the shell, read through
+`FZF_DEFAULT_OPTS_FILE`; the tmux pickers use the same spec from
+`.config/tmux/scripts/fzf-colors.sh`). They follow one slot contract, because
+DMS's dank16 palette gives two slots dark tones whatever the wallpaper:
+
+- text uses ANSI 1-4, 6, 7, 9-15 or the default foreground;
+- ANSI 5 (magenta) is never text: dank16 makes it a dark container tone, about
+  2.5:1 on the background (use bright magenta, 13);
+- ANSI 8 (bright black) is a surface and border tone, never text;
+- ANSI 0 (black) equals the background, so it is no selection surface;
+- the accent is ANSI 6 (cyan), the DMS primary.
+
+Do not add hex colour literals to active tool configuration. Neovim highlights
+must use the active Catppuccin palette, preserving the existing highlight roles
+without retaining an independent fixed palette.
+`tests/palette_consistency_test.sh` enforces this for tracked files. Its
+commented exceptions cover kitty palettes, crew-watch named palettes, pixel-pet
+sprite artwork, test fixtures/assertions, documentation, and generated
+dependency locks. `tests/palette_contract.py` (run by the same test) also
+rejects truecolor and 256-colour escapes, enforces the slot contract in tmux,
+fzf, shell, Starship, yazi, lazygit, lazydocker and duckdb configuration, and
+checks every text slot they use at 4.5:1 against Catppuccin Mocha and recorded
+DMS dark and light palettes (`tests/fixtures/palettes/`). kitty's
+`kitten themes` downloads other terminal themes on demand, so none are
+vendored here.
 
 ### Palette over SSH
 
@@ -529,7 +561,8 @@ tests/run.sh        # both
 
 Tests use stubs instead of downloaded plugins and need no network or display;
 a case that needs a missing tool (Python 3.11+, `luac`) is skipped with a clear
-message. `TEST_LOG_DIR` keeps each case's log. The same entry point is the
+message. Each case gets 300 s (`TEST_CASE_TIMEOUT` overrides it) and a timeout
+is reported as one. `TEST_LOG_DIR` keeps each case's log. The same entry point is the
 no-mistakes gate (`.no-mistakes.yaml`).
 
 [CI](.github/workflows/ci.yml) runs on pull requests and pushes to `main`, with

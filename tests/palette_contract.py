@@ -37,16 +37,12 @@ FAILURES = []
 # Same exceptions as the hex check in palette_consistency_test.sh: colour
 # sources, upstream assets and test data, not active UI config.
 SKIP_PREFIXES = (
-    ".config/kitty/kitty-themes/",
-    ".config/yazi/flavors/",
     "docs/",
     "tests/",
 )
 SKIP_FILES = {
     ".config/kitty/current-theme.conf",
     ".config/kitty/dank-theme.conf",
-    ".config/kitty/colors-matugen.conf",
-    ".config/kitty/colors-wallust.conf",
     ".config/kitty/custom-tabs-colors.conf",
     ".config/claude-mods/crew-watch/tests/theme.test.ts",
     ".config/claude-mods/crew-watch/hooks/theme.ts",
