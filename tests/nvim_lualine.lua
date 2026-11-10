@@ -38,6 +38,7 @@ local function readable(color, background)
 end
 local stock = {
 	base = "#1e1e2e",
+	surface0 = "#313244",
 	text = "#cdd6f4",
 	subtext0 = "#a6adc8",
 	green = "#a6e3a1",
@@ -56,6 +57,7 @@ for _, ascii in ipairs({ "0", "1" }) do
 		palette = vim.tbl_extend("force", stock, {
 			base = base,
 			text = base == "#f5eff7" and "#1d1b20" or stock.text,
+			surface0 = base == "#f5eff7" and "#ded8e1" or stock.surface0,
 			-- Exercise adjustment rather than assuming the provider is readable.
 			subtext0 = "#777777",
 			red = "#ad3444",
@@ -73,17 +75,22 @@ for _, ascii in ipairs({ "0", "1" }) do
 				assert(not seen[theme.a.bg], "editing modes need distinct pill colours")
 				seen[theme.a.bg] = true
 			end
-			for _, section in ipairs({ "b", "c", "x", "y" }) do
-				assert(theme[section].bg == "NONE", "only the two pills may have backgrounds")
+			for _, section in ipairs({ "c", "x" }) do
+				assert(theme[section].bg == "NONE", "central sections must stay transparent")
 				readable(theme[section].fg, base)
 			end
+			for _, section in ipairs({ "b", "y" }) do
+				assert(theme[section].bg == palette.surface0, "stepped sections need a palette surface")
+				readable(theme[section].fg, theme[section].bg)
+			end
 		end
+		assert(config.options.padding.left >= 1 and config.options.padding.right >= 1)
 		for _, section in pairs(config.options.theme.inactive) do
 			assert(section.bg == "NONE")
 			readable(section.fg, base)
 		end
 		local branch = component("lualine_b", "branch")
-		assert(branch.color.fg == require("customize.ui").primary())
+		readable(branch.color.fg, palette.surface0)
 		local filename = component("lualine_c", "filename")
 		assert(filename.color.gui == "bold" and filename.file_status and filename.symbols.modified == "[+]")
 		local diff = component("lualine_c", "diff")
@@ -94,11 +101,12 @@ for _, ascii in ipairs({ "0", "1" }) do
 				readable(color.fg, base)
 			end
 		end
-		for _, section in pairs(config.sections) do
+		for name, section in pairs(config.sections) do
+			local background = (name == "lualine_b" or name == "lualine_y") and palette.surface0 or base
 			for _, item in ipairs(section) do
 				if item.color then
-					assert(item.color.bg == "NONE")
-					readable(item.color.fg, base)
+					assert(item.color.bg == (background == base and "NONE" or background))
+					readable(item.color.fg, background)
 				end
 			end
 		end
@@ -111,8 +119,8 @@ for _, ascii in ipairs({ "0", "1" }) do
 		assert(updates.fmt("󰒲 3") == (ascii == "1" and "U3" or "󰒲 3"), "update glyph needs an ASCII fallback")
 		assert(component("lualine_z", "location").fmt("  1:1 ") == "1:1", "compact location must avoid wasted space")
 		assert(#config.extensions == 8)
-		assert(component("lualine_x", "encoding").color.fg == component("lualine_x", "fileformat").color.fg)
-		assert(component("lualine_x", "encoding").color.fg ~= filename.color.fg, "secondary text must be dimmed")
+		assert(component("lualine_y", "encoding").color.fg == component("lualine_y", "fileformat").color.fg)
+		assert(component("lualine_y", "encoding").color.fg ~= filename.color.fg, "secondary text must be dimmed")
 		assert(config.options.section_separators.left == (ascii == "1" and "" or ""))
 		assert(config.options.section_separators.right == (ascii == "1" and "" or ""))
 		assert(config.options.component_separators.left == (ascii == "1" and "|" or ""))
@@ -140,9 +148,9 @@ for _, width in ipairs({ 35, 40, 60, 80, 100, 120 }) do
 	assert(component("lualine_c", "filetype").cond() == (width >= 80))
 	assert(config.sections.lualine_x[2].cond() == (width >= 80))
 	assert(component("lualine_x", "diagnostics").cond() == (width >= 40))
-	assert(component("lualine_x", "encoding").cond() == (width >= 100))
-	assert(component("lualine_x", "fileformat").cond() == (width >= 100))
-	assert(component("lualine_x", "searchcount").cond() == (width >= 80))
+	assert(component("lualine_y", "encoding").cond() == (width >= 100))
+	assert(component("lualine_y", "fileformat").cond() == (width >= 100))
+	assert(component("lualine_y", "searchcount").cond() == (width >= 80))
 end
 assert(component("lualine_a", "mode").fmt("NORMAL") == "NORMAL")
 current_width = 60
@@ -150,39 +158,108 @@ assert(component("lualine_a", "mode").fmt("NORMAL") == "N")
 vim.api.nvim_win_get_width = window_width
 print("lualine mode pills, contrast, split widths, ASCII separators and reloads: OK")
 
--- Opt in to rendering with the real plugin, keeping CI's offline suite independent of downloads.
+-- Opt in to the real renderer without making the offline CI suite download plugins.
 if vim.env.LUALINE_TEST_RTP then
 	vim.opt.rtp:prepend(vim.env.LUALINE_TEST_RTP)
 	package.loaded.lualine = nil
+	package.loaded["lualine.components.branch.git_branch"] = {
+		init = function() end,
+		get_branch = function()
+			return "main"
+		end,
+	}
+	local get_clients = vim.lsp.get_clients
+	vim.lsp.get_clients = function()
+		return { {
+			name = "lua_ls",
+			flags = {},
+			is_stopped = function()
+				return true
+			end,
+		} }
+	end
 	vim.o.termguicolors = true
-	vim.api.nvim_set_hl(0, "StatusLine", { fg = stock.text, bg = "NONE" })
+	vim.api.nvim_buf_set_name(0, "ui.lua")
+	vim.bo.filetype = "lua"
+	vim.bo.fileencoding = "utf-8"
+	vim.bo.fileformat = "unix"
+	vim.api.nvim_buf_set_lines(0, 0, -1, false, { "needle needle" })
+	vim.fn.setreg("/", "needle")
+	vim.o.hlsearch = true
+	vim.v.hlsearch = 1
+	local function highlight_at(rendered, position)
+		local group
+		for _, highlight in ipairs(rendered.highlights) do
+			if highlight.start <= position then
+				group = highlight.group
+			end
+		end
+		return vim.api.nvim_get_hl(0, { name = assert(group), link = false })
+	end
+	local render_width
+	vim.api.nvim_win_get_width = function()
+		return render_width or 80
+	end
 	for _, ascii in ipairs({ "0", "1" }) do
 		vim.env.NVIM_ASCII = ascii
 		package.loaded["lib.icons"] = nil
 		require("plugins.lualine").config()
-		for _, width in ipairs({ 35, 60, 120 }) do
-			vim.o.columns = width
+		for _, width in ipairs({ 80, 120, 200 }) do
+			render_width = width
 			local statusline = require("lualine").statusline(true)
-			local rendered = vim.api.nvim_eval_statusline(statusline, { highlights = true, maxwidth = width })
-			assert(not rendered.str:find("", 1, true) and not rendered.str:find("", 1, true))
+			local rendered = vim.api.nvim_eval_statusline(
+				statusline,
+				{ winid = vim.api.nvim_get_current_win(), highlights = true, maxwidth = width }
+			)
+			assert((rendered.str:find("utf-8", 1, true) ~= nil) == (width >= 100), "encoding follows width")
+			assert((rendered.str:find("unix", 1, true) ~= nil) == (width >= 100), "fileformat follows width")
+			assert((rendered.str:find("NORMAL", 1, true) ~= nil) == (width >= 120), "mode follows width")
+			assert(rendered.str:find("main", 1, true), "branch must populate b")
+			assert(rendered.str:find("[1/2]", 1, true), "search count must populate y even at 80 columns")
+			local component_count, section_count = 0, 0
+			for _, glyph in ipairs(ascii == "1" and { "|" } or { "", "", "", "" }) do
+				local offset = 1
+				while true do
+					local first, last = rendered.str:find(glyph, offset, true)
+					if not first then
+						break
+					end
+					assert(
+						rendered.str:sub(first - 1, first - 1) == " " and rendered.str:sub(last + 1, last + 1) == " ",
+						"separator touches text at width " .. width .. ": " .. rendered.str
+					)
+					if glyph == "" or glyph == "" then
+						section_count = section_count + 1
+						local edge = highlight_at(rendered, first - 1)
+						local left = highlight_at(rendered, first - 2)
+						local right = highlight_at(rendered, last)
+						local foreground, background
+						if glyph == "" then
+							foreground, background = left.bg, right.bg
+						else
+							foreground, background = right.bg, left.bg
+						end
+						assert(
+							edge.fg == foreground and edge.bg == background and not edge.reverse,
+							"slanted edge must pair adjacent section backgrounds: "
+								.. vim.inspect({ edge, left, right })
+						)
+					else
+						component_count = component_count + 1
+					end
+					offset = last + 1
+				end
+			end
+			assert(component_count >= 2, "exercise separators on both sides")
 			if ascii == "1" then
 				assert(not rendered.str:find("[\128-\255]"), "ASCII statusline must contain no glyphs")
 			else
-				for _, edge in ipairs({ { "", "a" }, { "", "z" } }) do
-					local position = assert(rendered.str:find(edge[1], 1, true), "missing slanted edge") - 1
-					local group
-					for _, highlight in ipairs(rendered.highlights) do
-						if highlight.start <= position then
-							group = highlight.group
-						end
-					end
-					local hl = vim.api.nvim_get_hl(0, { name = group, link = false })
-					local section = vim.api.nvim_get_hl(0, { name = "lualine_" .. edge[2] .. "_normal", link = false })
-					assert(hl.fg == section.bg, "edge must inherit the coloured section background")
-					assert(hl.bg == nil and not hl.reverse, "edge background must stay transparent")
-				end
+				assert(section_count == 4, "both staircases need two visible slanted edges")
 			end
+			print(("rendered width=%d ascii=%s: %s"):format(width, ascii, rendered.str))
 		end
 	end
-	print("rendered slanted edges and transparent highlight backgrounds: OK")
+	vim.api.nvim_win_get_width = window_width
+	vim.lsp.get_clients = get_clients
+	print("rendered spacing and adjacent separator highlight pairs: OK")
 end

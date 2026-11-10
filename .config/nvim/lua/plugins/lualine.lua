@@ -8,8 +8,8 @@ return {
 		local primary = ui.primary()
 		local icons = require("lib.icons")
 		local ascii = vim.env.NVIM_ASCII == "1"
-		local function text(color)
-			return kitty.ensure_contrast(color, palette.base, palette.text, 4.5)
+		local function text(color, background)
+			return kitty.ensure_contrast(color, background or palette.base, palette.text, 4.5)
 		end
 		local colors = {
 			text = text(palette.text),
@@ -24,6 +24,9 @@ return {
 		}
 		local function transparent(color)
 			return { fg = color, bg = "NONE" }
+		end
+		local function surface(color)
+			return { fg = text(color, palette.surface0), bg = palette.surface0 }
 		end
 		local theme = {}
 		for mode, color in pairs({
@@ -40,10 +43,10 @@ return {
 			local background = kitty.ensure_contrast(color, ink, string.format("#%06x", 16777215), 4.5)
 			theme[mode] = {
 				a = { fg = ink, bg = background, gui = "bold" },
-				b = transparent(colors.text),
+				b = surface(palette.text),
 				c = transparent(colors.text),
 				x = transparent(colors.text),
-				y = transparent(colors.text),
+				y = surface(palette.text),
 				z = { fg = ink, bg = background, gui = "bold" },
 			}
 		end
@@ -67,7 +70,7 @@ return {
 					icons_enabled = not ascii,
 					section_separators = section_separators,
 					component_separators = component_separators,
-					padding = { left = 1, right = 0 },
+					padding = { left = 1, right = 1 },
 				},
 				sections = {
 					lualine_a = {
@@ -84,7 +87,7 @@ return {
 							"branch",
 							icon = vim.trim(icons.git.Branch),
 							cond = medium,
-							color = transparent(primary),
+							color = surface(primary),
 							fmt = function(branch)
 								return ui.truncate(branch, math.floor(vim.api.nvim_win_get_width(0) / 8))
 							end,
@@ -134,9 +137,6 @@ return {
 								return ascii and ("U" .. (updates:match("%d+$") or "0")) or updates
 							end,
 						},
-						{ "encoding", cond = full, color = transparent(colors.dim) },
-						{ "fileformat", cond = full, icons_enabled = false, color = transparent(colors.dim) },
-						{ "searchcount", cond = wide, color = transparent(colors.text) },
 						{
 							"diagnostics",
 							cond = compact,
@@ -154,7 +154,11 @@ return {
 							},
 						},
 					},
-					lualine_y = {},
+					lualine_y = {
+						{ "encoding", cond = full, color = surface(palette.subtext0) },
+						{ "fileformat", cond = full, icons_enabled = false, color = surface(palette.subtext0) },
+						{ "searchcount", cond = wide, color = surface(palette.text) },
+					},
 					lualine_z = { { "location", padding = 1, fmt = vim.trim } },
 				},
 				extensions = { "lazy", "man", "mason", "nvim-dap-ui", "overseer", "quickfix", "trouble", "neo-tree" },

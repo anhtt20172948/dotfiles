@@ -155,8 +155,11 @@ for name, mode in pairs(options.options.theme) do
 	for section, hl in pairs(mode) do
 		if name ~= "inactive" and (section == "a" or section == "z") then
 			assert(kitty.contrast(hl.fg, hl.bg) >= 4.5, "pill labels must stay readable")
+		elseif name ~= "inactive" and (section == "b" or section == "y") then
+			assert(hl.bg == kitty.palette().surface0, "stepped sections must use the palette surface")
+			assert(kitty.contrast(hl.fg, hl.bg) >= 4.5, "surface labels must stay readable")
 		else
-			assert(hl.bg:upper() == "NONE", "lualine outside the mode/location pills must be transparent")
+			assert(hl.bg:upper() == "NONE", "lualine central and inactive sections must be transparent")
 		end
 	end
 end
