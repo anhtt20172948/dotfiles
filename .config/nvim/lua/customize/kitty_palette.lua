@@ -14,13 +14,21 @@ local function blend(a, b, amount)
 	)
 end
 
+local function linear(channel)
+	channel = channel / 255
+	return channel <= 0.04045 and channel / 12.92 or ((channel + 0.055) / 1.055) ^ 2.4
+end
+
+-- Highlight scans compare thousands of groups that share a few hundred colours.
+local luminances = {}
 local function luminance(color)
-	local r, g, b = rgb(color)
-	local function linear(channel)
-		channel = channel / 255
-		return channel <= 0.04045 and channel / 12.92 or ((channel + 0.055) / 1.055) ^ 2.4
+	local cached = luminances[color]
+	if not cached then
+		local r, g, b = rgb(color)
+		cached = 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+		luminances[color] = cached
 	end
-	return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+	return cached
 end
 
 function M.contrast(a, b)
@@ -50,6 +58,25 @@ function M.ensure_contrast(color, background, foreground, floor)
 	return blend(color, target, high)
 end
 
+-- WCAG AA (4.5:1) is the floor for every text colour. Dark text on a light
+-- background reads fainter than the same ratio inverted (thin strokes at kitty's
+-- 9pt font), and Catppuccin Latte's pastel accents all land exactly on the
+-- floor, so light palettes hold syntax further from the background. Muted
+-- layers (comments, line numbers, punctuation, inlay hints) stay quieter than
+-- syntax. Dark palettes keep the AA floor and their colours.
+M.TEXT_FLOOR = 4.5
+M.LIGHT_SYNTAX_FLOOR = 6
+M.LIGHT_MUTED_FLOOR = 5
+local muted = { overlay0 = true, overlay1 = true, overlay2 = true, subtext0 = true, subtext1 = true }
+
+-- The contrast floor a palette key keeps against the background.
+function M.floor(key)
+	if not (M.active and M.active.flavour == "latte") then
+		return M.TEXT_FLOOR
+	end
+	return muted[key] and M.LIGHT_MUTED_FLOOR or M.LIGHT_SYNTAX_FLOOR
+end
+
 -- Called after lazy.nvim adds Catppuccin to runtimepath. Never require the
 -- plugin while reading the plugin specs, or startup depends on load order.
 function M.colors(stock)
@@ -57,7 +84,7 @@ function M.colors(stock)
 	local foreground = colors.text
 	for key, color in pairs(colors) do
 		if not vim.tbl_contains({ "base", "mantle", "crust", "surface0", "surface1", "surface2" }, key) then
-			colors[key] = M.ensure_contrast(color, colors.base, foreground, 4.5)
+			colors[key] = M.ensure_contrast(color, colors.base, foreground, M.floor(key))
 		end
 	end
 	return colors
@@ -124,6 +151,10 @@ local function parse_encoded(encoded)
 		values[key] = "#" .. color
 	end
 	return values
+end
+
+local function ssh_session()
+	return vim.env.SSH_CONNECTION and vim.env.SSH_CONNECTION ~= ""
 end
 
 local function valid_source(source)
@@ -201,13 +232,17 @@ local function read_remote(environment)
 	end
 end
 
+local function kitty_dir()
+	local config = vim.env.XDG_CONFIG_HOME
+	return (config and config ~= "" and config or (vim.env.HOME .. "/.config")) .. "/kitty/"
+end
+
 -- Resolve symlinks: install.sh links the kitty directory into this checkout.
 local function read_file()
-	local config = vim.env.XDG_CONFIG_HOME
-	local dir = (config and config ~= "" and config or (vim.env.HOME .. "/.config")) .. "/kitty/"
+	local dir = kitty_dir()
 	local file, source, source_path
 	local names = { "dank-theme.conf", "current-theme.conf" }
-	if vim.env.SSH_CONNECTION and vim.env.SSH_CONNECTION ~= "" then
+	if ssh_session() then
 		table.insert(names, 1, "remote-palette.conf")
 	end
 	for _, name in ipairs(names) do
@@ -251,7 +286,7 @@ end
 -- Labels: remote-palette-<src>, "LC_KITTY_PALETTE (tmux)", LC_KITTY_PALETTE,
 -- remote-palette.conf, dank-theme.conf, current-theme.conf.
 function M.resolve()
-	if vim.env.SSH_CONNECTION and vim.env.SSH_CONNECTION ~= "" then
+	if ssh_session() then
 		local environment = tmux_environment()
 		local values, source, path = read_remote(environment)
 		if values then
@@ -261,12 +296,23 @@ function M.resolve()
 		if values then
 			return values, "LC_KITTY_PALETTE (tmux)"
 		end
+		values = parse_encoded(vim.env.LC_KITTY_PALETTE)
+		if values then
+			return values, "LC_KITTY_PALETTE"
+		end
+		return read_file()
 	end
-	local values = parse_encoded(vim.env.LC_KITTY_PALETTE)
+	-- Locally the kitty files are live and LC_KITTY_PALETTE is only the shell's
+	-- start-time copy of them: a pane (or tmux's global environment) that predates
+	-- a DMS theme change still holds the old palette, so it is a last resort.
+	local values, source, path = read_file()
+	if values then
+		return values, source, path
+	end
+	values = parse_encoded(vim.env.LC_KITTY_PALETTE)
 	if values then
 		return values, "LC_KITTY_PALETTE"
 	end
-	return read_file()
 end
 
 -- Derive the Catppuccin overrides and accents from resolved palette values.
@@ -308,6 +354,123 @@ function M.read()
 end
 
 M.active = M.read()
+
+-- Re-resolve the palette. Returns true when it changed, after storing it.
+function M.refresh()
+	local active = M.read()
+	if vim.deep_equal(active, M.active) then
+		return false
+	end
+	M.active = active
+	return true
+end
+
+-- DMS rewrites dank-theme.conf and the workflow push replaces
+-- remote-palette-<src>.conf by rename, so watch their directories, not files.
+local function watch_dirs()
+	local dirs = { kitty_dir(), vim.env.HOME .. "/.config/kitty/" }
+	local _, _, path = M.resolve()
+	if path then
+		dirs[#dirs + 1] = vim.fs.dirname(path) .. "/"
+	end
+	local unique, seen = {}, {}
+	for _, dir in ipairs(dirs) do
+		local real = vim.uv.fs_realpath(dir)
+		if real and not seen[real] then
+			seen[real] = true
+			unique[#unique + 1] = real
+		end
+	end
+	return unique
+end
+
+-- One burst of writes (DMS writes several kitty files) becomes one refresh.
+M.FOLLOW_DEBOUNCE_MS = 150
+local following = { handles = {} }
+
+function M.unfollow()
+	for _, handle in ipairs(following.handles) do
+		if not handle:is_closing() then
+			handle:close()
+		end
+	end
+	following.handles = {}
+	pcall(vim.api.nvim_del_augroup_by_name, "DotfilesKittyPalette")
+end
+
+-- The 'background' a palette implies.
+function M.background()
+	return M.active and M.active.flavour == "latte" and "light" or "dark"
+end
+
+-- Re-theme a running Neovim when the terminal palette changes: on any write to
+-- the palette directories, and on FocusGained (a pane switch in tmux, or a
+-- palette that only reached the tmux session environment). on_change runs on
+-- the main loop after M.active holds the new palette.
+--
+-- Something else setting 'background' (the terminal's theme notification, a
+-- plugin, :set bg) makes Neovim reload catppuccin-<flavour> without these
+-- overrides, so a 'background' that disagrees with the palette re-applies it
+-- too, once per palette so a colorscheme that insists cannot loop.
+function M.follow(on_change)
+	M.unfollow()
+	local timer = assert(vim.uv.new_timer())
+	following.handles[1] = timer
+	-- reapply: run on_change on the next check even if the palette is unchanged.
+	local reapply, retried, asserted = false, false, false
+	local check
+	local function queue()
+		timer:stop()
+		timer:start(M.FOLLOW_DEBOUNCE_MS, 0, vim.schedule_wrap(check))
+	end
+	check = function()
+		if M.refresh() then
+			asserted = false
+		elseif not reapply then
+			return
+		end
+		reapply = false
+		local ok, err = pcall(on_change)
+		if ok then
+			retried = false
+		elseif not retried then
+			-- Every Neovim re-themes at once and Catppuccin shares one compile
+			-- cache, so a reload can read another instance's half-written cache.
+			retried, reapply = true, true
+			queue()
+		else
+			retried = false
+			vim.notify("kitty palette: re-theming failed: " .. tostring(err), vim.log.levels.WARN)
+		end
+	end
+	for _, dir in ipairs(watch_dirs()) do
+		local handle = vim.uv.new_fs_event()
+		if handle then
+			local ok = handle:start(dir, {}, function(err)
+				if not err then
+					queue()
+				end
+			end)
+			if ok then
+				following.handles[#following.handles + 1] = handle
+			else
+				handle:close()
+			end
+		end
+	end
+	local group = vim.api.nvim_create_augroup("DotfilesKittyPalette", { clear = true })
+	vim.api.nvim_create_autocmd("FocusGained", { group = group, callback = queue })
+	vim.api.nvim_create_autocmd("OptionSet", {
+		group = group,
+		pattern = "background",
+		callback = function()
+			if vim.o.background ~= M.background() and not asserted then
+				asserted, reapply = true, true
+				queue()
+			end
+		end,
+	})
+end
 
 function M.palette()
 	return require("catppuccin.palettes").get_palette(M.active and M.active.flavour or "mocha")

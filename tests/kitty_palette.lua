@@ -98,7 +98,10 @@ assert(forwarded.cursor == nil and forwarded.selection_background == nil, "env m
 package.loaded["customize.kitty_palette"] = nil
 assert(require("customize.kitty_palette").active.colors.base == "#fafafa", "startup must use forwarded palette")
 vim.env.SSH_CONNECTION = nil
-assert(theme.read().colors.base == "#fafafa", "env precedence must not depend on SSH_CONNECTION")
+-- Locally LC_KITTY_PALETTE is the shell's start-time copy of the kitty files,
+-- so the live DMS file wins over it (a pane older than a theme switch).
+assert(theme.read().colors.base == "#eeeeee", "local DMS file must override the env snapshot")
+assert(select(2, theme.resolve()) == "dank-theme.conf", "local DMS source label")
 vim.env.SSH_CONNECTION = "127.0.0.1 1234 127.0.0.1 22"
 local remote_dir = vim.env.HOME .. "/.config/kitty"
 vim.fn.mkdir(remote_dir, "p")
@@ -120,7 +123,7 @@ vim.fn.writefile({ env_palette("555555") }, remote_dir .. "/remote-palette-arch-
 package.loaded["customize.kitty_palette"] = nil
 assert(require("customize.kitty_palette").active.colors.base == "#555555", "restart must read fresh file")
 vim.env.SSH_CONNECTION = nil
-assert(theme.read().colors.base == "#fafafa", "local sessions must ignore pushed files")
+assert(theme.read().colors.base == "#eeeeee", "local sessions must ignore pushed files and the env snapshot")
 vim.env.SSH_CONNECTION = "127.0.0.1 1234 127.0.0.1 22"
 -- A pane with no source and an old 18-entry environment must use the last push.
 vim.env.LC_KITTY_PALETTE_SRC = nil
@@ -204,7 +207,7 @@ vim.env.TMUX = nil
 assert(theme.read().colors.base == "#fafafa", "skip tmux outside tmux")
 vim.env.TMUX = "/tmp/test-tmux,123,0"
 vim.env.SSH_CONNECTION = nil
-assert(theme.read().colors.base == "#fafafa", "skip tmux in local sessions")
+assert(theme.read().colors.base == "#eeeeee", "skip tmux in local sessions")
 vim.env.TMUX = nil
 vim.env.SSH_CONNECTION = "127.0.0.1 1234 127.0.0.1 22"
 vim.system = original_system
@@ -251,4 +254,41 @@ for _, case in ipairs({
 	end
 end
 assert(theme.ensure_contrast("#fab387", "#111111", "#dddddd", 4.5) == "#fab387")
+-- Regression: DMS switched dark -> light while the shell (or tmux's global
+-- environment) still exports the dark snapshot. Locally the live file wins.
+local fixtures = root .. "/tests/fixtures/palettes/"
+local dms_dark = vim.fn.readfile(fixtures .. "dms-dark.conf")
+local dms_light = vim.fn.readfile(fixtures .. "dms-light.conf")
+vim.fn.writefile(dms_dark, dir .. "/dank-theme.conf")
+local function encode(values)
+	local entries = { values.background:sub(2), values.foreground:sub(2) }
+	for i = 0, 15 do
+		entries[#entries + 1] = values["color" .. i]:sub(2)
+	end
+	return table.concat(entries, ":")
+end
+vim.env.LC_KITTY_PALETTE = encode(assert(theme.resolve()))
+vim.env.LC_KITTY_PALETTE_SRC = "archlinux"
+vim.env.TMUX = "/tmp/test-tmux,123,0"
+assert(theme.read().flavour == "mocha", "dark DMS file")
+vim.fn.writefile(dms_light, dir .. "/dank-theme.conf")
+local switched = assert(theme.read())
+assert(switched.flavour == "latte" and switched.colors.base == "#f8f8f8", "light DMS file must beat the dark snapshot")
+assert(select(2, theme.resolve()) == "dank-theme.conf")
+vim.fn.delete(dir .. "/dank-theme.conf")
+assert(select(2, theme.resolve()) == "current-theme.conf", "kitty fallback file must beat the snapshot too")
+vim.fn.delete(dir .. "/current-theme.conf")
+assert(theme.read().colors.base == "#0b0f11", "without kitty files the snapshot still applies")
+assert(select(2, theme.resolve()) == "LC_KITTY_PALETTE")
+vim.env.TMUX = nil
+vim.env.LC_KITTY_PALETTE = nil
+vim.env.LC_KITTY_PALETTE_SRC = nil
+-- Light palettes hold syntax further from the background; dark ones keep AA.
+theme.active = { flavour = "latte", colors = { base = "#f8f8f8", text = "#191c1e" } }
+assert(theme.floor("blue") == theme.LIGHT_SYNTAX_FLOOR and theme.floor("overlay2") == theme.LIGHT_MUTED_FLOOR)
+assert(theme.LIGHT_SYNTAX_FLOOR > theme.LIGHT_MUTED_FLOOR and theme.LIGHT_MUTED_FLOOR > theme.TEXT_FLOOR)
+theme.active = { flavour = "mocha", colors = { base = "#0b0f11", text = "#dfe6ee" } }
+assert(theme.floor("blue") == theme.TEXT_FLOOR and theme.floor("overlay2") == theme.TEXT_FLOOR)
+theme.active = nil
+assert(theme.floor("blue") == theme.TEXT_FLOOR, "plain Mocha keeps AA")
 print("kitty palette: OK")

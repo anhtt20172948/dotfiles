@@ -115,6 +115,73 @@ function M.decorations()
 	end
 end
 
+-- Rules, guides and lualine's separator glyphs, not text: they stay quiet on purpose.
+local decorative = { "Separator", "Split", "Indent", "Whitespace", "VirtLine", "lualine_transitional_" }
+
+local function is_decorative(name)
+	for _, part in ipairs(decorative) do
+		if name:find(part, 1, true) then
+			return true
+		end
+	end
+	return false
+end
+
+-- Text highlight groups below floor against their own background (the terminal
+-- background when transparent): { name, hl, fg, bg, ratio } records.
+function M.low_contrast(floor)
+	local kitty = require("customize.kitty_palette")
+	local base = kitty.palette().base
+	local result = {}
+	for name, hl in pairs(vim.api.nvim_get_hl(0, {})) do
+		if hl.fg and not hl.link and not hl.reverse and not is_decorative(name) then
+			local fg = ("#%06x"):format(hl.fg)
+			local bg = hl.bg and ("#%06x"):format(hl.bg) or base
+			-- fg == bg hides text on purpose (EndOfBuffer tildes, borderless titles).
+			local ratio = kitty.contrast(fg, bg)
+			if fg ~= bg and ratio < floor then
+				result[#result + 1] = { name = name, hl = hl, fg = fg, bg = bg, ratio = ratio }
+			end
+		end
+	end
+	return result
+end
+
+-- Catppuccin, its integrations and plugins derive some text colours for dark
+-- backgrounds (selection, match, blame text, lspsaga's black-on-accent pills).
+-- On a light palette, lift every text group below 4.5:1 against its own
+-- background. Dark palettes keep their colours.
+function M.light_contrast()
+	local kitty = require("customize.kitty_palette")
+	if kitty.background() ~= "light" then
+		return
+	end
+	local text = kitty.palette().text
+	for _, low in ipairs(M.low_contrast(kitty.TEXT_FLOOR)) do
+		local lifted = kitty.ensure_contrast(low.fg, low.bg, text, kitty.TEXT_FLOOR)
+		-- A kept `default` would leave the plugin's own definition in place.
+		vim.api.nvim_set_hl(0, low.name, vim.tbl_extend("force", low.hl, { fg = lifted, default = false }))
+	end
+end
+
+-- Plugins loaded after the colorscheme define their own groups. One pass at
+-- VeryLazy covers everything loaded during startup; after that, one pass per
+-- burst of lazy loads (lspsaga on LspAttach, ...).
+local lift_pending, lift_started = false, false
+local function queue_light_contrast(event)
+	if event.match == "VeryLazy" then
+		lift_started = true
+	end
+	if lift_pending or not lift_started then
+		return
+	end
+	lift_pending = true
+	vim.schedule(function()
+		lift_pending = false
+		M.light_contrast()
+	end)
+end
+
 function M.setup()
 	local group = vim.api.nvim_create_augroup("DotfilesUI", { clear = true })
 	vim.api.nvim_create_autocmd({ "FileType", "BufWinEnter" }, { group = group, callback = M.folds })
@@ -125,8 +192,14 @@ function M.setup()
 			vim.schedule(function()
 				M.decorations()
 				M.icons()
+				M.light_contrast()
 			end)
 		end,
+	})
+	vim.api.nvim_create_autocmd("User", {
+		group = group,
+		pattern = { "VeryLazy", "LazyLoad" },
+		callback = queue_light_contrast,
 	})
 end
 
