@@ -95,6 +95,23 @@ assert_lacks "left copy-mode: flag gone" "COPY" "$rendered"
 # The session segment colours itself red while the prefix is pending.
 assert_contains "prefix colouring branch" "bg=red#,fg=black#,bold" "$left"
 
+# --- one accent, one shape -----------------------------------------------------
+# Active things are cyan (DMS primary) pills with lualine's slanted caps,
+# U+E0BA ... U+E0BC; nothing marks the active window yellow any more.
+open_cap=$'\xee\x82\xba' close_cap=$'\xee\x82\xbc'
+assert_contains "session pill is the accent" "bg=cyan#,fg=black#,bold" "$left"
+assert_contains "session pill opens with a slanted cap" "$open_cap" "$left"
+assert_contains "session pill closes with a slanted cap" "$close_cap" "$left"
+current=$(tm show -gv window-status-current-format)
+assert_contains "current window is the accent" "fg=black,bg=cyan" "$current"
+assert_contains "current window opens with a slanted cap" "$open_cap" "$current"
+assert_contains "current window closes with a slanted cap" "$close_cap" "$current"
+for opt in window-status-current-style window-status-last-style; do
+  assert_lacks "$opt is not yellow" yellow "$(tm show -gv "$opt")"
+done
+rendered=$(tm display -p '#{T:window-status-current-format}')
+assert_contains "current window renders as a pill" "${open_cap}#[fg=black,bg=cyan,bold]" "$rendered"
+
 # --- active pane ---------------------------------------------------------------
 if version_ge 3.3; then
   [[ $(tm show -gwv pane-border-indicators) == both ]] || fail "pane-border-indicators not set on tmux >= 3.3"
