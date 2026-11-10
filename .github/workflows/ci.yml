@@ -124,6 +124,20 @@ jobs:
           path: /tmp/test-logs
           if-no-files-found: ignore
 
+  # A real `Lazy! sync` in server mode must leave the tracked lazy-lock.json
+  # untouched (tests/smoke/nvim_lazy_lock.sh). Only lazy.nvim is cloned.
+  nvim-lazy-lock:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install Neovim
+        run: |
+          bash .github/install-ci-tools.sh "$RUNNER_TEMP/ci-bin" nvim
+          echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
+      - name: Server lockfile policy
+        run: bash tests/smoke/nvim_lazy_lock.sh
+
   # Boots the full Neovim config with the plugins pinned in lazy-lock.json
   # (tests/smoke/nvim_plugins.sh) and records the startup time. Non-blocking
   # while it proves itself: it clones ~80 plugins from GitHub on every run.
