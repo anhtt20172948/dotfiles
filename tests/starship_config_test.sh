@@ -166,7 +166,11 @@ command -v tmux >/dev/null || {
 }
 export TMUX_TMPDIR=$SOCKDIR
 unset TMUX
-tmux -u -L "$SOCK" -f /dev/null new-session -d -x 120 -y 10 -s init
+# Window 0 idles in sleep: left to the default shell, automatic-rename would
+# also call it "bash" or "zsh". Windows are targeted by id regardless, and dead
+# panes stay so a shell that exits early can be reported.
+tmux -u -L "$SOCK" -f /dev/null new-session -d -x 120 -y 10 -s init 'sleep 600'
+tmux -L "$SOCK" set -g remain-on-exit on
 shells=(bash)
 command -v zsh >/dev/null && shells+=(zsh) || echo "skip: zsh not installed"
 for shell in "${shells[@]}"; do
@@ -174,15 +178,17 @@ for shell in "${shells[@]}"; do
     bash) cmd='bash --noprofile --norc -i' ;;
     zsh) cmd='zsh -f -i' ;;
   esac
-  tmux -u -L "$SOCK" new-window -t init -n "$shell" -c "$DIR" \
-    "env -i PATH='$PATH' HOME='$TMP/home' TERM=xterm-256color GIT_CONFIG_GLOBAL=/dev/null STARSHIP_CACHE='$TMP/cache' STARSHIP_CONFIG='$MAIN' $cmd"
-  tmux -L "$SOCK" send-keys -t "init:$shell" "eval \"\$(starship init $shell)\"" Enter
+  win=$(tmux -u -L "$SOCK" new-window -P -F '#{window_id}' -t init -c "$DIR" \
+    "env -i PATH='$PATH' HOME='$TMP/home' TERM=xterm-256color GIT_CONFIG_GLOBAL=/dev/null STARSHIP_CACHE='$TMP/cache' STARSHIP_CONFIG='$MAIN' $cmd")
+  tmux -L "$SOCK" send-keys -t "$win" "eval \"\$(starship init $shell)\"" Enter
   screen=''
   for _ in $(seq 1 50); do
-    screen=$(tmux -L "$SOCK" capture-pane -p -t "init:$shell")
+    screen=$(tmux -L "$SOCK" capture-pane -p -t "$win")
     [[ $screen == *$'\xee\x82\xbc'*main* ]] && break
     sleep 0.1
   done
+  [[ $(tmux -L "$SOCK" display -p -t "$win" '#{pane_dead}') == 0 ]] ||
+    fail "$shell exited (status $(tmux -L "$SOCK" display -p -t "$win" '#{pane_dead_status}')): $screen"
   assert_contains "$shell prompt after starship init" $'\xee\x82\xba repo/src/app \xee\x82\xbc' "$screen"
   assert_contains "$shell prompt shows the branch" main "$screen"
   assert_contains "$shell prompt ends in the prompt character" $'\xe2\x9d\xaf' "$screen"
