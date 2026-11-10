@@ -32,6 +32,15 @@ it on Ubuntu and on stock macOS.
   popups), tmux's status bar and btop draw no background of their own, so
   kitty's `background_opacity 0.8` and the wallpaper show through; borders
   carry the structure.
+- **One accent, one shape.** Cyan (ANSI 6, which DMS fills with its primary
+  colour) is the only marker of what is active: the kitty tab, the tmux session
+  pill, current window and pane border, the fzf pointer, yazi's hovered row,
+  Neovim's borders and the prompt's directory. Pills and tabs share lualine's
+  slanted caps, and kitty's tab bar appears only with two or more tabs.
+- **One prompt on every host.** [.config/starship.toml](.config/starship.toml)
+  is the Starship prompt for bash and zsh, in ANSI names with the same accent
+  and caps; `starship-plain.toml` is its ASCII twin for terminals without a
+  Nerd Font (`STARSHIP_CONFIG=~/.config/starship-plain.toml`).
 - **Readable by construction.** Neovim computes every text colour, file icons
   included, to at least 4.5:1 contrast against the actual background, and tests
   hold it there (`tests/nvim_visual.lua`, `tests/nvim_icons.lua`,
@@ -53,7 +62,7 @@ flowchart LR
   dms --> hypr["Hyprland: dms/colors.lua"]
   mocha["kitty: current-theme.conf<br/>(Catppuccin Mocha fallback, macOS)"] -.-> kitty
   dank --> kitty[kitty]
-  kitty -- "16 ANSI colours" --> tuis["tmux, yazi, lazygit,<br/>btop, fzf, duckdb"]
+  kitty -- "16 ANSI colours" --> tuis["tmux, Starship, yazi,<br/>lazygit, btop, fzf, duckdb"]
   dank -- "palette file / LC_KITTY_PALETTE" --> nvim[Neovim]
   dank -- "SSH SendEnv + palette push (workflow)" --> remote["Neovim on servers"]
 ```
@@ -85,7 +94,7 @@ workflow.
 
 | Platform | Install first | Then workflow | Then dotfiles |
 | --- | --- | --- | --- |
-| Arch Linux workstation (primary) | `pacman -S git zsh tmux kitty hyprland matugen python dux-shell` (`dux-shell` provides `dms-shell`, the `dms` desktop shell); the patched SFMono Nerd Font "Complete" family, installed by hand into `~/.local/share/fonts` (no package provides that family; see the [kitty README](.config/kitty/README.md)) | `make converge-local`: pinned CLI tools in `~/.local/bin` (Neovim, yazi, lazygit, fzf, bat, delta, atuin, btop, ...), bash/zsh rc, the `LC_KITTY_PALETTE` export, SSH `SendEnv`, and a systemd user unit that pushes the palette to servers on every DMS theme change | `./install.sh` |
+| Arch Linux workstation (primary) | `pacman -S git zsh tmux kitty hyprland matugen python dux-shell` (`dux-shell` provides `dms-shell`, the `dms` desktop shell); the patched SFMono Nerd Font "Complete" family, installed by hand into `~/.local/share/fonts` (no package provides that family; see the [kitty README](.config/kitty/README.md)) | `make converge-local`: pinned CLI tools in `~/.local/bin` (Neovim, yazi, lazygit, fzf, bat, delta, atuin, btop, ...), bash/zsh rc, the `LC_KITTY_PALETTE` export, SSH `SendEnv`, and a systemd user unit that pushes the palette to servers on every DMS theme change. Starship and `starship init` for the tracked prompt are workflow's to add; until it does, hosts keep workflow's powerlevel10k prompt | `./install.sh` |
 | macOS workstation | Homebrew, kitty, and the same hand-installed SFMono Nerd Font "Complete" family | `make converge-local`, as above; the palette watcher is a launchd agent on `current-theme.conf` | `./install.sh` (also installs Homebrew `coreutils` for tmux-which-key) |
 | Linux servers (x86_64, aarch64) | `git`, `zsh` and `tmux` (workflow cannot install them without root) | `make converge LIMIT=<host>`: tools, shell rc, TPM plugins, then it clones this repository to `~/dotfiles` and links it with its own linker; the SSH server must accept `LC_*` (for example `AcceptEnv LC_*`) | nothing: workflow links it |
 
@@ -192,7 +201,8 @@ for f in data/captain.md; do p=~/.local/share/firstmate/$f; [ -L "$p" ] && cp --
 | `.config/nvim` | Neovim: Lua, lazy.nvim with `lazy-lock.json`, palette-derived transparent UI. | [Neovim](#neovim) |
 | `.tmux.conf`, `.config/tmux` | Modular tmux: status bar, popups, persistent AI sessions, which-key menu. | [tmux README](.config/tmux/README.md) |
 | `.config/extrakto` | Extra extrakto filters (git hashes) for picking text out of a pane. | [tmux README](.config/tmux/README.md) |
-| `.config/kitty` | Terminal: font, palette include order, tab bar, `kitten ssh` settings. | [kitty README](.config/kitty/README.md) |
+| `.config/kitty` | Terminal: font, palette include order, slanted tab bar, `kitten ssh` settings. | [kitty README](.config/kitty/README.md) |
+| `.config/starship.toml`, `.config/starship-plain.toml` | Shell prompt for bash and zsh (Nerd Font and ASCII variants). | [Design principles](#design-principles) |
 | `.config/hypr` | Hyprland 0.57 Lua config; loads the DMS-generated colours, layout and rules last. | [How the palette flows](#how-the-palette-flows) |
 | `.config/yazi` | File manager: ANSI-only theme with Material folder icons, keymaps, and the duckdb, center-media and toggle-pane plugins. | |
 | `.duckdbrc` | DuckDB CLI highlight colours (ANSI names), also used by yazi's duckdb previews. | |
@@ -502,10 +512,10 @@ pinned action SHAs and checksummed tool downloads:
 
 - **lint**: ShellCheck 0.11.0 through `tests/run.sh lint`.
 - **stylua**: StyLua 2.5.2 over the Neovim and Hyprland Lua.
-- **test**: the full suite on Ubuntu 24.04 with Neovim 0.11.7, in a scratch
-  `HOME`.
+- **test**: the full suite on Ubuntu 24.04 with Neovim 0.11.7 and Starship
+  1.27.0, in a scratch `HOME`.
 - **macos**: lint and tests on macOS 15 with stock `/bin/bash` 3.2 and BSD
-  tools, with GNU `timeout` kept off `PATH`.
+  tools (plus Neovim and Starship), with GNU `timeout` kept off `PATH`.
 - **secrets**: gitleaks over the full history.
 
 ## License
