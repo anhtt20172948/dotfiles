@@ -60,31 +60,39 @@ vim.fn.writefile({ "unrelated" }, dir .. "/dank-tabs.conf")
 settle()
 assert(changes == 2, "unchanged palette must not re-theme")
 
--- FocusGained re-reads without any file event: with no kitty files only the
--- environment palette applies, and here only the environment changes. Fresh,
--- quiet directories keep earlier writes out: macOS delivers fs events late
--- (FSEvents latency), so one could otherwise reach the new watcher.
+-- FocusGained re-reads on its own. File events are platform-timed (macOS
+-- FSEvents arrive late and also report the stream's own setup), so this case
+-- gives follow() inert watchers: only FocusGained can see the change, which
+-- is only in the environment (with no kitty files the env palette applies).
 kitty.unfollow()
-local home, config = vim.env.HOME, vim.env.XDG_CONFIG_HOME
-local quiet = vim.fn.tempname()
-vim.fn.mkdir(quiet .. "/config", "p")
-vim.env.HOME, vim.env.XDG_CONFIG_HOME = quiet, quiet .. "/config"
+vim.fn.delete(file)
 kitty.active = kitty.read()
 assert(kitty.active.colors.base == "#0b0f11" and select(2, kitty.resolve()) == "LC_KITTY_PALETTE")
+local new_fs_event = vim.uv.new_fs_event
+vim.uv.new_fs_event = function()
+	return {
+		start = function()
+			return true
+		end,
+		is_closing = function()
+			return false
+		end,
+		close = function() end,
+	}
+end
 kitty.follow(function()
 	changes = changes + 1
 end)
+vim.uv.new_fs_event = new_fs_event
+assert(#vim.api.nvim_get_autocmds({ group = "DotfilesKittyPalette", event = "FocusGained" }) == 1)
 entries[1] = "f7f9fd"
 vim.env.LC_KITTY_PALETTE = table.concat(entries, ":")
 settle()
-assert(changes == 2, "an environment change alone fires no file event")
+assert(changes == 2, "nothing but FocusGained may see an environment change here")
 vim.api.nvim_exec_autocmds("FocusGained", {})
 wait_for(3, "FocusGained must re-read the palette")
 assert(kitty.active.colors.base == "#f7f9fd")
-kitty.unfollow()
-vim.env.HOME, vim.env.XDG_CONFIG_HOME = home, config
 vim.env.LC_KITTY_PALETTE = nil
-vim.fn.delete(file)
 
 -- unfollow stops both.
 kitty.unfollow()
