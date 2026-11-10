@@ -1,0 +1,577 @@
+#!/usr/bin/env bash
+# dotfiles-diagnose - one report of how this host runs the dotfiles: OS and
+# session, versions of the managed tools, the dotfiles commit and dirty state,
+# the palette Neovim resolves (with WCAG contrast of each ANSI slot against its
+# background) and which tools are configured to follow that palette.
+#
+#   dotfiles-diagnose          plain report
+#   dotfiles-diagnose --json   the same data as one JSON object
+#
+# Read-only. Runs on Arch, stock macOS /bin/bash 3.2 and the servers: a missing
+# tool or config is reported, never fatal, and the exit status is 0 unless the
+# arguments are wrong. Palette resolution and contrast come from Neovim's
+# customize.kitty_palette (run headless), so they match what Neovim draws.
+
+set -u
+
+usage() {
+	sed -n '2,13s/^# \{0,1\}//p' "$0"
+}
+
+FORMAT=plain
+case ${1:-} in
+'') ;;
+--json) FORMAT=json ;;
+-h | --help)
+	usage
+	exit 0
+	;;
+*)
+	usage >&2
+	exit 2
+	;;
+esac
+
+TOOLS="kitty tmux nvim starship lazygit fzf bat delta yazi btop atuin eza"
+SEP=$(printf '\037')
+TAB=$(printf '\t')
+NL='
+'
+CONF=${XDG_CONFIG_HOME:-$HOME/.config}
+[ -n "$CONF" ] || CONF=$HOME/.config
+WARNINGS=''
+
+warn() {
+	WARNINGS="$WARNINGS$1$NL"
+}
+
+# Absolute path with the last component's symlinks followed (no readlink -f:
+# macOS before 12.3 lacks it); pwd -P resolves linked directories.
+resolve_path() {
+	local path=$1 link n=0 dir
+	while [ -L "$path" ] && [ "$n" -lt 40 ]; do
+		link=$(readlink "$path") || return 1
+		case $link in
+		/*) path=$link ;;
+		*) path=$(dirname "$path")/$link ;;
+		esac
+		n=$((n + 1))
+	done
+	dir=$(cd "$(dirname "$path")" 2>/dev/null && pwd -P) || return 1
+	printf '%s/%s\n' "$dir" "$(basename "$path")"
+}
+
+# The checkout this script belongs to (install.sh links it into ~/.local/bin).
+find_root() {
+	local self root
+	self=$(resolve_path "$0") || return 1
+	root=$(cd "$(dirname "$self")/../.." 2>/dev/null && pwd -P) || return 1
+	[ -f "$root/.config/nvim/lua/customize/kitty_palette.lua" ] || return 1
+	printf '%s\n' "$root"
+}
+ROOT=$(find_root) || ROOT=''
+
+# GNU timeout is missing on macOS; perl's alarm does the same job.
+with_timeout() {
+	local secs=$1
+	shift
+	if command -v timeout >/dev/null 2>&1; then
+		timeout "$secs" "$@"
+	elif command -v perl >/dev/null 2>&1; then
+		perl -e 'alarm shift; exec @ARGV or die "exec: $!\n"' "$secs" "$@"
+	else
+		"$@"
+	fi
+}
+
+# --- host -------------------------------------------------------------------
+os_name() {
+	case $(uname -s) in
+	Darwin) printf 'macOS %s\n' "$(sw_vers -productVersion 2>/dev/null)" ;;
+	Linux)
+		local name=''
+		[ -r /etc/os-release ] && name=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release | tr -d '"' | head -n 1)
+		printf '%s\n' "${name:-Linux}"
+		;;
+	*) uname -s ;;
+	esac
+}
+
+HOST_NAME=$(uname -n)
+HOST_OS=$(os_name)
+HOST_KERNEL="$(uname -s) $(uname -r)"
+HOST_ARCH=$(uname -m)
+HOST_SHELL=${SHELL:-}
+HOST_TERM=${TERM:-}
+HOST_SSH=false
+[ -n "${SSH_CONNECTION:-}" ] && HOST_SSH=true
+HOST_TMUX=false
+[ -n "${TMUX:-}" ] && HOST_TMUX=true
+
+# --- tools ------------------------------------------------------------------
+# The first dotted version in the tool's version output; lazygit prints
+# `version=` among build fields that also contain numbers. A broken install
+# must not stall the report, so each call gets a few seconds.
+tool_version() {
+	local name=$1 out version=''
+	case $name in
+	tmux) out=$(with_timeout 5 tmux -V 2>/dev/null </dev/null) ;;
+	*) out=$(with_timeout 5 "$name" --version 2>/dev/null </dev/null) ;;
+	esac
+	[ "$name" = lazygit ] && version=$(printf '%s\n' "$out" | sed -n 's/^.*, version=\([^,]*\).*$/\1/p' | head -n 1)
+	[ -n "$version" ] || version=$(printf '%s\n' "$out" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)*[a-z]?' | head -n 1)
+	printf '%s\n' "${version:-unknown}"
+}
+
+TOOL_ROWS=''
+for tool in $TOOLS; do
+	if path=$(command -v "$tool" 2>/dev/null) && [ -n "$path" ]; then
+		TOOL_ROWS="$TOOL_ROWS$tool$SEP$(tool_version "$tool")$SEP$path$NL"
+	else
+		TOOL_ROWS="$TOOL_ROWS$tool$SEP-$SEP-$NL"
+	fi
+done
+installed() {
+	command -v "$1" >/dev/null 2>&1
+}
+
+# --- dotfiles checkout -------------------------------------------------------
+DOT_COMMIT='' DOT_BRANCH='' DOT_DATE='' DOT_CHANGES=''
+if [ -n "$ROOT" ] && installed git && git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+	DOT_COMMIT=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null)
+	DOT_BRANCH=$(git -C "$ROOT" symbolic-ref --short -q HEAD 2>/dev/null) || DOT_BRANCH='(detached)'
+	DOT_DATE=$(git -C "$ROOT" log -1 --format=%cd --date=short 2>/dev/null)
+	DOT_CHANGES=$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+	DOT_CHANGES=${DOT_CHANGES:-0}
+elif [ -n "$ROOT" ]; then
+	warn "dotfiles at $ROOT are not a git checkout (or git is missing)"
+else
+	warn "dotfiles checkout not found: run the linked ~/.local/bin/dotfiles-diagnose"
+fi
+
+# --- palette ------------------------------------------------------------------
+# Neovim's own resolver and contrast; this chunk only lists the results, one
+# record per line, fields separated by \31.
+PALETTE_LUA='
+local SEP = "\31"
+local function emit(...)
+	io.stdout:write(table.concat({ ... }, SEP), "\n")
+end
+local ok, palette = pcall(function()
+	vim.opt.rtp:prepend(arg[1])
+	return require("customize.kitty_palette")
+end)
+if not ok then
+	emit("error", (tostring(palette):gsub("%s+", " ")))
+	return
+end
+local values, source, path = palette.resolve()
+if not values then
+	emit("source", "none", "-")
+	return
+end
+local active = palette.from_values(values)
+local bg = values.background
+emit("source", source, path or "-")
+emit("colors", bg, values.foreground, active.primary or "-", active.flavour)
+-- The ANSI slot contract (README): every text slot needs 4.5:1 on the background.
+local roles = { [0] = "background tone", [5] = "container, not text", [6] = "accent", [8] = "border, not text" }
+local function check(name, color, role, floor)
+	local ratio = palette.contrast(color, bg)
+	local verdict = floor and (ratio >= floor and "ok" or "low") or "-"
+	emit("slot", name, color, ("%.2f"):format(ratio), role, verdict)
+end
+check("foreground", values.foreground, "text", 4.5)
+if active.primary then
+	check("primary", active.primary, "Neovim accent")
+end
+for i = 0, 15 do
+	local role = roles[i] or "text"
+	check("color" .. i, values["color" .. i], role, (role == "text" or role == "accent") and 4.5 or nil)
+end
+'
+
+NVIM_DIR=''
+if [ -n "$ROOT" ]; then
+	NVIM_DIR=$ROOT/.config/nvim
+elif [ -f "$CONF/nvim/lua/customize/kitty_palette.lua" ]; then
+	NVIM_DIR=$CONF/nvim
+fi
+
+PALETTE_OUT='' PALETTE_ERROR=''
+if [ -z "$NVIM_DIR" ]; then
+	PALETTE_ERROR='Neovim config with customize/kitty_palette.lua not found'
+elif ! installed nvim; then
+	PALETTE_ERROR='nvim not installed: the palette is resolved by Neovim'"'"'s kitty_palette module'
+else
+	LUA_FILE=$(mktemp "${TMPDIR:-/tmp}/dotfiles-diagnose.XXXXXX") || LUA_FILE=''
+	if [ -z "$LUA_FILE" ]; then
+		PALETTE_ERROR='mktemp failed'
+	else
+		trap 'rm -f "$LUA_FILE"' EXIT
+		printf '%s' "$PALETTE_LUA" >"$LUA_FILE"
+		if ! PALETTE_OUT=$(with_timeout 20 nvim --headless -u NONE -i NONE -l "$LUA_FILE" "$NVIM_DIR" </dev/null 2>&1); then
+			PALETTE_ERROR="nvim failed: $(printf '%s' "$PALETTE_OUT" | tr '\n' ' ' | cut -c1-200)"
+			PALETTE_OUT=''
+		fi
+	fi
+fi
+
+PAL_SOURCE='' PAL_PATH='' PAL_BG='' PAL_FG='' PAL_PRIMARY='' PAL_FLAVOUR='' PAL_SLOTS=''
+while IFS="$SEP" read -r kind a b c d e; do
+	case $kind in
+	error) PALETTE_ERROR="kitty_palette failed: $a" ;;
+	source) PAL_SOURCE=$a PAL_PATH=$b ;;
+	colors) PAL_BG=$a PAL_FG=$b PAL_PRIMARY=$c PAL_FLAVOUR=$d ;;
+	slot)
+		PAL_SLOTS="$PAL_SLOTS$a$SEP$b$SEP$c$SEP$d$SEP$e$NL"
+		[ "$e" = low ] && warn "palette $a ($b) is $c:1 on the background $PAL_BG, below 4.5:1"
+		;;
+	esac
+done <<EOF
+$PALETTE_OUT
+EOF
+if [ -z "$PALETTE_ERROR" ] && [ -z "$PAL_SOURCE" ]; then
+	PALETTE_ERROR="nvim printed no palette report: $(printf '%s' "$PALETTE_OUT" | tr '\n' ' ' | cut -c1-200)"
+fi
+[ -n "$PALETTE_ERROR" ] && warn "palette: $PALETTE_ERROR"
+
+palette_description() {
+	case $PAL_SOURCE in
+	none) echo 'no kitty palette found: Neovim uses plain Catppuccin Mocha' ;;
+	dank-theme.conf) echo 'DMS wallpaper palette (dank-theme.conf)' ;;
+	current-theme.conf) echo 'kitty fallback palette (current-theme.conf, Catppuccin Mocha in this repo)' ;;
+	remote-palette.conf) echo 'legacy pushed snapshot (remote-palette.conf, no longer updated)' ;;
+	remote-palette-*) echo "pushed by ${PAL_SOURCE#remote-palette-} (remote-palette-${PAL_SOURCE#remote-palette-}.conf)" ;;
+	'LC_KITTY_PALETTE (tmux)') echo 'LC_KITTY_PALETTE from the tmux session environment' ;;
+	LC_KITTY_PALETTE)
+		if [ -n "${LC_KITTY_PALETTE_SRC:-}" ]; then
+			echo "LC_KITTY_PALETTE from the environment (source ${LC_KITTY_PALETTE_SRC})"
+		else
+			echo 'LC_KITTY_PALETTE from the environment'
+		fi
+		;;
+	*) echo "$PAL_SOURCE" ;;
+	esac
+}
+PAL_DESCRIPTION=''
+[ -n "$PAL_SOURCE" ] && PAL_DESCRIPTION=$(palette_description)
+
+# --- palette followers ----------------------------------------------------------
+# One record per tool: status (follows | differs | missing) and why. A config
+# that is missing or differs warns only when the tool itself is installed.
+FOLLOW_ROWS=''
+follow() {
+	local tool=$1 status=$2 detail=$3 binary=${4:-$1}
+	FOLLOW_ROWS="$FOLLOW_ROWS$tool$SEP$status$SEP$detail$NL"
+	if [ "$status" != follows ] && installed "$binary"; then
+		warn "$tool: $detail"
+	fi
+}
+
+has_line() {
+	grep -Eq "$2" "$1" 2>/dev/null
+}
+
+check_kitty() {
+	local file=$CONF/kitty/kitty.conf
+	if [ ! -f "$file" ]; then
+		follow kitty missing "no $file"
+	elif has_line "$file" '^[[:space:]]*include[[:space:]]+current-theme\.conf' &&
+		has_line "$file" '^[[:space:]]*(glob)?include[[:space:]]+dank-theme\.conf'; then
+		follow kitty follows 'current-theme.conf, overridden by DMS dank-theme.conf when present'
+	else
+		follow kitty differs "$file does not include current-theme.conf and dank-theme.conf"
+	fi
+}
+
+check_tmux() {
+	local file=$HOME/.tmux.conf
+	[ -f "$file" ] || file=$CONF/tmux/tmux.conf
+	if [ ! -f "$file" ]; then
+		follow tmux missing 'no ~/.tmux.conf'
+	elif has_line "$file" '^[[:space:]]*source-file[[:space:]].*tmux/options\.conf' && [ -f "$CONF/tmux/options.conf" ]; then
+		follow tmux follows 'ANSI colour names (~/.config/tmux modules)'
+	else
+		follow tmux differs "$file does not source ~/.config/tmux/options.conf"
+	fi
+}
+
+check_nvim() {
+	if [ -f "$CONF/nvim/lua/customize/kitty_palette.lua" ]; then
+		follow nvim follows 'truecolor from the resolved palette (customize.kitty_palette)'
+	else
+		follow nvim missing "no $CONF/nvim/lua/customize/kitty_palette.lua"
+	fi
+}
+
+check_starship() {
+	local file=${STARSHIP_CONFIG:-$CONF/starship.toml} active='not the prompt of the calling shell'
+	[ -n "${STARSHIP_SHELL:-}" ] && active="prompt active in $STARSHIP_SHELL"
+	if [ ! -f "$file" ]; then
+		follow starship missing "no $file"
+	elif has_line "$file" '^[[:space:]]*palette[[:space:]]*='; then
+		follow starship differs "$file selects a fixed palette"
+	else
+		follow starship follows "ANSI colour names; $active"
+	fi
+}
+
+check_fzf() {
+	local file=${FZF_DEFAULT_OPTS_FILE:-}
+	if [ -n "$file" ] && has_line "$file" '^--color='; then
+		follow fzf follows "shell: $file; tmux pickers: fzf-colors.sh"
+	elif [ -f "$CONF/fzf/fzfrc" ]; then
+		follow fzf differs 'FZF_DEFAULT_OPTS_FILE does not point at ~/.config/fzf/fzfrc: only the tmux pickers use the palette colours'
+	else
+		follow fzf missing "no $CONF/fzf/fzfrc"
+	fi
+}
+
+check_bat() {
+	local file=${BAT_CONFIG_PATH:-$CONF/bat/config}
+	if [ -n "${BAT_THEME:-}" ] && [ "$BAT_THEME" != ansi ]; then
+		follow bat differs "BAT_THEME=$BAT_THEME overrides the ansi theme"
+	elif [ ! -f "$file" ]; then
+		follow bat missing "no $file"
+	elif has_line "$file" '^[[:space:]]*--theme=["'\'']?ansi["'\'']?[[:space:]]*$'; then
+		follow bat follows '--theme=ansi'
+	else
+		follow bat differs "$file does not set --theme=ansi"
+	fi
+}
+
+check_delta() {
+	local theme=''
+	if ! installed git; then
+		follow delta missing 'git not installed, so the [delta] settings cannot be read'
+		return
+	fi
+	# The value delta sees outside a repository. `--global` alone can miss
+	# ~/.config/git/config, so read the effective config from /.
+	theme=$(git -C / config --get delta.syntax-theme 2>/dev/null)
+	if [ "$theme" = none ]; then
+		follow delta follows 'syntax-theme = none, ANSI styles ([delta] in ~/.config/git/config)'
+	elif [ -n "$theme" ]; then
+		follow delta differs "delta.syntax-theme is $theme, a fixed RGB theme"
+	else
+		follow delta missing 'no delta.syntax-theme in the git config'
+	fi
+}
+
+check_yazi() {
+	local file=${YAZI_CONFIG_HOME:-$CONF/yazi}/theme.toml
+	if [ ! -f "$file" ]; then
+		follow yazi missing "no $file"
+	elif has_line "$file" '^[[:space:]]*(dark|light)[[:space:]]*=[[:space:]]*"[^"]+"'; then
+		follow yazi differs "$file selects a flavour"
+	else
+		follow yazi follows 'built-in theme, ANSI colours (no flavour)'
+	fi
+}
+
+# lazygit reads LG_CONFIG_FILE, CONFIG_DIR, then its XDG directory, which on
+# macOS is ~/Library/Application Support unless XDG_CONFIG_HOME is set.
+check_lazygit() {
+	local file='' candidate
+	if [ -n "${LG_CONFIG_FILE:-}" ]; then
+		file=${LG_CONFIG_FILE%%,*}
+	elif [ -n "${CONFIG_DIR:-}" ]; then
+		file=$CONFIG_DIR/config.yml
+	else
+		for candidate in "$CONF/lazygit/config.yml" "$HOME/Library/Application Support/lazygit/config.yml"; do
+			if [ -f "$candidate" ]; then
+				file=$candidate
+				break
+			fi
+		done
+	fi
+	if [ -z "$file" ] || [ ! -f "$file" ]; then
+		follow lazygit missing "no ${file:-$CONF/lazygit/config.yml}"
+	elif has_line "$file" '^[[:space:]]+activeBorderColor:'; then
+		follow lazygit follows 'ANSI theme, delta as pager'
+	else
+		follow lazygit differs "$file has no ANSI theme"
+	fi
+}
+
+check_btop() {
+	local file=$CONF/btop/btop.conf
+	if [ ! -f "$file" ]; then
+		follow btop missing "no $file"
+	elif has_line "$file" '^color_theme[[:space:]]*=[[:space:]]*"?TTY"?'; then
+		follow btop follows 'built-in TTY theme'
+	else
+		follow btop differs "$file does not use the TTY theme"
+	fi
+}
+
+check_kitty
+check_tmux
+check_nvim
+check_starship
+check_fzf
+check_bat
+check_delta
+check_yazi
+check_lazygit
+check_btop
+
+# --- output ---------------------------------------------------------------------
+# A JSON string literal, escaped in the shell (no fork per value); control
+# characters other than tab become spaces.
+json_str() {
+	local s=$1
+	case $s in
+	*[[:cntrl:]]*)
+		s=${s//$TAB/ }
+		s=$(printf '%s' "$s" | tr '\000-\037' ' ')
+		;;
+	esac
+	s=${s//\\/\\\\}
+	s=${s//\"/\\\"}
+	printf '"%s"' "$s"
+}
+
+# A string, or null for the empty / "-" placeholder.
+json_opt() {
+	case $1 in
+	'' | -) printf 'null' ;;
+	*) json_str "$1" ;;
+	esac
+}
+
+json_list() {
+	local first=1 line
+	printf '['
+	while IFS= read -r line; do
+		[ -n "$line" ] || continue
+		[ "$first" = 1 ] || printf ','
+		first=0
+		json_str "$line"
+	done <<EOF
+$1
+EOF
+	printf ']'
+}
+
+render_json() {
+	local first name version path tool status detail color ratio role verdict ok
+	printf '{"host":{"name":%s,"os":%s,"kernel":%s,"arch":%s,"shell":%s,"term":%s,"ssh":%s,"tmux":%s},' \
+		"$(json_str "$HOST_NAME")" "$(json_str "$HOST_OS")" "$(json_str "$HOST_KERNEL")" "$(json_str "$HOST_ARCH")" \
+		"$(json_opt "$HOST_SHELL")" "$(json_opt "$HOST_TERM")" "$HOST_SSH" "$HOST_TMUX"
+	if [ -n "$DOT_COMMIT" ]; then
+		printf '"dotfiles":{"path":%s,"commit":%s,"branch":%s,"date":%s,"dirty":%s,"changes":%s},' \
+			"$(json_str "$ROOT")" "$(json_str "$DOT_COMMIT")" "$(json_str "$DOT_BRANCH")" "$(json_opt "$DOT_DATE")" \
+			"$([ "$DOT_CHANGES" -gt 0 ] && echo true || echo false)" "$DOT_CHANGES"
+	else
+		printf '"dotfiles":{"path":%s,"commit":null,"branch":null,"date":null,"dirty":null,"changes":null},' "$(json_opt "$ROOT")"
+	fi
+	printf '"tools":['
+	first=1
+	while IFS="$SEP" read -r name version path; do
+		[ -n "$name" ] || continue
+		[ "$first" = 1 ] || printf ','
+		first=0
+		if [ "$path" = - ]; then
+			printf '{"name":%s,"installed":false,"version":null,"path":null}' "$(json_str "$name")"
+		else
+			printf '{"name":%s,"installed":true,"version":%s,"path":%s}' "$(json_str "$name")" "$(json_str "$version")" "$(json_str "$path")"
+		fi
+	done <<EOF
+$TOOL_ROWS
+EOF
+	printf '],"palette":{"available":%s,"source":%s,"description":%s,"path":%s,"background":%s,"foreground":%s,"primary":%s,"flavour":%s,"error":%s,"slots":[' \
+		"$([ -n "$PAL_SOURCE" ] && [ "$PAL_SOURCE" != none ] && echo true || echo false)" \
+		"$(json_opt "$PAL_SOURCE")" "$(json_opt "$PAL_DESCRIPTION")" "$(json_opt "$PAL_PATH")" "$(json_opt "$PAL_BG")" \
+		"$(json_opt "$PAL_FG")" "$(json_opt "$PAL_PRIMARY")" "$(json_opt "$PAL_FLAVOUR")" "$(json_opt "$PALETTE_ERROR")"
+	first=1
+	while IFS="$SEP" read -r name color ratio role verdict; do
+		[ -n "$name" ] || continue
+		[ "$first" = 1 ] || printf ','
+		first=0
+		case $verdict in ok) ok=true ;; low) ok=false ;; *) ok=null ;; esac
+		printf '{"name":%s,"color":%s,"contrast":%s,"role":%s,"ok":%s}' \
+			"$(json_str "$name")" "$(json_str "$color")" "$ratio" "$(json_str "$role")" "$ok"
+	done <<EOF
+$PAL_SLOTS
+EOF
+	printf ']},"followers":['
+	first=1
+	while IFS="$SEP" read -r tool status detail; do
+		[ -n "$tool" ] || continue
+		[ "$first" = 1 ] || printf ','
+		first=0
+		printf '{"tool":%s,"status":%s,"detail":%s}' "$(json_str "$tool")" "$(json_str "$status")" "$(json_str "$detail")"
+	done <<EOF
+$FOLLOW_ROWS
+EOF
+	printf '],"warnings":%s}\n' "$(json_list "$WARNINGS")"
+}
+
+render_plain() {
+	local name version path tool status detail color ratio role verdict state
+	printf 'host       %s, %s (%s %s)\n' "$HOST_NAME" "$HOST_OS" "$HOST_KERNEL" "$HOST_ARCH"
+	printf 'session    ssh %s, tmux %s, TERM=%s, SHELL=%s\n' \
+		"$([ "$HOST_SSH" = true ] && echo yes || echo no)" "$([ "$HOST_TMUX" = true ] && echo yes || echo no)" \
+		"${HOST_TERM:-unset}" "${HOST_SHELL:-unset}"
+	if [ -n "$DOT_COMMIT" ]; then
+		state=clean
+		[ "$DOT_CHANGES" -gt 0 ] && state="dirty ($DOT_CHANGES changed)"
+		printf 'dotfiles   %s, %s @ %s (%s), %s\n' "$ROOT" "$DOT_BRANCH" "$DOT_COMMIT" "$DOT_DATE" "$state"
+	else
+		printf 'dotfiles   %s\n' "${ROOT:-not found}"
+	fi
+	printf '\ntools\n'
+	while IFS="$SEP" read -r name version path; do
+		[ -n "$name" ] || continue
+		if [ "$path" = - ]; then
+			printf '  %-9s missing\n' "$name"
+		else
+			printf '  %-9s %-10s %s\n' "$name" "$version" "$path"
+		fi
+	done <<EOF
+$TOOL_ROWS
+EOF
+	printf '\npalette\n'
+	if [ -n "$PALETTE_ERROR" ]; then
+		printf '  unavailable: %s\n' "$PALETTE_ERROR"
+	else
+		printf '  source     %s\n' "$PAL_DESCRIPTION"
+		[ -n "$PAL_PATH" ] && [ "$PAL_PATH" != - ] && printf '  file       %s\n' "$PAL_PATH"
+		if [ -n "$PAL_BG" ]; then
+			printf '  background %s (%s)\n' "$PAL_BG" "$PAL_FLAVOUR"
+			[ "$PAL_PRIMARY" != - ] && printf '  primary    %s\n' "$PAL_PRIMARY"
+			printf '  contrast on the background (text needs 4.5:1)\n'
+			while IFS="$SEP" read -r name color ratio role verdict; do
+				[ -n "$name" ] || continue
+				if [ "$verdict" = - ]; then
+					printf '    %-10s %s %6s:1  %s\n' "$name" "$color" "$ratio" "$role"
+				else
+					printf '    %-10s %s %6s:1  %-20s %s\n' "$name" "$color" "$ratio" "$role" "$verdict"
+				fi
+			done <<EOF
+$PAL_SLOTS
+EOF
+		fi
+	fi
+	printf '\nfollows the palette\n'
+	while IFS="$SEP" read -r tool status detail; do
+		[ -n "$tool" ] || continue
+		printf '  %-9s %-8s %s\n' "$tool" "$status" "$detail"
+	done <<EOF
+$FOLLOW_ROWS
+EOF
+	if [ -n "$WARNINGS" ]; then
+		printf '\nwarnings\n'
+		printf '%s' "$WARNINGS" | sed 's/^/  - /'
+	else
+		printf '\nwarnings   none\n'
+	fi
+}
+
+if [ "$FORMAT" = json ]; then
+	render_json
+else
+	render_plain
+fi

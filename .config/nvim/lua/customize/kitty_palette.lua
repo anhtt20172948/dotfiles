@@ -172,12 +172,13 @@ local function read_remote(environment)
 	end
 	local dir = vim.env.HOME .. "/.config/kitty/"
 	if valid_source(source) then
-		local values = read_encoded_file(dir .. "remote-palette-" .. source .. ".conf")
+		local path = dir .. "remote-palette-" .. source .. ".conf"
+		local values = read_encoded_file(path)
 		if values then
-			return values
+			return values, "remote-palette-" .. source, path
 		end
 	end
-	local newest, newest_time
+	local newest, newest_time, newest_source, newest_path
 	for _, path in ipairs(vim.fn.glob(dir .. "remote-palette-*.conf", false, true)) do
 		local candidate = vim.fn.fnamemodify(path, ":t"):match("^remote%-palette%-(.*)%.conf$")
 		local stat = valid_source(candidate) and vim.uv.fs_stat(path)
@@ -190,19 +191,21 @@ local function read_remote(environment)
 			then
 				local values = read_encoded_file(path)
 				if values then
-					newest, newest_time = values, mtime
+					newest, newest_time, newest_source, newest_path = values, mtime, candidate, path
 				end
 			end
 		end
 	end
-	return newest
+	if newest then
+		return newest, "remote-palette-" .. newest_source, newest_path
+	end
 end
 
 -- Resolve symlinks: install.sh links the kitty directory into this checkout.
 local function read_file()
 	local config = vim.env.XDG_CONFIG_HOME
 	local dir = (config and config ~= "" and config or (vim.env.HOME .. "/.config")) .. "/kitty/"
-	local file
+	local file, source, source_path
 	local names = { "dank-theme.conf", "current-theme.conf" }
 	if vim.env.SSH_CONNECTION and vim.env.SSH_CONNECTION ~= "" then
 		table.insert(names, 1, "remote-palette.conf")
@@ -212,6 +215,7 @@ local function read_file()
 		if path then
 			file = io.open(path, "r")
 			if file then
+				source, source_path = name, path
 				break
 			end
 		end
@@ -238,19 +242,35 @@ local function read_file()
 			return nil
 		end
 	end
-	return values
+	return values, source, source_path
 end
 
-function M.read()
-	local remote, environment
+-- The terminal palette Neovim follows, before any derivation: its raw values
+-- (background, foreground, color0-15, optional cursor), a label naming where it
+-- came from and the file path, if any. nil means plain Catppuccin Mocha.
+-- Labels: remote-palette-<src>, "LC_KITTY_PALETTE (tmux)", LC_KITTY_PALETTE,
+-- remote-palette.conf, dank-theme.conf, current-theme.conf.
+function M.resolve()
 	if vim.env.SSH_CONNECTION and vim.env.SSH_CONNECTION ~= "" then
-		environment = tmux_environment()
-		remote = read_remote(environment) or parse_encoded(environment.LC_KITTY_PALETTE)
+		local environment = tmux_environment()
+		local values, source, path = read_remote(environment)
+		if values then
+			return values, source, path
+		end
+		values = parse_encoded(environment.LC_KITTY_PALETTE)
+		if values then
+			return values, "LC_KITTY_PALETTE (tmux)"
+		end
 	end
-	local values = remote or parse_encoded(vim.env.LC_KITTY_PALETTE) or read_file()
-	if not values then
-		return nil
+	local values = parse_encoded(vim.env.LC_KITTY_PALETTE)
+	if values then
+		return values, "LC_KITTY_PALETTE"
 	end
+	return read_file()
+end
+
+-- Derive the Catppuccin overrides and accents from resolved palette values.
+function M.from_values(values)
 	local bg, fg = values.background, values.foreground
 	local r, g, b = rgb(bg)
 	local light = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.5
@@ -280,6 +300,11 @@ function M.read()
 		selection_background = values.selection_background,
 		selection_foreground = values.selection_foreground,
 	}
+end
+
+function M.read()
+	local values = M.resolve()
+	return values and M.from_values(values) or nil
 end
 
 M.active = M.read()

@@ -27,6 +27,7 @@ LINT_FILES=(
 	.local/bin/ai-acct
 	.local/bin/ai-acct-claude
 	.local/bin/agent-statusline-claude
+	.local/bin/dotfiles-diagnose
 	.local/bin/install_agent_workflow
 	.local/bin/install_zsh
 	.local/bin/show

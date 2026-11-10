@@ -8,6 +8,7 @@ local theme = require("customize.kitty_palette")
 local dir = vim.fn.fnamemodify(vim.fn.stdpath("config"), ":h") .. "/kitty"
 vim.fn.mkdir(dir, "p")
 assert(theme.read() == nil, "missing files must fall back to plain mocha")
+assert(theme.resolve() == nil, "no source without a palette")
 local function env_palette(bg)
 	local entries = { bg, "dddddd" }
 	for i = 0, 15 do
@@ -18,6 +19,7 @@ end
 vim.env.LC_KITTY_PALETTE = env_palette("123456")
 local env_only = assert(theme.read(), "forwarded palette must work without any kitty files")
 assert(env_only.colors.base == "#123456" and env_only.flavour == "mocha")
+assert(select(2, theme.resolve()) == "LC_KITTY_PALETTE", "env source label")
 assert(env_only.colors.red == nil, "ANSI slots must not replace syntax accents")
 assert(env_only.primary == nil and env_only.cursor == nil, "18 entries must retain the lavender fallback")
 vim.env.LC_KITTY_PALETTE = env_palette("123456") .. ":abcdef"
@@ -43,6 +45,8 @@ assert(dark.flavour == "mocha" and dark.colors.base == "#111111")
 assert(dark.colors.red == nil, "syntax accents come from Catppuccin at setup")
 assert(dark.primary == "#abcdef", "cursor must provide the primary UI accent")
 assert(dark.selection_background == "#123456" and dark.cursor == "#abcdef")
+local _, dark_source, dark_path = theme.resolve()
+assert(dark_source == "current-theme.conf" and dark_path == vim.uv.fs_realpath(dir .. "/current-theme.conf"))
 -- Identical terminal inputs must produce identical search groups on every transport.
 local function search_groups(active)
 	theme.active = active
@@ -71,6 +75,11 @@ vim.fn.writefile(fixture("#eeeeee"), dir .. "/light.conf")
 assert(vim.uv.fs_symlink(dir .. "/light.conf", dir .. "/dank-theme.conf"))
 local light = assert(theme.read())
 assert(light.flavour == "latte" and light.colors.base == "#eeeeee")
+local _, light_source, light_path = theme.resolve()
+assert(
+	light_source == "dank-theme.conf" and light_path == vim.uv.fs_realpath(dir .. "/light.conf"),
+	"DMS source resolves links"
+)
 vim.fn.writefile({ "background invalid" }, dir .. "/light.conf")
 assert(theme.read() == nil, "incomplete palette must not partly override catppuccin")
 vim.fn.delete(dir .. "/dank-theme.conf")
@@ -81,6 +90,7 @@ vim.fn.writefile(fixture("#222222"), dir .. "/remote-palette.conf")
 assert(theme.read().colors.base == "#eeeeee", "local DMS must ignore remote snapshots")
 vim.env.SSH_CONNECTION = "127.0.0.1 1234 127.0.0.1 22"
 assert(theme.read().colors.base == "#222222", "SSH snapshot must override stale DMS")
+assert(select(2, theme.resolve()) == "remote-palette.conf", "legacy snapshot source label")
 vim.env.LC_KITTY_PALETTE = env_palette("fafafa")
 local forwarded = assert(theme.read())
 assert(forwarded.colors.base == "#fafafa" and forwarded.flavour == "latte", "env must override every file")
@@ -96,6 +106,8 @@ vim.env.LC_KITTY_PALETTE_SRC = "arch-local"
 vim.fn.writefile({ env_palette("333333") }, remote_dir .. "/remote-palette-arch-local.conf")
 vim.fn.writefile({ env_palette("444444") }, remote_dir .. "/remote-palette-mac-local.conf")
 assert(theme.read().colors.base == "#333333", "matching source file must override env")
+local _, pushed_source, pushed_path = theme.resolve()
+assert(pushed_source == "remote-palette-arch-local" and pushed_path == remote_dir .. "/remote-palette-arch-local.conf")
 assert(theme.read().primary == nil, "18-entry pushed palette must retain lavender fallback")
 for _, newline in ipairs({ "", "\n" }) do
 	local file = assert(io.open(remote_dir .. "/remote-palette-arch-local.conf", "w"))
@@ -127,6 +139,10 @@ for _, source in ipairs({
 }) do
 	vim.env.LC_KITTY_PALETTE_SRC = source
 	assert(theme.read().colors.base == "#444444", "missing or invalid source must use newest valid push")
+	local _, newest_source, newest_path = theme.resolve()
+	assert(
+		newest_source == "remote-palette-mac-local" and newest_path == remote_dir .. "/remote-palette-mac-local.conf"
+	)
 end
 local original_system = vim.system
 local session_output = "LC_KITTY_PALETTE_SRC=mac-local\n"
@@ -173,6 +189,7 @@ assert(
 	theme.read().primary == "#abcdef" and theme.read().colors.base == "#777777",
 	"tmux palette must override process palette"
 )
+assert(select(2, theme.resolve()) == "LC_KITTY_PALETTE (tmux)", "tmux env source label")
 for _, output in ipairs({ "-LC_KITTY_PALETTE\n", "LC_KITTY_PALETTE=invalid\n" }) do
 	session_output = output
 	assert(theme.read().colors.base == "#fafafa", "removed or malformed tmux palette must fall back to process env")
