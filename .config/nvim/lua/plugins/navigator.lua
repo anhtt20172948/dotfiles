@@ -8,8 +8,8 @@ end
 return {
 	"christoomey/vim-tmux-navigator",
 	event = "VeryLazy",
-	-- plugin/tmux_navigator.vim tự đặt nnoremap <C-l> khi load, ghi đè keys của lazy.
-	-- Config chạy sau packadd nên đặt lại riêng map này, giữ các terminal map của plugin.
+	-- plugin/tmux_navigator.vim sets nnoremap <C-l> on load, overriding lazy's keys.
+	-- Config runs after packadd, so re-set just this map and keep the plugin's terminal maps.
 	config = function()
 		vim.keymap.set("n", "<c-l>", navigate_right, { silent = true })
 	end,

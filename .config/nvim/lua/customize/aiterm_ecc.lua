@@ -1,40 +1,40 @@
 -- ECC (https://github.com/affaan-m/ECC) cho claude / codex / opencode.
--- Module thuần data: KHÔNG mở window, KHÔNG gọi Snacks — cùng khuôn aiterm_history.
+-- Pure data module: NO windows, NO Snacks calls - same shape as aiterm_history.
 --
--- Hai việc:
---   1. DÒ trên đĩa xem tool nào đã có command của ECC, và gõ nó ra sao.
---   2. Dựng danh sách lệnh SHELL để cài (customize/aiterm.lua chạy + hỏi xác nhận).
+-- Two jobs:
+--   1. DETECT on disk which tools already have ECC commands, and how they are typed.
+--   2. Build the SHELL commands to install (customize/aiterm.lua runs them after a confirm).
 --
--- Vì sao phải dò chứ không hardcode: tiền tố lệnh KHÁC nhau theo tool.
---   claude (cài tay) ~/.claude/commands/code-review.md      -> /code-review
---   claude (plugin)  cache plugin của Claude Code           -> /ecc:code-review
+-- Why detect instead of hardcoding: the command prefix DIFFERS per tool.
+--   claude (manual)  ~/.claude/commands/code-review.md      -> /code-review
+--   claude (plugin)  Claude Code plugin cache               -> /ecc:code-review
 --   codex            ~/.codex/prompts/ecc-code-review.md    -> /ecc-code-review
 --   opencode         ~/.config/opencode/command/*.md        -> /code-review
--- Nguồn tiền tố codex: scripts/sync-ecc-to-codex.sh sinh file "ecc-$name.md".
--- Thư mục command của opencode CHƯA verify được từ repo -> dò nhiều ứng viên, không
--- có thì trả bảng rỗng. Không bao giờ sinh ra một lệnh không tồn tại trên đĩa.
+-- codex prefix source: scripts/sync-ecc-to-codex.sh generates "ecc-$name.md" files.
+-- opencode's command directory is NOT verifiable from the repo -> probe several candidates and
+-- return an empty table when none exists. Never produces a command that is not on disk.
 local M = {}
 
 M.config = {
 	repo = "https://github.com/affaan-m/ECC",
 	dir = nil, -- nil -> stdpath("data")/ecc
-	-- developer = profile "kỹ sư mặc định" của ECC: minimal + framework-language +
-	-- database + orchestration. Nhiều skill/command hơn minimal; favorites/pin
-	-- (<leader>aS/<leader>aw) giữ picker gọn. codex (sync) và opencode (pin full)
-	-- bỏ qua giá trị này; chỉ claude dùng --profile.
+	-- developer = ECC's "default engineer" profile: minimal + framework-language +
+	-- database + orchestration. More skills/commands than minimal; favorites/pins
+	-- (<leader>aS/<leader>aw) keep the picker tidy. codex (sync) and opencode (full pin)
+	-- ignore this value; only claude uses --profile.
 	profile = "developer",
 }
 
--- Command của ECC dùng làm MỐC nhận diện. ~/.claude/commands/ có thể toàn command tự
--- viết của người dùng, nên "thư mục không rỗng" KHÔNG đủ để kết luận đã cài ECC.
+-- ECC commands used as DETECTION MARKERS. ~/.claude/commands/ may hold only the user's own
+-- commands, so "directory not empty" is NOT enough to conclude ECC is installed.
 local MARKERS = { "code-review", "build-fix", "refactor-clean", "update-docs" }
 local MARKER_MIN = 2
 
--- Số dòng đầu đọc từ mỗi file command để lấy frontmatter `description:`.
+-- Leading lines read from each command file to get the frontmatter `description:`.
 local HEAD_LINES = 10
 
--- cache: tool -> { sig, cmds, paths }; sig ghép mtime các thư mục nguồn nên cài xong
--- là tự mới. skill_cache/desc_cache dùng cùng cơ chế sig đó.
+-- cache: tool -> { sig, cmds, paths }; sig joins the source dirs' mtimes, so an install
+-- refreshes it automatically. skill_cache/desc_cache use the same sig mechanism.
 local cache = {}
 local skill_cache = {}
 local desc_cache = {}
@@ -64,8 +64,8 @@ local function config_home()
 	return vim.fn.expand("~/.config")
 end
 
--- Thư mục command CỤC BỘ của repo (rooted ở cwd), theo tool. Đứng TRƯỚC nguồn HOME
--- nên bản của repo thắng. scope="project" để command_list gắn nhãn + sort đầu.
+-- The repo's LOCAL command directories (rooted at cwd), per tool. Placed BEFORE the HOME
+-- sources so the repo's copy wins. scope="project" so command_list labels it and sorts it first.
 local function project_command_srcs(tool, cwd)
 	if not cwd then
 		return {}
@@ -85,17 +85,17 @@ local function project_command_srcs(tool, cwd)
 	return out
 end
 
--- Danh sách thư mục có thể chứa command, theo thứ tự ưu tiên. Trả cả thư mục KHÔNG
--- tồn tại: sig phải phân biệt được "chưa có" với "vừa tạo" thì cache mới tự hết hạn.
--- cwd (tuỳ chọn): thêm nguồn CỤC BỘ repo lên đầu (scope="project"). Không truyền -> chỉ HOME.
+-- Directories that may hold commands, in priority order. Also returns dirs that do NOT
+-- exist: sig must tell "missing" from "just created" for the cache to expire on its own.
+-- cwd (optional): prepend the repo's LOCAL sources (scope="project"). Omitted -> HOME only.
 ---@return { dir: string, prefix: string, invoke: string, scope?: string }[]
 local function sources(tool, cwd)
 	local home_srcs = {}
 	if tool == "claude" then
 		home_srcs = { { dir = home(".claude/commands"), prefix = "", invoke = "/%s" } }
-		-- Đường plugin (/plugin install ecc@ecc) không phải đường mình cài, nhưng nếu
-		-- người dùng đã cài kiểu đó thì vẫn nhận ra. Glob ĐỘ SÂU CỐ ĐỊNH, không đệ quy:
-		-- ~/.claude/plugins có thể chứa node_modules, quét đệ quy ở đây là bẫy hiệu năng.
+		-- The plugin path (/plugin install ecc@ecc) is not how we install, but if the
+		-- user installed that way it is still detected. FIXED-DEPTH glob, not recursive:
+		-- ~/.claude/plugins may hold node_modules, a recursive scan here is a performance trap.
 		for _, pat in ipairs({ ".claude/plugins/*/ecc", ".claude/plugins/*/*/ecc" }) do
 			for _, d in ipairs(vim.fn.glob(home(pat) .. "/commands", false, true)) do
 				home_srcs[#home_srcs + 1] = { dir = d, prefix = "", invoke = "/ecc:%s" }
@@ -104,10 +104,10 @@ local function sources(tool, cwd)
 	elseif tool == "codex" then
 		home_srcs = { { dir = home(".codex/prompts"), prefix = "ecc-", invoke = "/ecc-%s" } }
 	elseif tool == "opencode" then
-		-- ĐÃ ĐO trên máy này: opencode coi ~/.opencode LÀ một config root - gõ /code-rev
-		-- trong TUI ra đủ autocomplete dù ~/.config/opencode không có thư mục command
-		-- nào. Đó cũng là lý do `install.sh --target opencode` của ECC ghi vào đây.
-		-- Vẫn giữ ~/.config/opencode (đường tài liệu ghi) cho ai tự chép sang.
+		-- MEASURED on this machine: opencode treats ~/.opencode AS a config root - typing /code-rev
+		-- in the TUI autocompletes fully even though ~/.config/opencode has no command
+		-- directory. That is also why ECC's `install.sh --target opencode` writes here.
+		-- ~/.config/opencode (the documented path) is kept for anyone copying there by hand.
 		local c = config_home() .. "/opencode"
 		home_srcs = {
 			{ dir = home(".opencode/commands"), prefix = "", invoke = "/%s" },
@@ -118,8 +118,8 @@ local function sources(tool, cwd)
 	else
 		return {}
 	end
-	-- Nguồn CỤC BỘ repo đứng TRƯỚC nguồn HOME: "nguồn trước thắng" trong M.commands()
-	-- nên bản của repo ưu tiên hơn bản global cùng tên.
+	-- The repo's LOCAL sources come BEFORE the HOME ones: "first source wins" in M.commands(),
+	-- so the repo's copy beats a global one with the same name.
 	local out = project_command_srcs(tool, cwd)
 	vim.list_extend(out, home_srcs)
 	return out
@@ -136,14 +136,14 @@ end
 
 -- public -----------------------------------------------------------------
 
--- Thư mục clone dùng chung cho cả ba tool.
+-- Clone directory shared by all three tools.
 function M.dir()
 	return M.config.dir or (vim.fn.stdpath("data") .. "/ecc")
 end
 
--- Bảng "tên command của ECC" -> "chuỗi gõ vào session". Rỗng nếu chưa cài.
--- cwd (tuỳ chọn): thêm command CỤC BỘ repo (scope="project"). Không truyền -> chỉ HOME
--- (installed/count/status/doctor gọi kiểu này -> phát hiện cài đặt không đổi).
+-- Table "ECC command name" -> "string typed into the session". Empty when not installed.
+-- cwd (optional): add the repo's LOCAL commands (scope="project"). Omitted -> HOME only
+-- (installed/count/status/doctor call it that way -> install detection is unchanged).
 ---@param tool string
 ---@param cwd? string
 ---@return table<string, string>
@@ -158,12 +158,12 @@ function M.commands(tool, cwd)
 	local cmds, paths, scopes = {}, {}, {}
 	for _, s in ipairs(srcs) do
 		if vim.uv.fs_stat(s.dir) then
-			-- Độ sâu 1: command của cả ba harness đều là file phẳng trong thư mục.
+			-- Depth 1: all three harnesses keep commands as flat files in the directory.
 			for name, kind in vim.fs.dir(s.dir) do
 				local base = kind == "file" and name:match("^(.*)%.md$")
 				if base and (s.prefix == "" or base:sub(1, #s.prefix) == s.prefix) then
 					local key = base:sub(#s.prefix + 1)
-					-- Nguồn trước thắng: bản CỤC BỘ repo / bản cài tay ưu tiên hơn.
+					-- First source wins: the repo's LOCAL copy / a manual install takes priority.
 					if key ~= "" and not cmds[key] then
 						cmds[key] = s.invoke:format(key)
 						paths[key] = s.dir .. "/" .. name
@@ -178,31 +178,31 @@ function M.commands(tool, cwd)
 	return cmds
 end
 
--- Thư mục skill mà TOOL THẬT SỰ ĐỌC. KHÁC command: skill là tài liệu hướng dẫn nên áp
--- được lên một đoạn code, còn command là quy trình cấp repo (xem M.command_list).
---   codex: $CODEX_HOME/skills, mặc định ~/.codex/skills - nguồn là chính skill
---   `skill-creator` của codex ("default to $CODEX_HOME/skills ... so the skill is
---   auto-discovered"). KHÔNG dò ~/.agents/skills như README của ECC nói: thư mục đó
---   codex không đọc, liệt kê thứ tool không thấy chính là kiểu "quảng cáo lệnh không
---   tồn tại" mà cả plugin này đang tránh. Skill gốc của codex nằm sâu một tầng trong
---   .system/ nên phải quét riêng.
--- Trả list { dir, scope }. cwd (tuỳ chọn) -> thêm thư mục skill CỤC BỘ repo lên đầu
--- (scope="project"); không truyền -> chỉ HOME (scope="global"). Không truy đệ quy.
+-- Skill directories the TOOL ACTUALLY READS. Unlike commands, skills are guidance docs and can
+-- apply to a piece of code, while commands are repo-level workflows (see M.command_list).
+--   codex: $CODEX_HOME/skills, default ~/.codex/skills - the source is codex's own
+--   `skill-creator` skill ("default to $CODEX_HOME/skills ... so the skill is
+--   auto-discovered"). ~/.agents/skills is NOT probed as ECC's README says: codex does
+--   not read that dir, and listing what the tool cannot see is exactly the "advertise a
+--   nonexistent command" failure this whole plugin avoids. codex's built-in skills sit one
+--   level deeper in .system/, so they are scanned separately.
+-- Returns a list of { dir, scope }. cwd (optional) -> prepend the repo's LOCAL skill dirs
+-- (scope="project"); omitted -> HOME only (scope="global"). Not recursive.
 local function skill_dirs(tool, cwd)
 	local home_dirs
 	if tool == "claude" then
 		home_dirs = { home(".claude/skills") }
 	elseif tool == "opencode" then
-		-- ~/.opencode/skills: ECC ghi vào đây. ~/.config/opencode/skills: vercel skills
-		-- CLI (`npx skills add -a opencode -g`) ghi vào đây -> phải quét cả hai.
+		-- ~/.opencode/skills: ECC writes here. ~/.config/opencode/skills: the vercel skills
+		-- CLI (`npx skills add -a opencode -g`) writes here -> scan both.
 		home_dirs = { home(".opencode/skills"), config_home() .. "/opencode/skills" }
 	elseif tool == "codex" then
 		home_dirs = { home(".codex/skills"), home(".codex/skills/.system") }
 	else
 		return {}
 	end
-	-- Project: đường của tool + `.agents/skills` (vercel skills CLI ghi skill CỤC BỘ
-	-- của codex/opencode vào <cwd>/.agents/skills).
+	-- Project: the tool's path + `.agents/skills` (the vercel skills CLI writes codex/opencode
+	-- LOCAL skills to <cwd>/.agents/skills).
 	local proj = ({
 		claude = cwd and { cwd .. "/.claude/skills" } or {},
 		opencode = cwd and { cwd .. "/.opencode/skills", cwd .. "/.agents/skills" } or {},
@@ -215,16 +215,16 @@ local function skill_dirs(tool, cwd)
 	for _, d in ipairs(home_dirs) do
 		out[#out + 1] = { dir = d, scope = "global" }
 	end
-	-- ~/.agents/skills: dir "universal" mà vercel skills CLI hay ghi vào, nhưng
-	-- claude/codex/opencode KHÔNG đọc. Xếp CUỐI -> dedup theo tên giữ bản ở dir thật
-	-- của tool trước, nên skill chỉ hiện scope="shared" khi CHƯA activate vào tool.
+	-- ~/.agents/skills: the "universal" dir the vercel skills CLI often writes to, but
+	-- claude/codex/opencode do NOT read it. Listed LAST -> dedup by name keeps the copy in the
+	-- tool's real dir first, so a skill shows scope="shared" only while NOT activated in the tool.
 	out[#out + 1] = { dir = vim.fn.expand("~/.agents/skills"), scope = "shared" }
 	return out
 end
 
--- File ECC đã ghi ra cho tool này, lấy từ install-state. Đây là dấu vết CHUẨN để biết
--- skill nào của ECC: frontmatter `metadata.origin: ECC` KHÔNG đủ - riêng claude có
--- 13/44 skill thiếu tag đó mà vẫn là của ECC (ecc-guide, santa-method, repo-scan...).
+-- Files ECC wrote for this tool, from install-state. This is the AUTHORITATIVE trace of
+-- which skills are ECC's: frontmatter `metadata.origin: ECC` is NOT enough - for claude alone
+-- 13/44 skills lack that tag yet are ECC's (ecc-guide, santa-method, repo-scan...).
 ---@return table<string, true>
 function M.ecc_owned(tool)
 	local path = tool == "claude" and home(".claude/ecc/install-state.json")
@@ -248,14 +248,14 @@ end
 
 local ORIGIN_ORDER = { project = 0, ecc = 1, builtin = 2, user = 3, shared = 4 }
 
--- Skill của tool, kèm mô tả + nguồn. Sắp theo NHÓM rồi tên.
--- cwd (tuỳ chọn): kèm skill CỤC BỘ repo, origin="project" (sort đầu). Không truyền -> chỉ HOME.
+-- The tool's skills, with description + source. Sorted by GROUP, then name.
+-- cwd (optional): include the repo's LOCAL skills, origin="project" (sorted first). Omitted -> HOME only.
 ---@param tool string
 ---@param cwd? string
 ---@return { name: string, desc: string, hint: string|nil, path: string, origin: string }[]
 function M.skill_list(tool, cwd)
 	local dirs = skill_dirs(tool, cwd)
-	local sig = signature(dirs) -- dirs đã có .dir -> dùng thẳng
+	local sig = signature(dirs) -- dirs already have .dir -> used directly
 	local c = skill_cache[tool]
 	if c and c.sig == sig then
 		return c.list
@@ -268,8 +268,8 @@ function M.skill_list(tool, cwd)
 		if vim.uv.fs_stat(dir) then
 			for name, kind in vim.fs.dir(dir) do
 				local path = dir .. "/" .. name .. "/SKILL.md"
-				-- "link": skill đã activate là symlink -> vim.fs.dir báo type "link", không
-				-- phải "directory". fs_stat theo symlink nên vẫn xác nhận SKILL.md thật.
+				-- "link": an activated skill is a symlink -> vim.fs.dir reports type "link", not
+				-- "directory". fs_stat follows the symlink, so a real SKILL.md is still confirmed.
 				if (kind == "directory" or kind == "link") and not seen[name] and vim.uv.fs_stat(path) then
 					seen[name] = true
 					local desc, hint, tagged = "", nil, false
@@ -280,14 +280,14 @@ function M.skill_list(tool, cwd)
 						tagged = tagged or l:find("origin: ECC", 1, true) ~= nil
 					end
 					desc = desc:gsub('^"(.*)"$', "%1"):gsub("^'(.*)'$", "%1")
-					-- Thứ tự xác định nguồn: CỤC BỘ repo -> .system (skill gốc của tool) ->
-					-- install-state (chuẩn nhất) -> frontmatter (dự phòng cho codex, vốn
-					-- không có install-state) -> còn lại là bạn tự viết.
+					-- Source resolution order: repo LOCAL -> .system (the tool's built-in skills) ->
+					-- install-state (most authoritative) -> frontmatter (fallback for codex, which
+					-- has no install-state) -> the rest are hand-written.
 					local origin = "user"
 					if entry.scope == "project" then
 						origin = "project"
 					elseif entry.scope == "shared" then
-						origin = "shared" -- ~/.agents/skills, chưa activate vào dir tool
+						origin = "shared" -- ~/.agents/skills, not activated in the tool's dir yet
 					elseif dir:find("/.system", 1, true) then
 						origin = "builtin"
 					elseif owned[path] or tagged then
@@ -313,23 +313,23 @@ function M.skill_list(tool, cwd)
 	return list
 end
 
--- Set tên skill. Giữ chữ ký cũ cho <leader>ai + doctor; dựng từ skill_list để chỉ có
--- MỘT đường dò.
+-- Set of skill names. Keeps the old signature for <leader>ai + doctor; built from skill_list
+-- so there is only ONE detection path.
 ---@return table<string, true>
 function M.skills(tool)
 	M.skill_list(tool)
 	return skill_cache[tool].set
 end
 
--- Danh sách command kèm mô tả, cho picker M.workflows(). Mô tả lấy từ frontmatter
--- `description:` - chỉ đọc HEAD_LINES dòng đầu mỗi file, đủ để qua frontmatter mà
--- không nuốt cả trăm file markdown vào RAM.
--- cwd (tuỳ chọn): kèm command CỤC BỘ repo, gắn scope="project" (picker sort đầu + nhãn).
+-- Commands with descriptions, for the M.workflows() picker. Descriptions come from the frontmatter
+-- `description:` - only the first HEAD_LINES lines of each file are read, enough to get past
+-- the frontmatter without loading hundreds of markdown files into RAM.
+-- cwd (optional): include the repo's LOCAL commands, tagged scope="project" (picker sorts first + label).
 ---@param tool string
 ---@param cwd? string
 ---@return { name: string, invoke: string, desc: string, path: string, scope: string }[]
 function M.command_list(tool, cwd)
-	local cmds = M.commands(tool, cwd) -- nạp cache trước, cache[tool].paths/scopes có ngay sau đó
+	local cmds = M.commands(tool, cwd) -- loads the cache first; cache[tool].paths/scopes exist right after
 	local sig = cache[tool].sig
 	local c = desc_cache[tool]
 	if c and c.sig == sig then
@@ -347,7 +347,7 @@ function M.command_list(tool, cwd)
 				for _, l in ipairs(lines) do
 					local d = l:match("^description:%s*(.+)$")
 					if d then
-						-- frontmatter của ECC lúc có lúc không có nháy kép.
+						-- ECC frontmatter sometimes has double quotes, sometimes not.
 						desc = d:gsub('^"(.*)"$', "%1"):gsub("^'(.*)'$", "%1")
 						break
 					end
@@ -356,7 +356,7 @@ function M.command_list(tool, cwd)
 		end
 		list[#list + 1] = { name = name, invoke = invoke, desc = desc, path = path, scope = scopes[name] or "global" }
 	end
-	-- project trước, rồi theo tên: picker hiện convention của repo lên đầu.
+	-- project first, then by name: the picker surfaces the repo's conventions first.
 	table.sort(list, function(a, b)
 		if (a.scope == "project") ~= (b.scope == "project") then
 			return a.scope == "project"
@@ -367,7 +367,7 @@ function M.command_list(tool, cwd)
 	return list
 end
 
--- Đã cài ECC chưa. Đếm MARKERS thay vì "thư mục không rỗng" (xem comment ở MARKERS).
+-- Whether ECC is installed. Counts MARKERS instead of "directory not empty" (see the MARKERS comment).
 function M.installed(tool)
 	local cmds = M.commands(tool)
 	local hit = 0
@@ -387,14 +387,14 @@ function M.refresh()
 end
 
 -- version / commit ------------------------------------------------------
--- Để trả lời "tool đã cài có khớp clone không" mà KHÔNG cần mạng. Mọi dữ liệu đều nằm
--- sẵn trên đĩa; chỉ M.remote_head mới đi mạng và nó phải do người dùng chủ động gọi.
+-- Answers "does the installed tool match the clone" WITHOUT the network. All data is
+-- already on disk; only M.remote_head goes to the network, and only when the user asks.
 
 local function short(sha)
 	return type(sha) == "string" and #sha >= 7 and sha:sub(1, 7) or nil
 end
 
--- Clone dùng chung đang ở đâu. nil = chưa clone bao giờ.
+-- Where the shared clone is. nil = never cloned.
 ---@return { version: string|nil, commit: string|nil, short: string|nil, branch: string|nil }|nil
 function M.clone_info()
 	local dir = M.dir()
@@ -406,7 +406,7 @@ function M.clone_info()
 	if ok and lines and lines[1] then
 		info.version = vim.trim(lines[1])
 	end
-	-- Thiếu git thì chỉ mất phần commit, vẫn so được bằng version.
+	-- Without git only the commit is lost; the version can still be compared.
 	if vim.fn.executable("git") == 1 then
 		local function git(...)
 			local r = vim.system({ "git", "-C", dir, ... }, { text = true }):wait(2000)
@@ -419,10 +419,10 @@ function M.clone_info()
 	return info
 end
 
--- ECC đã cài cho tool này ở phiên bản nào.
--- claude/opencode: installer ghi install-state.json có cả version lẫn commit.
--- codex: bản sync KHÔNG ghi state -> chỉ moi được version từ khối <!-- BEGIN ECC -->
--- trong ~/.codex/AGENTS.md, không có commit.
+-- Which ECC version is installed for this tool.
+-- claude/opencode: the installer writes install-state.json with both version and commit.
+-- codex: the sync writes NO state -> only the version can be dug out of the <!-- BEGIN ECC -->
+-- block in ~/.codex/AGENTS.md, no commit.
 ---@return { version: string|nil, commit: string|nil, short: string|nil, profile: string|nil, at: string|nil }|nil
 function M.installed_info(tool)
 	if tool == "codex" then
@@ -464,10 +464,10 @@ function M.installed_info(tool)
 	}
 end
 
--- "missing" chưa cài | "current" khớp clone | "outdated" lệch | "unknown" không đủ dữ liệu.
--- So COMMIT trước vì đó là thứ chắc chắn; version chỉ đổi mỗi lần release nên hai commit
--- khác nhau vẫn có thể cùng version. Thiếu dữ kiện thì trả "unknown" chứ TUYỆT ĐỐI không
--- đoán thành "current": báo "up to date" sai còn tệ hơn nói không biết.
+-- "missing" not installed | "current" matches the clone | "outdated" differs | "unknown" not enough data.
+-- Compare the COMMIT first because it is certain; the version changes only per release, so two
+-- different commits can share a version. Missing data returns "unknown" and NEVER
+-- guesses "current": a false "up to date" is worse than saying we do not know.
 ---@return "missing"|"current"|"outdated"|"unknown"
 function M.status(tool)
 	if not M.installed(tool) then
@@ -486,8 +486,8 @@ function M.status(tool)
 	return "unknown"
 end
 
--- HEAD của origin, KHÔNG fetch (ls-remote chỉ hỏi, không tải). Bất đồng bộ vì đã đo mất
--- ~1s - chặn UI chừng đó là thấy rõ. cb nhận short sha hoặc nil.
+-- origin's HEAD, WITHOUT fetching (ls-remote only asks, downloads nothing). Async because it was
+-- measured at ~1s - blocking the UI that long is noticeable. cb gets a short sha or nil.
 ---@param cb fun(short: string|nil, err: string|nil)
 function M.remote_head(cb)
 	local dir = M.dir()
@@ -497,13 +497,13 @@ function M.remote_head(cb)
 	end
 	vim.system({ "git", "-C", dir, "ls-remote", "origin", "HEAD" }, { text = true }, function(r)
 		local sha = r.code == 0 and (r.stdout or ""):match("^(%x+)") or nil
-		-- KHÔNG viết `sha and nil or err`: `sha and nil` ra nil (falsy) nên nhánh or
-		-- luôn sập về err -> lấy được sha rồi mà vẫn báo lỗi. Đúng cái bẫy and/or đã
-		-- ghi ở build_items ("all_dirs and nil or cwd"). Dùng if tường minh.
+		-- Do NOT write `sha and nil or err`: `sha and nil` is nil (falsy), so the or branch
+		-- always falls through to err -> a sha was found yet an error is reported. Same and/or trap
+		-- noted in build_items ("all_dirs and nil or cwd"). Use an explicit if.
 		local err
 		if not sha then
-			-- Luôn có nội dung: git hỏng mà stderr rỗng thì ít nhất còn exit code, chứ
-			-- hiện "(github: )" trống trơn thì không lần ra được gì.
+			-- Always non-empty: when git fails with an empty stderr there is at least the exit code;
+			-- an empty "(github: )" gives nothing to go on.
 			err = vim.trim(r.stderr or "")
 			if err == "" then
 				err = ("exit %d"):format(r.code or -1)
@@ -515,7 +515,7 @@ function M.remote_head(cb)
 	end)
 end
 
--- Binary cần có trước khi cài. Trả danh sách THIẾU (rỗng = đủ).
+-- Binaries required before installing. Returns the MISSING ones (empty = all present).
 function M.missing_deps()
 	local miss = {}
 	for _, b in ipairs({ "git", "npm" }) do
@@ -526,11 +526,11 @@ function M.missing_deps()
 	return miss
 end
 
--- Config của ECC cho opencode có bị pin model Anthropic không.
--- ECC ghi ~/.opencode/opencode.json với "model": "anthropic/claude-sonnet-4-5" ở cả
--- top-level lẫn CẢ 26 agent. opencode đọc file này thật (đã đo), nên không có tài
--- khoản Anthropic là hiện banner đỏ "Agent build's configured model ... is not valid"
--- và mọi command chạy qua agent của ECC đều hỏng. Trả về số chỗ bị pin.
+-- Whether ECC's opencode config pins an Anthropic model.
+-- ECC writes ~/.opencode/opencode.json with "model": "anthropic/claude-sonnet-4-5" at both
+-- the top level and in ALL 26 agents. opencode really reads this file (measured), so without an
+-- Anthropic account a red banner "Agent build's configured model ... is not valid" shows
+-- and every command run through an ECC agent breaks. Returns the number of pinned spots.
 ---@return string|nil path, integer pinned
 function M.anthropic_pins(tool)
 	if tool ~= "opencode" then
@@ -563,17 +563,17 @@ function M.anthropic_pins(tool)
 	return path, n
 end
 
--- Các lệnh shell để cài/cập nhật ECC cho tool. Chạy lại nhiều lần được (clone -> pull).
--- Trả về ĐÚNG chuỗi sẽ chạy, không rút gọn: hộp confirm hiện nguyên văn danh sách này.
+-- Shell commands to install/update ECC for the tool. Safe to re-run (clone -> pull).
+-- Returns the EXACT strings that will run, unabridged: the confirm box shows this list verbatim.
 ---@param tool string
----@return string[]|nil, string|nil  -- steps, lý do khi không hỗ trợ
+---@return string[]|nil, string|nil  -- steps, reason when unsupported
 function M.steps(tool)
 	local d = vim.fn.shellescape(M.dir())
 	local repo = vim.fn.shellescape(M.config.repo)
 	local prof = vim.fn.shellescape(M.config.profile)
 	local steps = {
-		-- Đặt đường dẫn vào biến $D thay vì lặp lại 4 lần: preview trong picker không
-		-- wrap, một dòng 200 ký tự là đọc không nổi. Chạy vẫn y hệt cái hiện ra.
+		-- Put the path in a $D variable instead of repeating it 4 times: the picker preview does
+		-- not wrap, and a 200-char line is unreadable. What runs is exactly what is shown.
 		("D=%s"):format(d),
 		('if [ -d "$D/.git" ]; then git -C "$D" pull --ff-only; else git clone --depth 1 %s "$D"; fi'):format(repo),
 		'cd "$D" && npm install --no-audit --no-fund',
@@ -584,33 +584,33 @@ function M.steps(tool)
 
 	if tool == "claude" then
 		add(('cd "$D" && ./install.sh --profile %s --target claude'):format(prof))
-		-- ECC đang chuyển sang "skills-first" nên installer CÓ THỂ không đổ commands/
-		-- ra nữa; README liệt kê dòng cp này như bước tương thích tuỳ chọn. Thiếu nó
-		-- thì cài xong vẫn 0 command -> <leader>ai lặng lẽ quay về prompt viết tay.
-		-- Chỉ chạy khi thư mục đang RỖNG: có sẵn command của bạn thì không đụng vào.
+		-- ECC is moving to "skills-first", so the installer MAY no longer lay down commands/;
+		-- the README lists this cp as an optional compatibility step. Without it an install
+		-- ends with 0 commands -> <leader>ai silently falls back to hand-written prompts.
+		-- Runs only when the directory is EMPTY: existing commands of yours are left alone.
 		add(
 			'[ -n "$(ls -A ~/.claude/commands 2>/dev/null)" ] || '
 				.. '{ mkdir -p ~/.claude/commands && cp "$D"/commands/*.md ~/.claude/commands/; }'
 		)
 	elseif tool == "codex" then
-		-- Sync là đường ECC khuyến nghị cho codex; script tự backup có dấu thời gian
-		-- rồi merge vào ~/.codex/AGENTS.md + config.toml. Không có tham số profile.
-		-- Nó ghi thẳng ~/.codex/prompts nên không cần bước nối.
+		-- Sync is ECC's recommended path for codex; the script makes a timestamped backup
+		-- then merges into ~/.codex/AGENTS.md + config.toml. No profile parameter.
+		-- It writes ~/.codex/prompts directly, so no link step is needed.
 		add('cd "$D" && bash scripts/sync-ecc-to-codex.sh')
 	elseif tool == "opencode" then
-		-- install-apply.js nhận `--profile <name> --target opencode` cho MỌI profile
-		-- (usage dòng 29), nên dùng chung M.config.profile như claude (giờ = developer).
-		-- README chỉ nêu ví dụ full; developer là tập con hợp lệ, ít module hơn.
+		-- install-apply.js accepts `--profile <name> --target opencode` for EVERY profile
+		-- (usage line 29), so it shares M.config.profile with claude (now = developer).
+		-- The README only shows the full example; developer is a valid subset with fewer modules.
 		add(('cd "$D" && npm run build:opencode && ./install.sh --profile %s --target opencode'):format(prof))
-		-- VÁ CONFIG CỦA ECC. Hai lỗi trong ~/.opencode/opencode.json, mà opencode ĐỌC
-		-- file đó thật (đã đo):
-		--   1. model Anthropic pin cứng ở top-level + cả 26 agent -> không có tài khoản
-		--      Anthropic là banner "configured model ... is not valid", và command nào
-		--      chạy qua agent của ECC cũng hỏng. Xoá `model` thì thừa kế model đang dùng.
-		--   2. skills.paths = ["../skills"] -> trỏ ~/skills, KHÔNG tồn tại; skill thật
-		--      nằm ở ~/.opencode/skills. Ghi đường TUYỆT ĐỐI cho khỏi phụ thuộc cách
-		--      opencode resolve tương đối.
-		-- Dùng node (đã có sẵn vì bước npm ở trên cần), giữ backup .bak.
+		-- PATCH ECC'S CONFIG. Two bugs in ~/.opencode/opencode.json, a file opencode really
+		-- READS (measured):
+		--   1. an Anthropic model hard-pinned at the top level + all 26 agents -> without an
+		--      Anthropic account a "configured model ... is not valid" banner shows, and every command
+		--      run through an ECC agent breaks. Deleting `model` inherits the model in use.
+		--   2. skills.paths = ["../skills"] -> points at ~/skills, which does NOT exist; the real skills
+		--      live in ~/.opencode/skills. Write an ABSOLUTE path so it does not depend on how
+		--      opencode resolves relative ones.
+		-- Uses node (already present because the npm step above needs it), keeps a .bak backup.
 		add(table.concat({
 			"node -e '",
 			'const fs=require("fs"),os=require("os"),f=os.homedir()+"/.opencode/opencode.json";',
@@ -627,7 +627,7 @@ function M.steps(tool)
 	return steps
 end
 
--- Nơi tool đó ĐỌC command, để hiện trong preview/doctor.
+-- Where that tool READS commands, shown in the preview/doctor.
 function M.source_dirs(tool)
 	local out = {}
 	for _, s in ipairs(sources(tool)) do
@@ -636,7 +636,7 @@ function M.source_dirs(tool)
 	return out
 end
 
--- Số command dò được (hiện ở menu trạng thái <leader>aE).
+-- Number of commands detected (shown in the <leader>aE status menu).
 function M.count(tool)
 	return vim.tbl_count(M.commands(tool))
 end

@@ -1,26 +1,26 @@
--- Agent workflow của kunchenguid trong nvim: treehouse / no-mistakes / gnhf / firstmate.
--- Cài bằng ~/.local/bin/install_agent_workflow. Phím ở lua/plugins/aiterm.lua.
+-- kunchenguid's agent workflow in nvim: treehouse / no-mistakes / gnhf / firstmate.
+-- Installed by ~/.local/bin/install_agent_workflow. Keys live in lua/plugins/aiterm.lua.
 --
--- Push gate, gnhf, firstmate KHÔNG tự cài lại ở đây: gọi chung script tmux
--- ~/.config/tmux/scripts/ai-workflow.sh <action> (cũng là menu prefix F), để luật
--- init remote / detached HEAD / giới hạn iteration chỉ nằm một chỗ.
--- Riêng worktree thì làm ở đây: kết quả phải mở thành session aiterm trong nvim.
+-- Push gate, gnhf and firstmate are NOT reimplemented here: they call the shared tmux script
+-- ~/.config/tmux/scripts/ai-workflow.sh <action> (also the prefix F menu), so the rules for
+-- remote init / detached HEAD / iteration limits live in one place.
+-- Worktrees are the exception: the result must open as an aiterm session in nvim.
 local M = {}
 
 M.config = {
 	script = vim.fn.expand("~/.config/tmux/scripts/ai-workflow.sh"),
 	firstmate_dir = vim.env.FIRSTMATE_DIR or vim.fn.expand("~/.local/share/firstmate"),
-	-- Tên THƯ MỤC skill (repo lavish-axi cài thành skill "lavish").
+	-- Skill DIRECTORY name (the lavish-axi repo installs as skill "lavish").
 	axi_skills = { "gh-axi", "chrome-devtools-axi", "lavish" },
 }
 
--- Seam cho test: thay ba hàm này bằng stub, khỏi chạy tiến trình thật.
--- exec: chạy đồng bộ, trả { code, stdout, stderr }.
+-- Test seam: tests replace these three functions with stubs so no real process runs.
+-- exec: runs synchronously, returns { code, stdout, stderr }.
 function M.exec(cmd, cwd)
 	return vim.system(cmd, { cwd = cwd, text = true }):wait()
 end
 
--- spawn: chạy nền; báo lỗi (stderr) khi thoát khác 0.
+-- spawn: runs in the background; reports stderr on a non-zero exit.
 function M.spawn(cmd, cwd)
 	vim.system(cmd, { cwd = cwd, text = true }, function(res)
 		if res.code ~= 0 then
@@ -31,7 +31,7 @@ function M.spawn(cmd, cwd)
 	end)
 end
 
--- float: terminal nổi, GIỮ lại sau khi lệnh xong để đọc output.
+-- float: floating terminal, KEPT open after the command ends so the output can be read.
 function M.float(cmd, cwd)
 	if _G.Snacks and Snacks.terminal then
 		Snacks.terminal.open(cmd, { cwd = cwd, auto_close = false, win = { position = "float" } })
@@ -48,7 +48,7 @@ end
 
 -- helpers ----------------------------------------------------------------
 
---- Root của repo git chứa cwd, hoặc nil.
+--- Root of the git repo holding cwd, or nil.
 ---@return string?
 function M.git_root()
 	local res = M.exec({ "git", "rev-parse", "--show-toplevel" }, vim.fn.getcwd())
@@ -62,7 +62,7 @@ end
 local function require_root()
 	local root = M.git_root()
 	if not root then
-		M.notify("không phải git repo: " .. vim.fn.getcwd(), "warn")
+		M.notify("not a git repo: " .. vim.fn.getcwd(), "warn")
 	end
 	return root
 end
@@ -71,7 +71,7 @@ local function script_ok()
 	if vim.fn.executable(M.config.script) == 1 then
 		return true
 	end
-	M.notify("thiếu " .. M.config.script .. " (chạy ~/dotfiles/install.sh chưa?)", "error")
+	M.notify("missing " .. M.config.script .. " (did you run ~/dotfiles/install.sh?)", "error")
 	return false
 end
 
@@ -81,8 +81,8 @@ end
 
 -- actions ----------------------------------------------------------------
 
---- git push no-mistakes <branch> trong terminal nổi. Script lo việc hỏi
---- `no-mistakes init` khi repo chưa có remote và chặn detached HEAD.
+--- git push no-mistakes <branch> in a floating terminal. The script offers
+--- `no-mistakes init` when the repo has no remote yet and refuses a detached HEAD.
 function M.push_gate()
 	local root = require_root()
 	if not (root and script_ok()) then
@@ -91,7 +91,7 @@ function M.push_gate()
 	M.float({ M.config.script, "push" }, root)
 end
 
---- TUI theo dõi pipeline no-mistakes.
+--- no-mistakes pipeline monitor TUI.
 function M.pipelines()
 	local root = require_root()
 	if not (root and script_ok()) then
@@ -100,15 +100,15 @@ function M.pipelines()
 	M.float({ M.config.script, "pipelines" }, root)
 end
 
---- gnhf --worktree trên một goal, chạy ở window tmux riêng (không chặn nvim).
----@param goal? string bỏ trống -> hỏi qua vim.ui.input
+--- gnhf --worktree on a goal, in its own tmux window (does not block nvim).
+---@param goal? string empty -> ask via vim.ui.input
 function M.gnhf(goal)
 	local root = require_root()
 	if not (root and script_ok()) then
 		return
 	end
 	if not in_tmux() then
-		M.notify("gnhf cần tmux: vòng lặp chạy trong window riêng", "warn")
+		M.notify("gnhf needs tmux: the loop runs in its own window", "warn")
 		return
 	end
 	local function run(g)
@@ -116,7 +116,7 @@ function M.gnhf(goal)
 			return
 		end
 		M.spawn({ M.config.script, "gnhf", vim.trim(g) }, root)
-		M.notify("gnhf đã chạy ở window tmux 'gnhf'")
+		M.notify("gnhf started in tmux window 'gnhf'")
 	end
 	if goal then
 		return run(goal)
@@ -124,17 +124,17 @@ function M.gnhf(goal)
 	vim.ui.input({ prompt = "gnhf goal: " }, run)
 end
 
---- Focus window firstmate, chưa có thì tạo.
+--- Focus the firstmate window, creating it when missing.
 function M.firstmate()
 	if not script_ok() then
 		return
 	end
 	if not in_tmux() then
-		M.notify("firstmate cần tmux: crewmate là các window tmux", "warn")
+		M.notify("firstmate needs tmux: crewmates are tmux windows", "warn")
 		return
 	end
-	-- Các picker fzf (agent/account/model/effort) cần terminal: chạy trong popup
-	-- tmux như prefix F, vim.system không có tty.
+	-- The fzf pickers (agent/account/model/effort) need a terminal: run them in a tmux
+	-- popup like prefix F; vim.system has no tty.
 	local cwd = vim.fn.getcwd()
 	M.spawn({
 		"tmux",
@@ -155,38 +155,38 @@ function M.firstmate()
 	}, cwd)
 end
 
---- Thuê một worktree từ pool treehouse rồi mở session AI mới trong đó.
---- --lease: không mở subshell, in đúng đường dẫn ra stdout; worktree được giữ tới
---- khi `treehouse return <path>`, nên báo lệnh trả lại cho người dùng.
+--- Lease a worktree from the treehouse pool and open a new AI session in it.
+--- --lease: no subshell, prints just the path on stdout; the worktree is held until
+--- `treehouse return <path>`, so tell the user the return command.
 function M.worktree()
 	local root = require_root()
 	if not root then
 		return
 	end
 	if vim.fn.executable("treehouse") == 0 then
-		M.notify("thiếu treehouse: chạy install_agent_workflow", "error")
+		M.notify("treehouse is missing: run install_agent_workflow", "error")
 		return
 	end
 	local res = M.exec({ "treehouse", "get", "--lease" }, root)
 	local path = vim.trim(res.stdout or "")
 	if res.code ~= 0 or path == "" then
-		M.notify("treehouse get --lease lỗi: " .. vim.trim(res.stderr or ""), "error")
+		M.notify("treehouse get --lease failed: " .. vim.trim(res.stderr or ""), "error")
 		return
 	end
 	local aiterm = require("customize.aiterm")
 	aiterm.open(aiterm.default_tool_name(), { cwd = path })
-	M.notify(("worktree: %s\nxong thì: treehouse return %s"):format(path, path))
+	M.notify(("worktree: %s\nwhen done: treehouse return %s"):format(path, path))
 end
 
 -- crew review ------------------------------------------------------------
 
--- ex: chạy lệnh ex (seam cho test, khỏi mở tab / diffview thật).
+-- ex: runs an ex command (test seam, so no real tab / diffview opens).
 function M.ex(cmd)
 	vim.cmd(cmd)
 end
 
---- Các bản sao (worktree) của crew firstmate, đọc từ state/*.meta. CHỈ ĐỌC: không
---- đụng state hay worktree của worker. Bỏ record mà thư mục worktree đã mất.
+--- Copies (worktrees) of the firstmate crew, read from state/*.meta. READ-ONLY: never
+--- touches the worker's state or worktree. Records whose worktree dir is gone are skipped.
 ---@return { id: string, worktree: string, branch: string, project: string, base_branch: string, pr: string, kind: string }[]
 function M.crew_worktrees()
 	local keys = { worktree = true, branch = true, project = true, base_branch = true, pr = true, kind = true }
@@ -214,8 +214,8 @@ function M.crew_worktrees()
 	return out
 end
 
---- merge-base giữa base của task và HEAD của worktree. Base = origin/<base_branch>,
---- không có thì origin/HEAD của repo. Chỉ lệnh đọc (không fetch).
+--- merge-base between the task's base and the worktree HEAD. Base = origin/<base_branch>,
+--- else the repo's origin/HEAD. Read-only commands (no fetch).
 ---@return string? sha
 ---@return string? err
 function M.crew_merge_base(wt, base_branch)
@@ -226,13 +226,13 @@ function M.crew_merge_base(wt, base_branch)
 		local res = M.exec({ "git", "-C", wt, "symbolic-ref", "--short", "refs/remotes/origin/HEAD" })
 		base = res.code == 0 and vim.trim(res.stdout or "") or ""
 		if base == "" then
-			return nil, "không xác định được base (origin/HEAD) của " .. wt
+			return nil, "cannot determine the base (origin/HEAD) of " .. wt
 		end
 	end
 	local res = M.exec({ "git", "-C", wt, "merge-base", base, "HEAD" })
 	local sha = vim.trim(res.stdout or "")
 	if res.code ~= 0 or sha == "" then
-		return nil, ("không có merge-base với %s trong %s"):format(base, wt)
+		return nil, ("no merge-base with %s in %s"):format(base, wt)
 	end
 	return sha
 end
@@ -247,28 +247,28 @@ local function crew_label(rec)
 	)
 end
 
---- Mở diffview của bản sao worker so với base, trong tab riêng của diffview.
---- Dùng -C thay cho tabnew + tcd để không còn tab phụ: q đóng tab diffview là
---- về thẳng tab cũ. Chỉ xem: worker đang ghi vào đó.
+--- Open diffview of the worker's copy against its base, in diffview's own tab.
+--- -C instead of tabnew + tcd leaves no extra tab: q closes the diffview tab and
+--- lands straight on the old tab. Read-only: the worker is writing there.
 function M.crew_open(rec)
 	local sha, err = M.crew_merge_base(rec.worktree, rec.base_branch)
 	if not sha then
 		return M.notify(err, "error")
 	end
 	M.ex(("DiffviewOpen -C%s %s"):format(vim.fn.fnameescape(rec.worktree), sha))
-	M.notify(("%s\nbản sao của worker, chỉ xem, đừng sửa/lưu file ở đây"):format(rec.worktree), "warn")
+	M.notify(("%s\nthe worker's copy, read-only: do not edit/save files here"):format(rec.worktree), "warn")
 end
 
 local function crew_stat(rec)
 	local sha = M.crew_merge_base(rec.worktree, rec.base_branch)
 	if not sha then
-		return { "(không tính được base)" }
+		return { "(base unknown)" }
 	end
 	local res = M.exec({ "git", "-C", rec.worktree, "diff", "--stat", sha })
 	return vim.split(vim.trim(res.stdout or ""), "\n")
 end
 
---- Picker các worktree của crew: <CR> mở tab + diffview, <A-g> mở lazygit.
+--- Crew worktree picker: <CR> opens a tab + diffview, <A-g> opens lazygit.
 function M.crew_review()
 	local recs = M.crew_worktrees()
 	if #recs == 0 then
@@ -313,7 +313,7 @@ end
 
 -- doctor -----------------------------------------------------------------
 
---- Các dòng trạng thái cho <leader>ad (nối vào doctor của aiterm).
+--- Status lines for <leader>ad (appended to the aiterm doctor).
 ---@return string[]
 function M.doctor_lines()
 	local lines = { "", "## Agent workflow (install_agent_workflow)" }

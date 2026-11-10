@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# install_firstmate: clone vào $FIRSTMATE_DIR đã có sẵn link của dotfiles mà không
-# xoá gì. Dùng git remote cục bộ và $HOME tạm, không đụng mạng.
+# install_firstmate: clones into a $FIRSTMATE_DIR that already holds dotfiles links without
+# deleting anything. Uses a local git remote and a temp $HOME, no network.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd -P)
@@ -15,7 +15,7 @@ git config --global init.defaultBranch main
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-# Remote giả: commit đầu là bản pin, commit sau là main.
+# Fake remote: the first commit is the pin, the next one is main.
 REMOTE="$TMP/remote"
 git init -q "$REMOTE"
 printf 'config/\ndata/\n' >"$REMOTE/.gitignore"
@@ -59,24 +59,24 @@ assert_links_kept() {
 
 reset_dir() { rm -rf "$FIRSTMATE_DIR" "$FIRSTMATE_DIR".clone.*; }
 
-# 1. Thư mục chưa có.
+# 1. Directory does not exist yet.
 reset_dir
 install_firstmate >/dev/null 2>&1
 assert_pinned absent
 
-# 2. Chỉ có link của dotfiles (đúng ca lỗi gốc), link tuyệt đối và tương đối.
+# 2. Only dotfiles links (the original bug), absolute and relative.
 reset_dir
 link_dotfiles
 install_firstmate >/dev/null 2>&1
 assert_pinned links
 assert_links_kept links
 [[ -z $(ls -d "$FIRSTMATE_DIR".clone.* 2>/dev/null) ]] || fail 'links: temp clone left behind'
-# Chạy lại vẫn idempotent.
+# Re-running stays idempotent.
 install_firstmate >/dev/null 2>&1
 assert_pinned rerun
 assert_links_kept rerun
 
-# 3. File thật lạ: không đụng gì, cảnh báo nêu đúng đường dẫn.
+# 3. Unknown real file: nothing touched, the warning names the exact path.
 reset_dir
 link_dotfiles
 echo mine >"$FIRSTMATE_DIR/config/private.json"
@@ -86,7 +86,7 @@ grep -q "$FIRSTMATE_DIR/config/private.json" <<<"$out" || fail 'foreign: warning
 [[ $(cat "$FIRSTMATE_DIR/config/private.json") == mine ]] || fail 'foreign: real file touched'
 assert_links_kept foreign
 
-# 4. Symlink trỏ chỗ khác cũng bị coi là lạ.
+# 4. A symlink pointing elsewhere is unknown too.
 reset_dir
 mkdir -p "$FIRSTMATE_DIR/config" "$TMP/elsewhere"
 echo else >"$TMP/elsewhere/x.json"
@@ -96,7 +96,7 @@ out=$(install_firstmate 2>&1) || fail 'foreign link: step aborted'
 grep -q "$FIRSTMATE_DIR/config/x.json" <<<"$out" || fail 'foreign link: warning misses path'
 [[ -L "$FIRSTMATE_DIR/config/x.json" ]] || fail 'foreign link: link touched'
 
-# 5. Link nằm đè đường dẫn firstmate track: không clone, không mất link.
+# 5. A link over a path firstmate tracks: no clone, the link is kept.
 reset_dir
 mkdir -p "$FIRSTMATE_DIR"
 ln -s "$REPO/.local/share/firstmate/data/captain.md" "$FIRSTMATE_DIR/AGENTS.md"

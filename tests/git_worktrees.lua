@@ -4,7 +4,7 @@ vim.opt.rtp:prepend(root .. "/.config/nvim")
 local original = vim.fn.getcwd()
 local tmp = vim.fn.tempname()
 vim.fn.mkdir(tmp, "p")
--- git in ra đường dẫn thật; trên macOS tempname() nằm sau symlink /var -> /private/var.
+-- git prints real paths; on macOS tempname() sits behind the /var -> /private/var symlink.
 tmp = assert(vim.uv.fs_realpath(tmp))
 local repo = tmp .. "/main"
 local linked = tmp .. "/linked space%#"
@@ -126,7 +126,7 @@ local function run()
 		"-qm",
 		"init"
 	)
-	-- Pool treehouse giả: <repo>-<hash>/<n>/<repo>-<n>, tạo từ repo thật.
+	-- Fake treehouse pool: <repo>-<hash>/<n>/<repo>-<n>, built from a real repo.
 	local pool = home .. "/.treehouse"
 	local pool_main1 = pool .. "/" .. current_name .. "-abc123/1/" .. current_name .. "-1"
 	local pool_main2 = pool .. "/" .. current_name .. "-abc123/2/" .. current_name .. "-2"
@@ -178,12 +178,12 @@ local function run()
 	)
 	assert(index_of(repo) == 1, "current repo keeps git order")
 
-	-- Từ repo khác: pool treehouse vẫn hiện, repo đó lên đầu.
+	-- From another repo: the treehouse pool still shows, with that repo first.
 	vim.cmd.cd(other)
 	mapping[2]()
 	assert(index_of(other) == 1 and index_of(pool_other) == 2, "cwd repo must sort first from another repo")
 
-	-- Mở worktree treehouse: chỉ đổi cwd, git tools chạy trong đó.
+	-- Opening a treehouse worktree only changes cwd; git tools run inside it.
 	vim.cmd.cd(repo)
 	mapping[2]()
 	local pool_item = opts.items[index_of(pool_main2)]

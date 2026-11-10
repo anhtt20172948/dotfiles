@@ -1,33 +1,33 @@
 #!/bin/bash
 set -euo pipefail
 
-# Chỉ dọn các file do lần chạy này tạo ra, kể cả khi bị ngắt.
+# Clean up only the files this run created, even when interrupted.
 BUILD_DIR=$(mktemp -d "${TMPDIR:-/tmp}/install_zsh.XXXXXXXX")
 trap 'rm -rf -- "$BUILD_DIR"' EXIT
-trap 'echo "Cài đặt thất bại ở dòng $LINENO." >&2' ERR
+trap 'echo "Install failed at line $LINENO." >&2' ERR
 trap 'exit 130' INT
 trap 'exit 143' TERM
 cd "$BUILD_DIR"
 
-# Giới hạn từng lần tải và thử nguồn dự phòng khi máy chủ không phản hồi.
+# Bound each download and try fallback sources when a server does not answer.
 download() {
     local output=$1 url
     shift
     for url in "$@"; do
-        echo "Đang tải: $url"
+        echo "Downloading: $url"
         if timeout 120s wget --timeout=15 --tries=2 --show-progress -O "$output" "$url"; then
             return 0
         fi
-        echo "Không tải được từ $url; thử nguồn tiếp theo nếu có." >&2
+        echo "Could not download from $url; trying the next source if any." >&2
     done
-    echo "Không thể tải $output. Kiểm tra kết nối mạng rồi chạy lại." >&2
+    echo "Could not download $output. Check the network and run again." >&2
     return 1
 }
 
-# Tạo cấu trúc thư mục .local tiêu chuẩn
+# Standard .local directory layout
 mkdir -p "$HOME/.local/bin" "$HOME/.local/include" "$HOME/.local/lib" "$HOME/.local/lib/pkgconfig"
 
-# Thiết lập các cờ môi trường tối ưu cho .local
+# Build flags pointing at .local
 export CXXFLAGS="-fPIC" 
 export CFLAGS="-fPIC" 
 export CPPFLAGS="-I${HOME}/.local/include" 
@@ -35,13 +35,13 @@ export LDFLAGS="-L${HOME}/.local/lib"
 export PKG_CONFIG_PATH="$HOME/.local/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 export PATH="$HOME/.local/bin:$PATH"
 
-# Số core CPU để tăng tốc biên dịch
+# CPU cores for a parallel build
 NUM_CORES=$(nproc 2>/dev/null || echo 2)
 
 # ==========================================
-# 1. CÀI ĐẶT NCURSES (Có thêm hỗ trợ pkg-config)
+# 1. INSTALL NCURSES (with pkg-config support)
 # ==========================================
-echo "--- Đang tải và cài đặt ncurses vào ~/.local ---"
+echo "--- Downloading and installing ncurses into ~/.local ---"
 download ncurses-6.5.tar.gz \
     https://mirrors.kernel.org/gnu/ncurses/ncurses-6.5.tar.gz \
     https://ftp.gnu.org/pub/gnu/ncurses/ncurses-6.5.tar.gz
@@ -55,12 +55,12 @@ cd ncurses-6.5
             --with-pkg-config-libdir="$HOME/.local/lib/pkgconfig" \
             --without-cxx \
             --without-cxx-binding \
-            --enable-widec # Bật hỗ trợ ký tự UTF-8 ký tự đặc biệt
+            --enable-widec # wide-character (UTF-8) support
 
 make -j"$NUM_CORES"
 make install
 
-# Tạo bản symlink từ libncursesw (wide) sang libncurses tiêu chuẩn để Zsh dễ nhận diện
+# Symlink libncursesw (wide) to plain libncurses so zsh finds it
 cd "$HOME/.local/lib"
 ln -sf libncursesw.so libncurses.so
 ln -sf libncursesw.a libncurses.a
@@ -68,15 +68,15 @@ ln -sf libncursesw.a libncurses.a
 cd "$BUILD_DIR"
 
 # ==========================================
-# 2. CÀI ĐẶT ZSH (Bổ sung cờ định vị thư viện chuyên sâu)
+# 2. INSTALL ZSH (with explicit library lookup flags)
 # ==========================================
-echo "--- Đang tải và cài đặt zsh vào ~/.local ---"
+echo "--- Downloading and installing zsh into ~/.local ---"
 download zsh.tar.xz https://sourceforge.net/projects/zsh/files/latest/download
 mkdir -p zsh_src
 tar -xJf zsh.tar.xz -C zsh_src --strip-components 1
 cd zsh_src
 
-# Chỉ định tường minh đường dẫn ncurses thông qua các cờ mở rộng
+# Point at ncurses explicitly through the extended flags
 ./configure --prefix="$HOME/.local" \
             --enable-multibyte \
             --with-term-lib="ncurses" \
@@ -88,29 +88,29 @@ make install
 cd "$BUILD_DIR"
 
 # ==========================================
-# 3. CẤU HÌNH KHỞI ĐỘNG (BASH TO ZSH)
+# 3. STARTUP CONFIG (BASH TO ZSH)
 # ==========================================
-echo "--- Cấu hình chuyển đổi Shell tự động ---"
+echo "--- Configuring the automatic shell switch ---"
 
 if ! grep -q "exec ~/.local/bin/zsh" ~/.bash_profile 2>/dev/null; then
     cat << 'EOF' >> ~/.bash_profile
 
-# Tự động nạp thư mục .local/bin vào PATH nếu chưa có
+# Add .local/bin to PATH when missing
 if [ -d "$HOME/.local/bin" ] ; then
     PATH="$HOME/.local/bin:$PATH"
 fi
 
-# Tự động chuyển sang ZSH cài ở .local
+# Switch to the zsh installed in .local
 if [[ $- == *i* ]] && [ -x "$HOME/.local/bin/zsh" ]; then
     export SHELL=$HOME/.local/bin/zsh
     exec "$HOME/.local/bin/zsh" -l
 fi
 EOF
-    echo "Đã thêm cấu hình Zsh vào ~/.bash_profile"
+    echo "Added the zsh config to ~/.bash_profile"
 else
-    echo "Cấu hình Zsh đã tồn tại trong ~/.bash_profile từ trước."
+    echo "The zsh config is already in ~/.bash_profile."
 fi
 
-echo "--- HOÀN THÀNH ---"
-echo "Hãy chạy lệnh: source ~/.bash_profile"
+echo "--- DONE ---"
+echo "Now run: source ~/.bash_profile"
 

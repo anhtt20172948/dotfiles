@@ -1,29 +1,29 @@
--- Khám phá session cũ trên đĩa của claude / codex / opencode.
--- Module thuần data: KHÔNG mở window, KHÔNG gọi Snacks. customize/aiterm.lua consume nó.
+-- Discovers old on-disk sessions of claude / codex / opencode.
+-- Pure data module: NO windows, NO Snacks calls. customize/aiterm.lua consumes it.
 --
--- Nguồn (đã verify trên máy này):
+-- Sources (verified on this machine):
 --   codex    -> sqlite ~/.codex/state_*.sqlite                 table threads
 --   opencode -> sqlite ~/.local/share/opencode/opencode.db     table session
---   claude   -> JSONL  ~/.claude/projects/<slug>/<uuid>.jsonl  (không có index)
+--   claude   -> JSONL  ~/.claude/projects/<slug>/<uuid>.jsonl  (no index)
 local M = {}
 
 M.config = {
-	limit = 40, -- số session mới nhất lấy mỗi tool (chặn cứng chi phí)
-	head = 64 * 1024, -- bytes đọc từ ĐẦU file jsonl -> cwd / gitBranch / prompt đầu
-	tail = 64 * 1024, -- bytes đọc từ CUỐI file jsonl -> ai-title / last-prompt cuối
+	limit = 40, -- newest sessions taken per tool (hard cost cap)
+	head = 64 * 1024, -- bytes read from the START of the jsonl -> cwd / gitBranch / first prompt
+	tail = 64 * 1024, -- bytes read from the END of the jsonl -> ai-title / last prompt
 	title_width = 60,
-	prompt_width = 400, -- prompt gộp 1 dòng, dùng cho item.text của matcher
-	prompt_lines = 12, -- số dòng đầu giữ lại cho preview (giữ nguyên xuống dòng)
-	prompt_line_width = 120, -- cắt mỗi dòng của preview ở đây
+	prompt_width = 400, -- prompt joined into 1 line, used for the matcher's item.text
+	prompt_lines = 12, -- leading lines kept for the preview (line breaks kept)
+	prompt_line_width = 120, -- each preview line is cut here
 }
 
--- cache claude: path -> { mtime, info }; invalidate bằng mtime
+-- claude cache: path -> { mtime, info }; invalidated by mtime
 local claude_cache = {}
 
 -- helpers ----------------------------------------------------------------
 
--- Gom về 1 dòng + truncate theo KÝ TỰ (strcharpart) để không cắt giữa UTF-8.
--- string.sub(1, 60) sẽ tạo ra "...dữ li<e1><bb>" - hỏng dấu tiếng Việt.
+-- Join into 1 line + truncate by CHARACTER (strcharpart) so UTF-8 is never cut mid-sequence.
+-- string.sub(1, 60) can split a multibyte char (e.g. "...caf<c3>"), corrupting accents.
 local function oneline(s, width)
 	if type(s) ~= "string" then
 		return nil
@@ -38,9 +38,9 @@ local function oneline(s, width)
 	return s
 end
 
--- N dòng ĐẦU, GIỮ NGUYÊN xuống dòng, mỗi dòng cắt theo ký tự. Khác oneline():
--- oneline gộp hết thành 1 dòng nên prompt kèm code block biến thành một cục chữ
--- dính nhau, đọc không nổi trong preview. Trả nil nếu rỗng; thêm "…" nếu bị cắt.
+-- First N lines, line breaks KEPT, each line cut by character. Unlike oneline():
+-- oneline joins everything into 1 line, so a prompt with a code block becomes an unreadable
+-- blob in the preview. Returns nil when empty; appends "…" when cut.
 local function head_lines(s, max_lines, width)
 	if type(s) ~= "string" or s:match("^%s*$") then
 		return nil
@@ -58,14 +58,13 @@ local function head_lines(s, max_lines, width)
 		end
 		out[#out + 1] = line
 	end
-	-- bỏ dòng trống ở cuối
 	while #out > 0 and out[#out] == "" do
 		table.remove(out)
 	end
 	return #out > 0 and out or nil
 end
 
--- claude nhồi <ide_selection>/<system-reminder> vào prompt đầu -> bỏ đi khi làm title.
+-- claude stuffs <ide_selection>/<system-reminder> into the first prompt -> strip them for the title.
 local function strip_tags(s)
 	if type(s) ~= "string" then
 		return nil
@@ -79,17 +78,17 @@ local function sqlite_bin()
 	if vim.fn.executable("sqlite3") == 1 then
 		return "sqlite3"
 	end
-	-- macOS luôn có sẵn bản này (3.43.2)
+	-- macOS always ships this one (3.43.2)
 	return vim.fn.executable("/usr/bin/sqlite3") == 1 and "/usr/bin/sqlite3" or nil
 end
 
--- Escape literal cho SQL: '' là escape duy nhất SQLite hiểu trong single-quoted string.
+-- SQL literal escaping: '' is the only escape SQLite understands in a single-quoted string.
 local function q(s)
 	return "'" .. s:gsub("'", "''") .. "'"
 end
 
--- `-json` + vim.json.decode: an toàn tuyệt đối với title chứa | , newline, unicode.
--- 0 row -> sqlite3 in chuỗi RỖNG (không phải "[]") nên phải guard trước khi decode.
+-- `-json` + vim.json.decode: fully safe with titles containing | , newlines, unicode.
+-- 0 rows -> sqlite3 prints an EMPTY string (not "[]"), so guard before decoding.
 local function sqlite_json(db, sql)
 	local bin = sqlite_bin()
 	if not bin or not db or not vim.uv.fs_stat(db) then
@@ -108,7 +107,7 @@ local function sqlite_json(db, sql)
 	end
 	local r = run(true)
 	if not r or r.code ~= 0 then
-		r = run(false) -- WAL cần recovery -> mở read-write, vẫn chỉ SELECT
+		r = run(false) -- WAL needs recovery -> open read-write, still SELECT only
 	end
 	if not r or r.code ~= 0 or (r.stdout or "") == "" then
 		return {}
@@ -117,8 +116,8 @@ local function sqlite_json(db, sql)
 	return (ok and type(rows) == "table") and rows or {}
 end
 
--- Chọn file mới nhất theo mtime. codex bump version suffix (state_5 -> state_10)
--- nên sort theo TÊN sẽ sai, sort theo mtime thì không.
+-- Pick the newest file by mtime. codex bumps the version suffix (state_5 -> state_10),
+-- so sorting by NAME is wrong; sorting by mtime is not.
 local function newest(pattern)
 	local best, best_t
 	for _, p in ipairs(vim.fn.glob(pattern, false, true)) do
@@ -131,10 +130,10 @@ local function newest(pattern)
 end
 
 -- cwd matching -----------------------------------------------------------
--- Trong container project bind-mount tại /app (có thể là symlink) nên
--- fs_realpath(getcwd()) lệch với cwd mà tool đã GHI (thường là /app raw) ->
--- filter theo mỗi realpath loại sạch. Match theo TẬP ứng viên: raw + bỏ trailing
--- slash + realpath. Trên host realpath == path nên chỉ 1 phần tử -> y như cũ.
+-- In a container the project is bind-mounted at /app (maybe a symlink), so
+-- fs_realpath(getcwd()) differs from the cwd the tool RECORDED (usually raw /app) ->
+-- filtering by realpath alone drops everything. Match against a SET of candidates: raw, without
+-- trailing slash, and realpath. On the host realpath == path, so it is 1 element -> as before.
 local function cwd_candidates(cwd)
 	local out, seen = {}, {}
 	local function add(p)
@@ -144,12 +143,12 @@ local function cwd_candidates(cwd)
 		end
 	end
 	add(cwd)
-	add((cwd or ""):gsub("/+$", "")) -- gsub trả 2 giá trị; ngoặc cắt còn 1 khi truyền
+	add((cwd or ""):gsub("/+$", "")) -- gsub returns 2 values; the parens keep only 1
 	add(vim.uv.fs_realpath(cwd))
 	return out
 end
 
--- "AND <col> IN ('c1','c2',...)" đã escape. cands rỗng -> chuỗi rỗng (không lọc).
+-- Escaped "AND <col> IN ('c1','c2',...)". Empty cands -> empty string (no filter).
 local function in_list(col, cands)
 	if not cands or #cands == 0 then
 		return ""
@@ -169,7 +168,7 @@ local function set_of(list)
 	return s
 end
 
--- Cảnh báo 1 lần / phiên (vd thiếu sqlite3 cho opencode).
+-- Warn once per session (e.g. missing sqlite3 for opencode).
 local warned = {}
 local function notify_once(key, msg, level)
 	if warned[key] then
@@ -179,17 +178,17 @@ local function notify_once(key, msg, level)
 	vim.notify(msg, vim.log.levels[(level or "warn"):upper()] or vim.log.levels.WARN, { title = "AI history" })
 end
 
--- Decode 1 DÒNG json; nil nếu dòng bị cắt hoặc không phải object. (Dùng chung cho
--- codex jsonl fallback lẫn claude parser bên dưới -> khai báo sớm.)
+-- Decode 1 json LINE; nil when the line is cut or not an object. (Shared by the
+-- codex jsonl fallback and the claude parser below -> declared early.)
 local function decode(line)
 	local ok, o = pcall(vim.json.decode, line, { luanil = { object = true, array = true } })
 	return (ok and type(o) == "table") and o or nil
 end
 
--- codex JSONL fallback (khi thiếu sqlite3) --------------------------------
--- codex ghi transcript ở ~/.codex/sessions/YYYY/MM/DD/rollout-<iso>-<uuid>.jsonl.
--- Dòng đầu là session_meta {payload:{id,cwd,timestamp}}; user_message đầu tiên
--- {payload:{type:"user_message",message}} làm title. Chỉ đọc HEAD nên rẻ.
+-- codex JSONL fallback (when sqlite3 is missing) -----------------------------
+-- codex writes transcripts to ~/.codex/sessions/YYYY/MM/DD/rollout-<iso>-<uuid>.jsonl.
+-- The first line is session_meta {payload:{id,cwd,timestamp}}; the first user_message
+-- {payload:{type:"user_message",message}} is the title. Reads only the HEAD, so it is cheap.
 local codex_jsonl_cache = {} -- path -> { mtime, info }
 
 local function codex_head_info(path, mtime)
@@ -258,7 +257,7 @@ local function codex_jsonl(cands, limit)
 				title = oneline(i.title, M.config.title_width),
 				prompt = oneline(i.title, M.config.prompt_width),
 				prompt_lines = head_lines(i.title),
-				time = e.mtime, -- mtime thay ISO->epoch: tránh lệch TZ, đủ để sort
+				time = e.mtime, -- mtime instead of ISO->epoch: no TZ skew, good enough to sort
 			}
 		end
 	end
@@ -267,12 +266,12 @@ end
 
 -- codex ------------------------------------------------------------------
 local function codex(cands, limit)
-	-- Thiếu sqlite3 (hay gặp trong container tối giản) -> đọc jsonl thuần Lua.
+	-- Missing sqlite3 (common in minimal containers) -> read the jsonl in pure Lua.
 	if not sqlite_bin() then
 		return codex_jsonl(cands, limit)
 	end
 	local db = newest(vim.fn.expand("~/.codex/state_*.sqlite"))
-	-- Thêm cột cho preview: chỉ nới SELECT có sẵn nên không tốn thêm query nào.
+	-- Extra columns for the preview: only widens the existing SELECT, no extra query.
 	local sql = ([[SELECT id, cwd, title, first_user_message, git_branch, updated_at_ms,
 		model, reasoning_effort, tokens_used, cli_version, created_at_ms, git_sha
 		FROM threads WHERE archived = 0 %s ORDER BY updated_at_ms DESC LIMIT %d;]]):format(in_list("cwd", cands), limit)
@@ -300,13 +299,16 @@ end
 
 -- opencode ---------------------------------------------------------------
 local function opencode(cands, limit)
-	-- opencode CHỈ có store sqlite (không có bản jsonl) -> không có fallback.
+	-- opencode has ONLY a sqlite store (no jsonl copy) -> no fallback.
 	if not sqlite_bin() then
-		notify_once("opencode_sqlite", "opencode history cần sqlite3 — cài `sqlite3` trong container để bật")
+		notify_once(
+			"opencode_sqlite",
+			"opencode history needs sqlite3 - install `sqlite3` in the container to enable it"
+		)
 		return {}
 	end
 	local db = vim.fn.expand("~/.local/share/opencode/opencode.db")
-	-- parent_id NOT NULL = session của subagent -> lọc ra.
+	-- parent_id NOT NULL = a subagent session -> filtered out.
 	local sql = ([[SELECT id, directory, title, time_updated, time_created,
 		model, agent, version, cost, tokens_input, tokens_output, tokens_reasoning
 		FROM session
@@ -314,7 +316,7 @@ local function opencode(cands, limit)
 		ORDER BY time_updated DESC LIMIT %d;]]):format(in_list("directory", cands), limit)
 	local out = {}
 	for _, r in ipairs(sqlite_json(db, sql)) do
-		-- model là JSON: {"id":"big-pickle","providerID":"opencode"}. Hỏng thì bỏ field.
+		-- model is JSON: {"id":"big-pickle","providerID":"opencode"}. Drop the field when malformed.
 		local model
 		if type(r.model) == "string" and r.model ~= "" then
 			local ok, m = pcall(vim.json.decode, r.model)
@@ -340,12 +342,12 @@ end
 
 -- claude -----------------------------------------------------------------
 
--- (decode() được khai báo sớm ở phần cwd matching để codex jsonl fallback dùng chung.)
+-- (decode() is declared early in the cwd matching section so the codex jsonl fallback shares it.)
 
--- Rẻ với file 5 MB: chỉ 2 lần read 64 KB, và chỉ json-decode những dòng NHỎ
--- đã lọc trước bằng string.find (ai-title ~129 B, last-prompt ~292 B).
--- Dùng vim.json.decode chứ KHÔNG string.match: '"aiTitle":"([^"]*)"' vỡ khi
--- title chứa \" và để nguyên \n / \u00xx (corpus có escape \u00xx thật).
+-- Cheap on a 5 MB file: only 2 reads of 64 KB, and json-decodes only SMALL lines
+-- pre-filtered with string.find (ai-title ~129 B, last-prompt ~292 B).
+-- vim.json.decode, NOT string.match: '"aiTitle":"([^"]*)"' breaks when the
+-- title contains \" and leaves \n / \u00xx raw (the corpus has real \u00xx escapes).
 local function parse_jsonl(path, size)
 	local f = io.open(path, "rb")
 	if not f then
@@ -353,8 +355,8 @@ local function parse_jsonl(path, size)
 	end
 	local info = {}
 
-	-- HEAD: dòng đầu tiên có "cwd" (2 dòng queue-operation đầu file không có).
-	-- cwd nằm SAU `message` trong dòng đó -> vị trí trôi theo độ dài prompt, cần 64 KB.
+	-- HEAD: the first line with "cwd" (the 2 queue-operation lines at the top have none).
+	-- cwd comes AFTER `message` in that line -> its offset drifts with prompt length, hence 64 KB.
 	local head = f:read(math.min(M.config.head, size)) or ""
 	for line in head:gmatch("[^\n]+") do
 		if not info.cwd and line:find('"cwd":"', 1, true) then
@@ -365,9 +367,9 @@ local function parse_jsonl(path, size)
 				info.first = type(c) == "string" and c or (type(c) == "table" and c[1] and c[1].text or nil)
 			end
 		end
-		-- model nằm ở dòng assistant (message.model). Lấy trong chunk head đang
-		-- đọc sẵn -> không tốn thêm IO. KHÔNG cộng token cho claude: phải quét cả
-		-- file mới ra số đúng, lấy dòng cuối thì sai lệch -> thà không hiện.
+		-- model is on the assistant line (message.model). Taken from the head chunk already
+		-- read -> no extra IO. NO token sum for claude: a correct number needs a scan of the
+		-- whole file, the last line alone is wrong -> better to show nothing.
 		if not info.model and line:find('"assistant"', 1, true) then
 			local o = decode(line)
 			local m = o and o.message
@@ -381,8 +383,8 @@ local function parse_jsonl(path, size)
 		end
 	end
 
-	-- TAIL: quét NGƯỢC -> lần xuất hiện cuối cùng thắng (ai-title được refine
-	-- nhiều lần, bản cuối là bản tốt nhất; đã đo cách EOF tới 31.8 KB).
+	-- TAIL: scan BACKWARDS -> the last occurrence wins (ai-title is refined
+	-- several times and the last one is best; measured up to 31.8 KB before EOF).
 	local off = size > M.config.tail and size - M.config.tail or 0
 	f:seek("set", off)
 	local tail = f:read(M.config.tail) or ""
@@ -392,7 +394,7 @@ local function parse_jsonl(path, size)
 		lines[#lines + 1] = line
 	end
 	if off > 0 then
-		table.remove(lines, 1) -- dòng đầu của chunk gần như chắc chắn bị cắt
+		table.remove(lines, 1) -- the chunk's first line is almost surely cut
 	end
 	for i = #lines, 1, -1 do
 		local line = lines[i]
@@ -409,8 +411,8 @@ local function parse_jsonl(path, size)
 		end
 	end
 
-	-- Fallback cwd: dòng assistant/user trong tail cũng mang cwd (cứu file có
-	-- prompt đầu khổng lồ, dài hơn head chunk).
+	-- cwd fallback: assistant/user lines in the tail also carry cwd (saves files whose
+	-- first prompt is huge, longer than the head chunk).
 	if not info.cwd then
 		for i = #lines, 1, -1 do
 			if lines[i]:find('"cwd":"', 1, true) then
@@ -427,9 +429,9 @@ end
 
 local function claude(cands, limit)
 	local root = vim.fn.expand("~/.claude/projects")
-	-- slug = cwd với mọi ký tự không alphanumeric -> "-". Mỗi candidate cwd có thể
-	-- ra một slug khác (container /app vs realpath) -> glob TỪNG slug rồi gộp.
-	-- glob depth-1 nên subagents/*.jsonl và memory/ tự bị loại.
+	-- slug = cwd with every non-alphanumeric char -> "-". Each candidate cwd may
+	-- give a different slug (container /app vs realpath) -> glob EACH slug and merge.
+	-- The glob is depth-1, so subagents/*.jsonl and memory/ are excluded.
 	local files, seen = {}, {}
 	local function collect(pattern)
 		for _, p in ipairs(vim.fn.glob(pattern, false, true)) do
@@ -456,7 +458,7 @@ local function claude(cands, limit)
 	local out = {}
 	for i = 1, math.min(#files, limit) do
 		local e = files[i]
-		-- claude append vào jsonl mỗi lượt -> mtime là cache key hoàn hảo.
+		-- claude appends to the jsonl every turn -> mtime is a perfect cache key.
 		local c = claude_cache[e.path]
 		if not (c and c.mtime == e.mtime) then
 			local info = parse_jsonl(e.path, e.size)
@@ -467,7 +469,7 @@ local function claude(cands, limit)
 			local i2 = c.info
 			out[#out + 1] = {
 				tool = "claude",
-				id = vim.fn.fnamemodify(e.path, ":t:r"), -- session uuid = tên file
+				id = vim.fn.fnamemodify(e.path, ":t:r"), -- session uuid = file name
 				cwd = i2.cwd or (cands and cands[1]),
 				branch = i2.branch,
 				title = oneline(i2.title, M.config.title_width) or oneline(strip_tags(i2.first), M.config.title_width),
@@ -476,7 +478,7 @@ local function claude(cands, limit)
 				time = e.mtime,
 				model = i2.model,
 				version = i2.version,
-				jsonl = e.path, -- dùng cho action delete
+				jsonl = e.path, -- used by the delete action
 			}
 		end
 	end
@@ -485,22 +487,22 @@ end
 
 -- public -----------------------------------------------------------------
 
--- Dùng cho việc LAUNCH session mới (cd vào một dir thật). Giữ realpath như cũ.
+-- Used to LAUNCH a new session (cd into a real dir). Keeps realpath as before.
 function M.project_cwd()
 	local cwd = vim.fn.getcwd()
 	return vim.uv.fs_realpath(cwd) or cwd
 end
 
--- Dùng cho việc SCOPE/lọc history: trả cwd RAW của nvim. M.list tự dựng thêm
--- realpath vào tập ứng viên -> khớp cả path mount (/app) lẫn realpath.
+-- Used to SCOPE/filter history: returns nvim's RAW cwd. M.list adds the
+-- realpath to the candidate set -> matches both the mount path (/app) and the realpath.
 function M.scope_cwd()
 	return vim.fn.getcwd()
 end
 
---- Danh sách session cũ trên đĩa, mới nhất trước.
----@param cwd? string nil = mọi thư mục; nếu có -> match theo tập ứng viên (raw+realpath)
----@param limit? number ghi đè M.config.limit. Là giới hạn MỖI TOOL, không phải
----  tổng - caller muốn đúng N dòng thì tự cắt list trả về (dashboard làm vậy).
+--- Old on-disk sessions, newest first.
+---@param cwd? string nil = every directory; otherwise matched against the candidate set (raw+realpath)
+---@param limit? number overrides M.config.limit. It is a PER-TOOL limit, not a
+---  total - a caller that wants exactly N rows cuts the returned list (the dashboard does).
 function M.list(cwd, limit)
 	limit = limit or M.config.limit
 	local cands = cwd and cwd_candidates(cwd) or nil
@@ -524,12 +526,12 @@ function M.invalidate()
 	codex_jsonl_cache = {}
 end
 
--- Chẩn đoán: vì sao picker không thấy session (thường do cwd scoping hoặc thiếu
--- sqlite3). Mở scratch buffer báo cáo HOME/cwd/candidates/binary + đếm scoped vs
--- all-dirs cho từng tool + vài cwd mẫu đã ghi. Gắn với <leader>ad.
--- extra: dòng phụ do caller cung cấp, nối vào cuối cùng một buffer (xem aiterm.M.doctor
--- gắn mục ECC vào đây). Nhận LIST DÒNG chứ không require module khác: file này thuần
--- data về history, không biết gì về ECC.
+-- Diagnostics: why the picker does not see a session (usually cwd scoping or missing
+-- sqlite3). Opens a scratch buffer reporting HOME/cwd/candidates/binaries + scoped vs
+-- all-dirs counts per tool + a few recorded sample cwds. Bound to <leader>ad.
+-- extra: caller-supplied lines appended at the end of the same buffer (see aiterm.M.doctor,
+-- which attaches the ECC section here). Takes a LIST OF LINES rather than requiring another
+-- module: this file is pure history data and knows nothing about ECC.
 ---@param extra? string[]
 function M.doctor(extra)
 	local raw = vim.fn.getcwd()
@@ -547,7 +549,7 @@ function M.doctor(extra)
 	end
 	local ca, cs = counts(all), counts(scoped)
 
-	-- vài cwd mẫu (all-dirs) để so với candidates -> thấy ngay path lệch chỗ nào.
+	-- a few sample cwds (all-dirs) to compare with candidates -> shows where the path differs.
 	local samples, seen = {}, {}
 	for _, e in ipairs(all) do
 		if e.cwd and not seen[e.cwd] and #samples < 8 then
@@ -567,7 +569,7 @@ function M.doctor(extra)
 		"getcwd      : " .. raw,
 		"realpath    : " .. (real or "(nil)"),
 		"candidates  : " .. table.concat(cands, "   |   "),
-		"sqlite3     : " .. (sqlite_bin() or "(MISSING -> codex dùng jsonl fallback, opencode tắt)"),
+		"sqlite3     : " .. (sqlite_bin() or "(MISSING -> codex uses the jsonl fallback, opencode disabled)"),
 		"",
 		"## stores",
 		"claude proj : " .. yn(vim.fn.expand("~/.claude/projects")),
@@ -584,9 +586,9 @@ function M.doctor(extra)
 	}
 	vim.list_extend(lines, #samples > 0 and samples or { "  (none)" })
 	lines[#lines + 1] = ""
-	lines[#lines + 1] = "Gợi ý: nếu 'all dirs' > 0 mà 'scoped' = 0 -> cwd hiện tại không khớp cwd đã ghi"
+	lines[#lines + 1] = "Hint: if 'all dirs' > 0 but 'scoped' = 0 -> the current cwd does not match the recorded cwds"
 	lines[#lines + 1] =
-		"ở trên. Mở nvim ĐÚNG thư mục dự án, hoặc dùng <A-a> trong picker để xem tất cả."
+		"above. Open nvim in the RIGHT project directory, or press <A-a> in the picker to see everything."
 	if extra and #extra > 0 then
 		lines[#lines + 1] = ""
 		vim.list_extend(lines, extra)

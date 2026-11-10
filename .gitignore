@@ -21,13 +21,13 @@ __pycache__/
 # ...existing custom ignore rules...
 .zshrc
 .bashrc
-# Agent workflow (install_agent_workflow): chỉ track config, không track state.
-# Tool ghi state ngay cạnh config: chặn để không lỡ commit DB/run log.
+# Agent workflow (install_agent_workflow): track config only, never state.
+# The tools write state next to their config: ignore it so DBs/run logs are never committed.
 .no-mistakes/*
 !.no-mistakes/config.yaml
 .gnhf/*
 !.gnhf/config.yml
-# Claude Code: chỉ track skill tự viết, chặn state Claude ghi vào .claude/ (projects, sessions, jobs, cache...).
+# Claude Code: track only hand-written skills; ignore the state Claude writes to .claude/ (projects, sessions, jobs, cache...).
 .claude/*
 !.claude/skills/
 .claude/skills/*

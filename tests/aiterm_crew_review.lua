@@ -1,5 +1,5 @@
 -- Run with: nvim --headless -u NONE -i NONE -l tests/aiterm_crew_review.lua <repo-root>
--- Dùng git thật trên repo tạm; chỉ stub ex/notify để khỏi mở tab / diffview.
+-- Uses real git on a temp repo; only ex/notify are stubbed so no tab / diffview opens.
 local root = assert(arg[1], "repository root is required")
 package.path = root .. "/.config/nvim/lua/?.lua;" .. root .. "/.config/nvim/lua/?/init.lua;" .. package.path
 
@@ -15,7 +15,7 @@ local function git(dir, ...)
 	return vim.trim(res.stdout)
 end
 
--- Repo gốc có origin; worktree là clone, có commit riêng + thay đổi chưa commit.
+-- The source repo has an origin; the worktree is a clone with its own commit + uncommitted changes.
 local origin = tmp .. "/origin.git"
 local wt = tmp .. "/wt"
 vim.system({ "git", "init", "-q", "--bare", "-b", "main", origin }):wait()
@@ -88,7 +88,7 @@ test("crew_open runs diffview at the merge base in the worker copy without a hel
 	flow.crew_open(flow.crew_worktrees()[1])
 	assert(#cmds == 1, vim.inspect(cmds))
 	assert(cmds[1] == "DiffviewOpen -C" .. vim.fn.fnameescape(wt) .. " " .. base_sha, vim.inspect(cmds))
-	assert(notes[1].msg:find("chỉ xem", 1, true), "must remind it is the worker's copy")
+	assert(notes[1].msg:find("read-only", 1, true), "must remind it is the worker's copy")
 end)
 
 test("crew_open with an unresolvable base opens nothing", function()
@@ -118,7 +118,7 @@ test("crew_review falls back to vim.ui.select and opens the choice", function()
 	assert(cmds[1] == "DiffviewOpen -C" .. vim.fn.fnameescape(wt) .. " " .. base_sha, vim.inspect(cmds))
 end)
 
--- Chạy diffview thật (bản ghim trong tests/fixtures): đóng review phải về đúng tab/cwd cũ.
+-- Runs the real diffview (pinned in tests/fixtures): closing the review must restore the old tab/cwd.
 local diffview = root .. "/tests/fixtures/diffview.nvim"
 test("closing a real crew review returns to the starting tab and cwd", function()
 	vim.opt.runtimepath:append(diffview)

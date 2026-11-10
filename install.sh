@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Link dotfiles vào $HOME, không cần sudo hay stow.
-# macOS: cài Homebrew coreutils nếu thiếu (tmux-which-key cần GNU realpath).
+# Link dotfiles into $HOME, without sudo or stow.
+# macOS: installs Homebrew coreutils when missing (tmux-which-key needs GNU realpath).
 #
-#   ./install.sh            tạo symlink
-#   ./install.sh -n         dry-run: chỉ in việc sẽ làm
+#   ./install.sh            create symlinks
+#   ./install.sh -n         dry-run: only print what would be done
 #
-# Gập thư mục như stow: đích chưa có -> link nguyên thư mục
-# (~/.config/nvim -> repo/.config/nvim); đích là thư mục thật -> đi vào trong
-# và link từng con. File/symlink lạ đang chiếm chỗ được chuyển vào
-# ~/.dotfiles-backup/<thời điểm>/, không bao giờ xoá. Chạy lại an toàn.
-# Chỉ link thứ git track (hoặc đã `git add`): thứ untracked nằm trong repo, như
-# một bản clone firstmate, không bao giờ bị link ra $HOME. Checkout không có git
-# (tải tarball) thì link mọi thứ như trước.
-# ~/... trong chuỗi chỉ là nhãn hiển thị, không cần expand.
+# Folds directories like stow: missing target -> link the whole directory
+# (~/.config/nvim -> repo/.config/nvim); target is a real directory -> descend
+# and link each child. Unknown files/symlinks in the way move to
+# ~/.dotfiles-backup/<timestamp>/, never deleted. Safe to re-run.
+# Only links what git tracks (or what is `git add`ed): untracked things in the repo,
+# such as a firstmate clone, are never linked into $HOME. A checkout without git
+# (tarball download) links everything as before.
+# ~/... in strings is only a display label, no expansion needed.
 # shellcheck disable=SC2088
 set -euo pipefail
 
@@ -20,13 +20,13 @@ REPO=$(cd "$(dirname "$0")" && pwd -P)
 BACKUP_DIR="$HOME/.dotfiles-backup/$(date +%Y%m%d-%H%M%S)"
 DRY_RUN=0
 
-# Chỉ thuộc repo, không phải dotfile: không link ra $HOME. So với tên ở root repo
-# (một .config/x/docs vẫn được link bình thường).
+# Repo-only, not dotfiles: never linked into $HOME. Matched by name at the repo root
+# (a .config/x/docs is still linked normally).
 ROOT_IGNORE=(
 	.git .gitignore .gitmodules .github
 	docs tests .superpowers
-	# Config Claude CẤP REPO (project skill, settings.local.json) - link ra
-	# ~/.claude sẽ biến nó thành config toàn cục.
+	# REPO-LEVEL Claude config (project skill, settings.local.json) - linking it into
+	# ~/.claude would turn it into global config.
 	.claude
 	.no-mistakes.yaml
 	install.sh
@@ -35,9 +35,9 @@ ROOT_IGNORE=(
 # Read these directories directly from the checkout instead of linking into $HOME.
 NEVER_LINK=(.config/claude-mods)
 
-# Thư mục ứng dụng tự ghi vào (~/.local/bin nhận binary của install_*, DB/run
-# log của no-mistakes, gnhf, treehouse): luôn là thư mục thật, không gập thành
-# một symlink vào repo.
+# Directories that apps write into (~/.local/bin takes install_* binaries, DBs/run
+# logs of no-mistakes, gnhf, treehouse): always real directories, never folded into
+# one symlink into the repo.
 NO_FOLD=(
 	.config .local .local/bin .local/share .local/state
 	.local/share/firstmate .local/share/firstmate/config .local/share/firstmate/data
@@ -46,8 +46,8 @@ NO_FOLD=(
 
 linked=0 backed_up=0 unchanged=0 skipped=0
 
-# Mọi path git track, mỗi dòng một path, có dòng trống ở hai đầu; rỗng khi repo
-# không phải git checkout. Dạng chuỗi vì bash 3.2 của macOS không có mảng kết hợp.
+# Every git-tracked path, one per line, with a blank line at both ends; empty when the repo
+# is not a git checkout. A string because macOS bash 3.2 has no associative arrays.
 TRACKED=
 
 usage() {
@@ -63,8 +63,8 @@ contains() {
 	return 1
 }
 
-# Mặc định ignore của stow (VCS, file backup của editor) ở mọi cấp, cộng
-# README/LICENSE/COPYING và ROOT_IGNORE ở root.
+# stow's default ignores (VCS, editor backup files) at every level, plus
+# README/LICENSE/COPYING and ROOT_IGNORE at the root.
 is_ignored() {
 	local rel=$1 name=${1##*/}
 	contains "$rel" "${NEVER_LINK[@]}" && return 0
@@ -83,11 +83,11 @@ is_ignored() {
 load_tracked() {
 	command -v git >/dev/null || return 0
 	git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
-	# -z: tên có dấu (tiếng Việt) không bị git quote.
+	# -z: git does not quote names with diacritics.
 	TRACKED=$'\n'$(git -C "$REPO" ls-files -z | tr '\0' '\n')$'\n'
 }
 
-# rel là file được track, hoặc thư mục chứa ít nhất một file được track.
+# rel is a tracked file, or a directory holding at least one tracked file.
 is_tracked() {
 	local rel=$1
 	[[ -z "$TRACKED" ]] && return 0
@@ -114,15 +114,15 @@ make_link() {
 	linked=$((linked + 1))
 }
 
-# Symlink đã trỏ đúng entry trong repo (tuyệt đối hay tương đối như stow tạo).
+# The symlink already points at the repo entry (absolute, or relative as stow makes it).
 points_to_repo() {
 	local dst=$1 src=$2
 	[[ -L "$dst" && -e "$dst" ]] || return 1
 	[[ "$(readlink -f -- "$dst")" == "$(readlink -f -- "$src")" ]]
 }
 
-# Thư mục chung (NO_FOLD) có thể là symlink tới chỗ khác ngoài repo, vd ~/.config
-# trên ổ khác: đi vào trong thay vì chuyển cả nó vào backup.
+# A shared (NO_FOLD) directory may be a symlink outside the repo, e.g. ~/.config
+# on another disk: descend into it instead of moving it to backup.
 is_foreign_dir() {
 	local dst=$1
 	[[ -L "$dst" && -d "$dst" ]] || return 1
@@ -132,7 +132,7 @@ is_foreign_dir() {
 	return 0
 }
 
-# Dọn chỗ cho thư mục NO_FOLD: gỡ link stow cũ gập vào repo, file lạ vào backup.
+# Make room for a NO_FOLD directory: remove an old stow link folded into the repo, unknown files go to backup.
 clear_dir_dst() {
 	local rel=$1
 	if points_to_repo "$HOME/$rel" "$REPO/$rel"; then
@@ -202,7 +202,7 @@ build_bat_cache() {
 	run bat cache --build >/dev/null || echo "warning: bat cache --build failed" >&2
 }
 
-# fresh: thư mục đích vừa được tạo (hoặc sẽ được tạo, khi dry-run) nên rỗng.
+# fresh: the target directory was just created (or will be, on dry-run) so it is empty.
 link_children() {
 	local rel=$1 fresh=${2:-} path child
 	for path in "$REPO${rel:+/$rel}"/* "$REPO${rel:+/$rel}"/.[!.]* "$REPO${rel:+/$rel}"/..?*; do
@@ -210,7 +210,7 @@ link_children() {
 		child="${rel:+$rel/}${path##*/}"
 		is_ignored "$child" && continue
 		if ! is_tracked "$child"; then
-			[[ $DRY_RUN -eq 0 ]] || echo "skip    ~/$child (git không track)"
+			[[ $DRY_RUN -eq 0 ]] || echo "skip    ~/$child (untracked)"
 			skipped=$((skipped + 1))
 			continue
 		fi
@@ -234,7 +234,7 @@ main() {
 		shift
 	done
 
-	[[ $DRY_RUN -eq 1 ]] && echo "(dry-run: không thay đổi gì)"
+	[[ $DRY_RUN -eq 1 ]] && echo "(dry-run: nothing changed)"
 	# The which-key plugin uses GNU realpath, including --relative-to.
 	# Homebrew keeps it keg-only under gnubin; use the same paths as tmux.
 	if [[ $(uname -s) == Darwin ]]; then

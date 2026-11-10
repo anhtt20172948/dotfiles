@@ -1,10 +1,10 @@
--- AI terminal (vsplit phải): Codex / Claude / opencode.
--- Merge vào spec snacks (cùng name -> lazy tự gộp; snacks lazy=false nên keymap
--- đăng ký ngay). Logic ở lua/customize/aiterm.lua, discovery session cũ trên đĩa
--- ở lua/customize/aiterm_history.lua.
+-- AI terminal (right vsplit): Codex / Claude / opencode.
+-- Merged into the snacks spec (same name -> lazy merges them; snacks is lazy=false so keymaps
+-- register immediately). Logic lives in lua/customize/aiterm.lua, discovery of old on-disk sessions
+-- in lua/customize/aiterm_history.lua.
 
--- Bootstrap inlay hints "bật sẵn" mà KHÔNG require module sớm: đăng ký 1 autocmd
--- lúc lazy import file này (startup), rồi tới VeryLazy mới require + setup_hints.
+-- Bootstrap inlay hints "on by default" WITHOUT requiring the module early: register one autocmd
+-- when lazy imports this file (startup), then require + setup_hints on VeryLazy.
 vim.api.nvim_create_autocmd("User", {
 	pattern = "VeryLazy",
 	once = true,
@@ -27,7 +27,7 @@ return {
 			mode = "n",
 		},
 		{
-			-- Cùng picker, scope mọi thư mục. Trong picker bấm <A-a> để đổi qua lại.
+			-- Same picker, scoped to every directory. Press <A-a> in the picker to toggle.
 			"<leader>aA",
 			function()
 				require("customize.aiterm").pick({ scope = "all" })
@@ -36,7 +36,7 @@ return {
 			mode = "n",
 		},
 		{
-			-- Cùng menu với tmux prefix E: dùng/thêm/sửa token/đổi tên/xóa tài khoản Claude.
+			-- Same menu as tmux prefix E: use/add/edit token/rename/delete a Claude account.
 			"<leader>au",
 			function()
 				require("customize.ai_account").menu()
@@ -53,7 +53,7 @@ return {
 			mode = "n",
 		},
 		{
-			-- Ẩn pane AI (đóng window), session vẫn chạy nền -> <C-w>p mở lại.
+			-- Hide the AI pane (close the window); the session keeps running -> <C-w>p reopens it.
 			"<leader>ah",
 			function()
 				require("customize.aiterm").hide()
@@ -62,7 +62,7 @@ return {
 			mode = "n",
 		},
 		{
-			-- Chẩn đoán history (cwd scoping / thiếu sqlite3, hữu ích trong container).
+			-- History diagnostics (cwd scoping / missing sqlite3, useful in containers).
 			"<leader>ad",
 			function()
 				require("customize.aiterm").doctor()
@@ -71,7 +71,7 @@ return {
 			mode = "n",
 		},
 		{
-			-- Override <C-w>p mặc định: focus AI sidebar thay vì "previous window".
+			-- Override the default <C-w>p: focus the AI sidebar instead of "previous window".
 			"<C-w>p",
 			function()
 				require("customize.aiterm").focus()
@@ -91,9 +91,9 @@ return {
 			mode = "n",
 		},
 		{
-			-- Gửi file/selection tới session AI đang chạy: menu explain/ask/fix/...
-			-- (kiểu CodeCompanion). Visual = @ref + fenced selection; normal = @ref +
-			-- function/class dưới con trỏ (treesitter), top-level = @ref cả file.
+			-- Send the file/selection to the running AI session: explain/ask/fix/... menu
+			-- (CodeCompanion style). Visual = @ref + fenced selection; normal = @ref +
+			-- the function/class under the cursor (treesitter), top level = @ref of the whole file.
 			"<leader>ai",
 			function()
 				require("customize.aiterm").actions()
@@ -102,7 +102,7 @@ return {
 			mode = { "n", "x" },
 		},
 		{
-			-- Bật/tắt inlay hint (dòng ảo phía trên function/class dưới con trỏ).
+			-- Toggle the inlay hint (virtual line above the function/class under the cursor).
 			"<leader>aT",
 			function()
 				require("customize.aiterm").toggle_hints()
@@ -111,9 +111,9 @@ return {
 			mode = "n",
 		},
 		{
-			-- Duyệt SKILL của tool (ECC + skill gốc + skill tự viết) rồi áp lên code đang
-			-- chọn. Skill là tài liệu hướng dẫn nên hợp với selection, khác hẳn command
-			-- cấp repo ở <leader>aw.
+			-- Browse the tool's SKILLs (ECC + built-in + hand-written) and apply one to the selected
+			-- code. Skills are guidance docs, so they fit a selection, unlike the repo-level
+			-- commands on <leader>aw.
 			"<leader>aS",
 			function()
 				require("customize.aiterm").skill_pick()
@@ -122,9 +122,9 @@ return {
 			mode = { "n", "x" },
 		},
 		{
-			-- Lệnh ECC CẤP REPO (/code-review, /build-fix, /quality-gate...). Tách khỏi
-			-- <leader>ai vì chúng chạy git diff / npx trên cả project, bỏ qua đoạn code
-			-- đang chọn -> gửi không kèm context file.
+			-- REPO-LEVEL ECC commands (/code-review, /build-fix, /quality-gate...). Separate from
+			-- <leader>ai because they run git diff / npx on the whole project and ignore the
+			-- selection -> sent without file context.
 			"<leader>aw",
 			function()
 				require("customize.aiterm").workflows()
@@ -133,8 +133,8 @@ return {
 			mode = "n",
 		},
 		{
-			-- Trạng thái ECC (skills/commands cho AI tool) + cài/cập nhật từng tool.
-			-- Tool chưa có ECC cũng hiện sẵn 1 dòng trong picker <leader>aa.
+			-- ECC status (skills/commands for AI tools) + install/update per tool.
+			-- Tools without ECC still get a row in the <leader>aa picker.
 			"<leader>aE",
 			function()
 				require("customize.aiterm").ecc()
@@ -152,7 +152,7 @@ return {
 			mode = "n",
 		},
 		{
-			-- Chốt tool mặc định (auto-tạo khi chưa có session), lưu qua các lần mở nvim.
+			-- Pin the default tool (auto-created when there is no session), persisted across nvim runs.
 			"<leader>aD",
 			function()
 				require("customize.aiterm").pick_default()
@@ -160,10 +160,10 @@ return {
 			desc = "AI: set default tool",
 			mode = "n",
 		},
-		-- Agent workflow (kunchenguid), logic ở lua/customize/aiterm_flow.lua; dùng
-		-- chung script tmux ai-workflow.sh với menu prefix F.
+		-- Agent workflow (kunchenguid); logic in lua/customize/aiterm_flow.lua; shares
+		-- the tmux ai-workflow.sh script with the prefix F menu.
 		{
-			-- Push nhánh hiện tại qua gate no-mistakes (review/test/lint -> PR).
+			-- Push the current branch through the no-mistakes gate (review/test/lint -> PR).
 			"<leader>ap",
 			function()
 				require("customize.aiterm_flow").push_gate()
@@ -180,7 +180,7 @@ return {
 			mode = "n",
 		},
 		{
-			-- Vòng lặp gnhf --worktree trên một goal, ở window tmux riêng.
+			-- gnhf --worktree loop on a goal, in its own tmux window.
 			"<leader>ag",
 			function()
 				require("customize.aiterm_flow").gnhf()
@@ -189,8 +189,8 @@ return {
 			mode = "n",
 		},
 		{
-			-- Worktree treehouse + session AI mới trong đó. Không dùng <leader>at:
-			-- supermaven đã giữ phím đó.
+			-- treehouse worktree + a new AI session in it. Not <leader>at:
+			-- supermaven already owns that key.
 			"<leader>aW",
 			function()
 				require("customize.aiterm_flow").worktree()
@@ -207,8 +207,8 @@ return {
 			mode = "n",
 		},
 		{
-			-- Xem thay đổi của crew: chọn worktree của worker -> tab mới + diffview
-			-- (chỉ xem). <A-g> trong picker mở lazygit.
+			-- Review crew changes: pick a worker worktree -> new tab + diffview
+			-- (read-only). <A-g> in the picker opens lazygit.
 			"<leader>aR",
 			function()
 				require("customize.aiterm_flow").crew_review()

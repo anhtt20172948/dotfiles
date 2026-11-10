@@ -1,7 +1,7 @@
--- Picker <leader>gw: worktree của repo hiện tại (git worktree list) + worktree
--- trong pool treehouse (~/.treehouse/<repo>-<hash>/<n>/<repo>-<n>), nơi crew của
--- firstmate làm việc. CHỈ ĐỌC: không chạy treehouse, không ghi vào worktree hay
--- state của firstmate; `status` dùng --no-optional-locks để khỏi làm mới index.
+-- <leader>gw picker: worktrees of the current repo (git worktree list) plus worktrees
+-- in the treehouse pool (~/.treehouse/<repo>-<hash>/<n>/<repo>-<n>), where firstmate
+-- crews work. READ-ONLY: never runs treehouse, never writes to a worktree or
+-- firstmate state; `status` uses --no-optional-locks so the index is not refreshed.
 local M = {}
 
 local function home()
@@ -12,7 +12,7 @@ local function realpath(path)
 	return vim.uv.fs_realpath(path) or path
 end
 
---- Tên repo của một thư mục git: thư mục cha của git-common-dir (hoặc tên bare repo).
+--- Repo name of a git dir: parent of the git-common-dir (or the bare repo name).
 ---@return string?
 local function repo_name(cwd)
 	local res = vim.system(
@@ -60,7 +60,7 @@ local function git_entries(cwd)
 	return entries
 end
 
---- Worktree trong pool treehouse của mọi repo, tìm bằng đường dẫn (không gọi treehouse).
+--- Worktrees in every repo's treehouse pool, found by path (treehouse is not called).
 local function treehouse_entries()
 	local root = vim.env.TREEHOUSE_ROOT or (home() .. "/.treehouse")
 	local entries = {}
@@ -80,7 +80,7 @@ local function treehouse_entries()
 	return entries
 end
 
---- worktree (realpath) -> id task firstmate, đọc từ state/*.meta.
+--- worktree (realpath) -> firstmate task id, read from state/*.meta.
 local function task_ids()
 	local dir = vim.env.FIRSTMATE_DIR or (home() .. "/.local/share/firstmate")
 	local ids = {}
@@ -98,9 +98,9 @@ local function task_ids()
 	return ids
 end
 
---- Nhánh (hoặc sha ngắn khi detached) và trạng thái dirty (chỉ file đã track, bỏ
---- qua untracked để khỏi quét cả cây), qua một lệnh status chỉ đọc cho mỗi
---- worktree; chạy song song rồi mới chờ.
+--- Branch (or short sha when detached) and dirty state (tracked files only; untracked
+--- are skipped to avoid scanning the whole tree), via one read-only status per
+--- worktree; all run in parallel before waiting.
 local function fill_status(entries)
 	local jobs = {}
 	for i, entry in ipairs(entries) do
@@ -155,7 +155,7 @@ local function build_entries(cwd)
 		return nil, err
 	end
 
-	-- So sánh đường dẫn thật để nhận cả cwd nằm trong thư mục con; worktree lồng sâu nhất thắng.
+	-- Compare real paths so a cwd in a subdirectory matches too; the deepest worktree wins.
 	local current, current_entry = realpath(cwd), nil
 	for _, entry in ipairs(entries) do
 		if
@@ -175,7 +175,7 @@ local function build_entries(cwd)
 		entry.index = index
 		entry.task = ids[entry.actual]
 	end
-	-- Repo hiện tại trước; trong nhóm giữ thứ tự gốc (git list rồi treehouse).
+	-- Current repo first; within a group keep the source order (git list, then treehouse).
 	table.sort(entries, function(a, b)
 		local a_cur, b_cur = a.repo == repo, b.repo == repo
 		if a_cur ~= b_cur then
@@ -202,7 +202,7 @@ local function label(entry)
 end
 
 function M.open(entry)
-	-- Không xóa buffer: giữ nguyên cả các thay đổi chưa lưu.
+	-- Do not delete buffers: unsaved changes stay intact.
 	local ok, err = pcall(vim.api.nvim_set_current_dir, entry.path)
 	if not ok then
 		return vim.notify("Cannot switch Git worktree: " .. tostring(err), vim.log.levels.ERROR)
