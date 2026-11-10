@@ -56,6 +56,15 @@ jobs:
           echo '38a7c6317f94503841096c00e8fde05ef04b9472fc9d7d62b6e033cecd6f7991  nvim.tar.gz' | sha256sum -c -
           tar -xzf nvim.tar.gz
           echo "$PWD/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
+      # tests/starship_config_test.sh renders the tracked prompt with it.
+      - name: Install Starship 1.27.0
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL https://github.com/starship/starship/releases/download/v1.27.0/starship-x86_64-unknown-linux-musl.tar.gz -o starship.tar.gz
+          echo '10c8eb4cb3b761d9bf59ea828444c2dab36c900b7d69a69e08814b286969df89  starship.tar.gz' | sha256sum -c -
+          mkdir starship-bin
+          tar -xzf starship.tar.gz -C starship-bin
+          echo "$PWD/starship-bin" >> "$GITHUB_PATH"
       # Complete test entry point (Lua, shell and Python cases). No plugin
       # downloads, network-dependent tests or display are used.
       - name: Tests
@@ -63,6 +72,7 @@ jobs:
           TEST_LOG_DIR: ${{ runner.temp }}/test-logs
         run: |
           nvim --version | head -n 1
+          starship --version | head -n 1
           luac -v
           python3 --version
           HOME=$(mktemp -d)
@@ -102,8 +112,12 @@ jobs:
           curl -fsSL https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.xz -o shellcheck.tar.xz
           echo '56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79  shellcheck.tar.xz' | shasum -a 256 -c -
           tar -xJf shellcheck.tar.xz
+          curl -fsSL https://github.com/starship/starship/releases/download/v1.27.0/starship-aarch64-apple-darwin.tar.gz -o starship.tar.gz
+          echo '5362da8cb2928f98f3ce0ffda697cf0f8de70081db000dae316d6d3a404f6cf0  starship.tar.gz' | shasum -a 256 -c -
+          mkdir starship-bin
+          tar -xzf starship.tar.gz -C starship-bin
           mkdir ci-bin
-          ln -s "$PWD/nvim-macos-arm64/bin/nvim" "$PWD/shellcheck-v0.11.0/shellcheck" ci-bin/
+          ln -s "$PWD/nvim-macos-arm64/bin/nvim" "$PWD/shellcheck-v0.11.0/shellcheck" "$PWD/starship-bin/starship" ci-bin/
           ln -s "$(brew --prefix jq)/bin/jq" "$(brew --prefix tmux)/bin/tmux" "$(brew --prefix lua)/bin/luac" ci-bin/
           ln -s "$(brew --prefix python@3.12)/bin/python3.12" ci-bin/python3
       - name: Stock-shell lint and tests
@@ -113,6 +127,7 @@ jobs:
           export PATH="$RUNNER_TEMP/ci-bin:/usr/bin:/bin:/usr/sbin:/sbin"
           /bin/bash --version | head -n 1
           nvim --version | head -n 1
+          starship --version | head -n 1
           shellcheck --version | sed -n 2p
           tmux -V
           jq --version

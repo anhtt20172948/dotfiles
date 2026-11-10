@@ -1,0 +1,81 @@
+"$schema" = "https://starship.rs/config-schema.json"
+
+# Shell prompt for bash and zsh on every host. The workflow repo installs
+# Starship and runs `starship init`; this file is only the look.
+#
+# - ANSI colour names only, never hex, so the prompt follows the terminal palette
+#   (kitty, and through it DMS) locally and over SSH. Nothing sets a background
+#   except the directory pill, so kitty's transparency shows through.
+# - The accent is cyan (ANSI 6, DMS primary), as in tmux, fzf, yazi and lualine.
+# - The pill caps are lualine's slanted glyphs: U+E0BA on the left, U+E0BC on
+#   the right. Glyphs are written as \u escapes so they survive any editor.
+# - Never `purple` (ANSI 5) or `bright-black` (ANSI 8) as text: DMS makes those
+#   slots dark container tones (see .config/tmux/status.conf).
+# - starship-plain.toml is the same prompt in plain ASCII, for terminals without
+#   a Nerd Font: STARSHIP_CONFIG=~/.config/starship-plain.toml.
+
+format = """
+$hostname\
+$directory\
+$git_branch\
+$git_state\
+$git_status\
+$python\
+$cmd_duration\
+$line_break\
+$character"""
+add_newline = true
+continuation_prompt = "[\u2219 ](cyan)"
+
+# Only over SSH, with the same icon and colour as the tmux status bar.
+[hostname]
+ssh_only = true
+ssh_symbol = "\U000f08c0 "
+format = "[$ssh_symbol$hostname]($style) "
+style = "bright-purple"
+
+# The accent pill: black text on cyan between slanted caps.
+[directory]
+style = "cyan"
+read_only = " \U000f033e"
+read_only_style = "black bg:cyan"
+truncation_length = 3
+format = "[\ue0ba]($style)[ $path[$read_only]($read_only_style) ](bold black bg:cyan)[\ue0bc]($style) "
+
+[git_branch]
+symbol = "\ue0a0 "
+format = "[$symbol$branch(:$remote_branch)]($style) "
+style = "bright-purple"
+
+[git_state]
+style = "bold yellow"
+
+# Ahead green, behind red, the rest yellow: the tmux git segment's colours.
+[git_status]
+format = "([$all_status$ahead_behind]($style) )"
+style = "yellow"
+ahead = "[\u21e1${count}](green)"
+behind = "[\u21e3${count}](red)"
+diverged = "[\u21e1${ahead_count}](green)[\u21e3${behind_count}](red)"
+
+# Only the active virtualenv: no project detection, no `python --version` call.
+[python]
+detect_extensions = []
+detect_files = []
+detect_folders = []
+symbol = "\ue606 "
+format = "[$symbol$virtualenv]($style) "
+style = "blue"
+
+[cmd_duration]
+min_time = 2000
+format = "[\U000f051f $duration]($style) "
+style = "yellow"
+
+[character]
+success_symbol = "[\u276f](bold cyan)"
+error_symbol = "[\u276f](bold red)"
+vimcmd_symbol = "[\u276e](bold green)"
+vimcmd_visual_symbol = "[\u276e](bold yellow)"
+vimcmd_replace_symbol = "[\u276e](bold bright-purple)"
+vimcmd_replace_one_symbol = "[\u276e](bold bright-purple)"
