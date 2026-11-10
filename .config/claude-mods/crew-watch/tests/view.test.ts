@@ -488,6 +488,9 @@ test('a running border\'s two full-block runs travel the whole border clockwise,
   expect(runnerParts(20, 6, 48)).toEqual(runnerParts(20, 6, 0))
   expect(runnerParts(20, 6, -1)).toEqual(runnerParts(20, 6, 47))
   // Every frame moves each run by one cell: two cells light up, two go out, and all stay on the border.
+  // Violations are collected and asserted once, like the fractional sweep below: an expect() per cell
+  // made this sweep take 3-5 s, past bun's 5 s test timeout on a loaded host.
+  const invalid: string[] = []
   for (const [width, height] of [[20, 6], [58, 9], [116, 40], [5, 3]] as const) {
     const lap = 2 * (width - 1) + 2 * (height - 1)
     let before = litCells(runnerParts(width, height, 0) ?? [], height)
@@ -495,16 +498,17 @@ test('a running border\'s two full-block runs travel the whole border clockwise,
       const now = litCells(runnerParts(width, height, frame) ?? [], height)
       const added = [...now.keys()].filter(k => !before.has(k))
       const gone = [...before.keys()].filter(k => !now.has(k))
-      expect([width, height, frame, added.length, gone.length]).toEqual([width, height, frame, 2, 2])
+      if (added.length !== 2 || gone.length !== 2) invalid.push(`step ${width}x${height} frame ${frame}: +${added.length} -${gone.length}`)
       for (const [key, glyph] of now) {
-        expect(glyph).toBe('█')
+        if (glyph !== '█') invalid.push(`glyph ${width}x${height} frame ${frame}: ${glyph}`)
         const [x = -1, y = -1] = key.split(',').map(Number)
-        expect(x === 0 || x === width - 1 || y === 0 || y === height - 1).toBe(true)
-        expect(x >= 0 && x < width && y >= 0 && y < height).toBe(true)
+        if (!(x >= 0 && x < width && y >= 0 && y < height
+          && (x === 0 || x === width - 1 || y === 0 || y === height - 1))) invalid.push(`outside ${width}x${height} frame ${frame}: ${key}`)
       }
       before = now
     }
   }
+  expect(invalid).toEqual([])
 })
 
 test('fractional heads and tails slide along both axes with eighth blocks and complementary inverse fills', () => {

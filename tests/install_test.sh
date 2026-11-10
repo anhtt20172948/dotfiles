@@ -161,4 +161,39 @@ for f in .DS_Store .local/share/firstmate/AGENTS.md .local/share/firstmate/bin .
 done
 grep -q '^done: 4 linked, 0 backed up, 0 already linked, 6 untracked skipped$' <<<"$out" || fail "summary: $out"
 
+# A repo that ships ~/.config/git/config and bat themes: install.sh creates an
+# empty ~/.gitconfig (so `git config --global` never writes into the repo) and
+# builds bat's theme cache only when it is missing or older than a theme.
+REPO="$TMP/extras"
+export HOME="$TMP/home-extras"
+STUB="$TMP/stub-bin"
+mkdir -p "$HOME" "$STUB" "$REPO"/.config/{git,bat/themes}
+cp "$ROOT/install.sh" "$REPO/install.sh"
+echo '[core]' >"$REPO/.config/git/config"
+echo theme >"$REPO/.config/bat/themes/ansi.tmTheme"
+cat >"$STUB/bat" <<'EOF'
+#!/bin/sh
+case "$1" in
+--cache-dir) echo "$HOME/.cache/bat" ;;
+cache) echo "$*" >>"$HOME/bat-calls"; mkdir -p "$HOME/.cache/bat" && : >"$HOME/.cache/bat/themes.bin" ;;
+esac
+EOF
+chmod +x "$STUB/bat"
+before=$(snapshot)
+out=$(PATH="$STUB:$PATH" "$REPO/install.sh" --dry-run)
+[[ "$before" == "$(snapshot)" ]] || fail "dry-run changed \$HOME (extras)"
+grep -q '^create  ~/.gitconfig ' <<<"$out" || fail "dry-run did not report ~/.gitconfig: $out"
+grep -q '^build   bat cache ' <<<"$out" || fail "dry-run did not report the bat cache: $out"
+PATH="$STUB:$PATH" "$REPO/install.sh" >/dev/null
+[[ -f "$HOME/.gitconfig" && ! -s "$HOME/.gitconfig" ]] || fail "~/.gitconfig not created empty"
+[[ "$(cat "$HOME/bat-calls")" == "cache --build" ]] || fail "bat cache not built: $(cat "$HOME/bat-calls")"
+echo '[user]' >"$HOME/.gitconfig"
+out=$(PATH="$STUB:$PATH" "$REPO/install.sh")
+[[ "$(cat "$HOME/.gitconfig")" == '[user]' ]] || fail "existing ~/.gitconfig changed"
+! grep -q '^create  ~/.gitconfig' <<<"$out" || fail "re-run recreated ~/.gitconfig: $out"
+[[ $(wc -l <"$HOME/bat-calls") -eq 1 ]] || fail "fresh bat cache rebuilt"
+touch -t 203001010000 "$REPO/.config/bat/themes/ansi.tmTheme"
+PATH="$STUB:$PATH" "$REPO/install.sh" >/dev/null
+[[ $(wc -l <"$HOME/bat-calls") -eq 2 ]] || fail "stale bat cache not rebuilt"
+
 echo "install.sh: OK"

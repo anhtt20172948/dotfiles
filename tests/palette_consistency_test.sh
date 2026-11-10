@@ -44,3 +44,5 @@ if violations:
     sys.exit('Hex colours belong in kitty palettes (or a documented asset exception):\n' + '\n'.join(violations))
 print('palette consistency: OK')
 PY
+# The ANSI slot contract and contrast floor across every tool's config.
+python3 "$ROOT/tests/palette_contract.py" "$ROOT"

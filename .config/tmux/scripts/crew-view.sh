@@ -59,7 +59,7 @@ selection=$(
     --bind='ctrl-o:change-preview(printf "%s\n" "$CREW_OVERVIEW")' \
     --bind='ctrl-p:change-preview(tmux capture-pane -p -t "=firstmate:"{1} -S -80)' \
     --preview-window='down:60%:wrap' \
-    --color="$AI_FZF_COLORS"
+    --color="$PICKER_FZF_COLORS"
 ) || exit 0
 [[ -n "$selection" ]] || exit 0
 case "$selection" in *[!0-9]*) fail 'invalid worker selection' ;; esac

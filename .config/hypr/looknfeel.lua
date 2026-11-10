@@ -64,6 +64,8 @@ hl.config({
 			gradient_rounding = 8,
 			rounding = 8,
 			render_titles = true,
+			-- Fallback title colours: hyprland.lua recomputes them from the tab
+			-- colours DMS sets (groupbar.lua).
 			text_color = "rgb(ffffff)",
 			text_color_inactive = "rgb(d0d0d8)",
 			scrolling = true,

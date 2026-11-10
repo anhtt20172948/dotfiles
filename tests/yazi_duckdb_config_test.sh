@@ -25,7 +25,7 @@ for key in '"<A-h>"' '"<A-l>"' '"M"'; do
 	grep -q "on *= *$key" "$CFG/keymap.toml" || fail "keymap.toml is missing $key"
 done
 
-grep -q '^\.highlight_colors column_name magenta bold$' "$ROOT/.duckdbrc" || fail ".duckdbrc highlight colours missing"
+grep -q '^\.highlight_colors column_name brightblue bold$' "$ROOT/.duckdbrc" || fail ".duckdbrc highlight colours missing"
 
 # install.sh must link .duckdbrc into $HOME (dry run, empty HOME).
 plan=$(HOME=$(mktemp -d) "$ROOT/install.sh" -n)

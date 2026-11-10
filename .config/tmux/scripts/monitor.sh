@@ -6,6 +6,9 @@ readonly LIB_DIR
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=./monitor-lib.sh
 source "$LIB_DIR/monitor-lib.sh"
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=./fzf-colors.sh
+source "$LIB_DIR/fzf-colors.sh"
 
 # Only resets terminal attributes. It deliberately does NOT remove
 # $MONITOR_HISTORY_DIR — that is the CPU-delta / sparkline cache and must
@@ -374,6 +377,7 @@ while true; do
       --header-first \
       --prompt="󱂬 Monitor › " \
       --pointer="▶" \
+      --color="$PICKER_FZF_COLORS" \
       --header=$'Platform: '"$MONITOR_PLATFORM_LABEL"$'\n  Ctrl+R reload | F5 refresh | Ctrl+O preview | Esc quit' \
       --preview-window="right,$MONITOR_PREVIEW_WIDTH,wrap" \
       --preview-label=" Live Preview " \

@@ -84,7 +84,9 @@ git_segment() {
   [[ -n $branch ]] || return 0
   [[ $branch == '(detached)' ]] && branch="${oid:0:7}"
 
-  printf '#[fg=magenta] %s' "$branch"
+  # blue, not magenta: magenta (ANSI 5) is a dark container tone in DMS's
+  # palette, about 2.5:1 on the background. brightmagenta is the SSH host.
+  printf '#[fg=blue] %s' "$branch"
   ((ahead > 0)) && printf ' #[fg=green]⇡%s' "$ahead"
   ((behind > 0)) && printf ' #[fg=red]⇣%s' "$behind"
   [[ -n $dirty ]] && printf ' #[fg=yellow]●'

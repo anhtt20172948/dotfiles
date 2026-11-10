@@ -25,3 +25,12 @@ end
 -- Only the focused window glows: dms.colors tints color_inactive, so clear it
 -- again once the DMS overrides are in.
 hl.config({ decoration = { glow = { color_inactive = "rgba(00000000)" } } })
+
+-- Group bar titles follow the tab colours dms.colors just set (dark or light,
+-- whichever reads better). On failure the looknfeel.lua titles stay.
+local groupbar_ok = pcall(function()
+	require("groupbar").apply(hl)
+end)
+if not groupbar_ok then
+	hl.exec_cmd("notify-send -u critical 'Hyprland' 'groupbar title colours failed'")
+end

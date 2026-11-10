@@ -69,18 +69,28 @@ with_timeout() {
 # Chạy một case trong HOME/XDG riêng; log giữ ở $LOG_DIR/<tên>.log, in ra khi fail
 # (khi pass chỉ in các dòng `skip:`).
 #   run_case <tên> <lệnh...>
+# A case gets CASE_TIMEOUT seconds (TEST_CASE_TIMEOUT overrides). The slowest,
+# claude_mod_test.sh, spends 60-100 s in `claude plugin test` on a loaded host,
+# so 120 s timed it out intermittently; a timeout is reported as one.
+CASE_TIMEOUT=${TEST_CASE_TIMEOUT:-300}
 run_case() {
-	local name=$1
+	local name=$1 status=0
 	shift
 	local case_dir="$CFG/$name" log="$LOG_DIR/$name.log"
 	mkdir -p "$case_dir/home" "$case_dir/config" "$case_dir/cache" "$case_dir/data" "$case_dir/state"
-	if HOME="$case_dir/home" XDG_CONFIG_HOME="$case_dir/config" XDG_CACHE_HOME="$case_dir/cache" \
+	HOME="$case_dir/home" XDG_CONFIG_HOME="$case_dir/config" XDG_CACHE_HOME="$case_dir/cache" \
 		XDG_DATA_HOME="$case_dir/data" XDG_STATE_HOME="$case_dir/state" CODEX_HOME="$case_dir/home/.codex" \
-		TMUX='' with_timeout 120 "$@" >"$log" 2>&1; then
+		TMUX='' with_timeout "$CASE_TIMEOUT" "$@" >"$log" 2>&1 || status=$?
+	if [[ $status -eq 0 ]]; then
 		echo "ok   $name"
 		sed -n 's/^skip:/     | skip:/p' "$log"
 	else
-		echo "FAIL $name (rerun: TMUX= $*)"
+		# GNU timeout exits 124; perl's alarm kills with SIGALRM (128 + 14).
+		if [[ $status -eq 124 || $status -eq 142 ]]; then
+			echo "FAIL $name (timed out after ${CASE_TIMEOUT}s; rerun: TMUX= $*)"
+		else
+			echo "FAIL $name (rerun: TMUX= $*)"
+		fi
 		sed 's/^/     | /' "$log"
 		FAILED=1
 	fi

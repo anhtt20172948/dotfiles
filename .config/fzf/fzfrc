@@ -1,0 +1,10 @@
+# Default options for every fzf, read through FZF_DEFAULT_OPTS_FILE (fzf 0.47+),
+# which the shell config from the workflow repo exports; FZF_DEFAULT_OPTS there
+# adds layout and key bindings on top. Colours only: ANSI slots, never hex, so
+# fzf follows the terminal palette (kitty, and through it DMS), and bg:-1 keeps
+# kitty's opacity. The leading `16` makes the 16-colour scheme the base instead
+# of fzf's fixed 256-colour `dark` scheme.
+#
+# Same spec as PICKER_FZF_COLORS in .config/tmux/scripts/fzf-colors.sh (the
+# palette test keeps them identical); the slot contract is explained there.
+--color=16,bg:-1,bg+:8,fg:-1,fg+:-1,hl:1,hl+:1,header:4,info:7,pointer:6,spinner:6,marker:2,prompt:6,label:6,border:8

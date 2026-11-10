@@ -5,7 +5,7 @@
 #
 # Sourced, never executed. Three things live here because they were duplicated
 # across the pickers and had already drifted apart:
-#   * the 9-line Catppuccin palette (identical copies in ai-picker.sh and
+#   * the 9-line colour table (identical copies in ai-picker.sh and
 #     ai-sessions.sh)
 #   * the tool metadata tables — ai-picker.sh had tool_name/tool_icon/
 #     tool_description while ai-sessions.sh had a *separate* pipe-packed
@@ -29,26 +29,26 @@
 # picker's preview and the controller's launch always agree on the binary.
 export PATH="$HOME/.local/bin:$HOME/.opencode/bin:$PATH"
 
-# --- fzf colours: ANSI slots only ---------------------------
-# The one --color spec every fzf picker under .config/tmux/scripts uses. It names
-# ANSI slots 0-15 and -1 (terminal default), never hex, so the pickers follow the
-# terminal palette (kitty, and through it DMS) and bg:-1 lets kitty's opacity show
-# through. Same mapping as the tmux theme in status.conf: cyan (6) = the accent
-# (DMS primary) for pointer/spinner/prompt/label, blue = header, red = match
-# highlight, brightblack (8) = border/info, black (0) = the subtle selected-row
-# background.
-AI_FZF_COLORS='bg:-1,bg+:0,fg:-1,fg+:-1,hl:1,hl+:1,header:4,info:8,pointer:6,spinner:6,marker:2,prompt:6,label:6,border:8'
+# --- fzf colours: PICKER_FZF_COLORS -------------------------
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=./fzf-colors.sh
+source "$(dirname "${BASH_SOURCE[0]}")/fzf-colors.sh"
 
-# --- Colors (Catppuccin Mocha) ------------------------------
+# --- Colors: ANSI slots only --------------------------------
+# Plain SGR codes for the terminal's 16 colours, never truecolor, so picker text
+# follows the terminal palette (kitty, and through it DMS) like the tmux theme
+# does. The names keep their old Catppuccin roles; the slots follow the contract
+# in fzf-colors.sh: magenta (35) is never text, so mauve is bright magenta (95);
+# subtext is white (37), which Catppuccin and DMS both keep readable, not dim.
 AI_RESET=$'\033[0m'
 AI_BOLD=$'\033[1m'
-AI_LAVENDER=$'\033[38;2;180;190;254m'
-AI_MAUVE=$'\033[38;2;203;166;247m'
-AI_BLUE=$'\033[38;2;137;180;250m'
-AI_GREEN=$'\033[38;2;166;227;161m'
-AI_YELLOW=$'\033[38;2;249;226;175m'
-AI_RED=$'\033[38;2;243;139;168m'
-AI_SUBTEXT=$'\033[38;2;166;173;200m'
+AI_LAVENDER=$'\033[94m'
+AI_MAUVE=$'\033[95m'
+AI_BLUE=$'\033[34m'
+AI_GREEN=$'\033[32m'
+AI_YELLOW=$'\033[33m'
+AI_RED=$'\033[31m'
+AI_SUBTEXT=$'\033[37m'
 
 # Iteration order for every "for each tool" loop, and the whitelist that
 # validates a tool name coming back from a picker.

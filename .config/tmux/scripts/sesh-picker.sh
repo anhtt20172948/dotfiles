@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 export PATH="$HOME/.local/bin:$PATH"
+LIB_DIR=$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")")
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=./fzf-colors.sh
+source "$LIB_DIR/fzf-colors.sh"
 
 for bin in sesh fzf fd; do
   command -v "$bin" >/dev/null 2>&1 || {
@@ -14,6 +18,7 @@ done
 target=$(
   sesh list --icons | fzf --reverse \
     --no-sort --ansi --border-label ' sesh ' --prompt '⚡ ' \
+    --color="$PICKER_FZF_COLORS" \
     --header ' ^a all ^t tmux ^g configs ^x zoxide ^d kill ^f find' \
     --bind 'tab:down,btab:up' \
     --bind 'ctrl-a:change-prompt(⚡ )+reload(sesh list --icons)' \

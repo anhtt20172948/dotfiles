@@ -1,7 +1,9 @@
 .highlight_colors layout gray
-.highlight_colors column_name magenta bold
-.highlight_colors column_type gray
+.highlight_colors column_name brightblue bold
+.highlight_colors column_type brightgray
 .highlight_colors string_value cyan
 .highlight_colors numeric_value green
 .highlight_colors temporal_value blue
-.highlight_colors footer gray
+.highlight_colors footer brightgray
+.highlight_colors prompt cyan bold
+.highlight_colors null_value brightgray

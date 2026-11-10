@@ -276,7 +276,7 @@ firstmate_pick() {
     --border-label=" Firstmate $label " --info=hidden \
     --header="$FIRSTMATE_PICK_KEYS" --prompt="$label › " \
     --pointer='' --bind='ctrl-j:down,ctrl-k:up' \
-    --color="$AI_FZF_COLORS" "$@")
+    --color="$PICKER_FZF_COLORS" "$@")
   status=$?
   case "$status" in 0) ;; 1|130) return 0 ;; *) return "$status" ;; esac
   while IFS=$'\t' read -r value _display; do
@@ -593,7 +593,7 @@ menu() {
       --prompt='󱒜  Run › ' \
       --pointer='' \
       --bind='ctrl-j:down,ctrl-k:up' \
-      --color="$AI_FZF_COLORS"
+      --color="$PICKER_FZF_COLORS"
   ) || exit 0
 
   [[ -n "$selection" ]] || exit 0
