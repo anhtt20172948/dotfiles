@@ -14,3 +14,10 @@ stylua       linux-x64     JohnnyMorganz/StyLua   v2.5.2   bcb0d855e91f102f28a37
 gitleaks     linux-x64     gitleaks/gitleaks      v8.24.3  9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c  gitleaks_{version}_linux_x64.tar.gz         gitleaks
 actionlint   linux-x64     rhysd/actionlint       v1.7.12  8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint_{version}_linux_amd64.tar.gz     actionlint
 taplo        linux-x64     tamasfe/taplo          0.10.0   8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156  taplo-linux-x86_64.gz                       taplo
+# The demo workflow (docs/demo): the workstation's versions, from the workflow repository.
+yazi         linux-x64     sxyazi/yazi            v26.9.1  9b9c39decccf8cb0ff53a7d637d38f8a79d93bbd0099f4ea9c619ef6bb392f5d  yazi-x86_64-unknown-linux-musl.zip          yazi-x86_64-unknown-linux-musl/yazi
+lazygit      linux-x64     jesseduffield/lazygit  v0.66.3  0a23f429a95f0d09db298b3c291536d818de066aa5a85c255806f0490ff6656b  lazygit_{version}_linux_x86_64.tar.gz       lazygit
+delta        linux-x64     dandavison/delta       0.20.1   69dcb4043f55c29118f408c6efd30115e0a4e0a6709253343b8c8fa814ab4a31  delta-{tag}-x86_64-unknown-linux-musl.tar.gz delta-{tag}-x86_64-unknown-linux-musl/delta
+luals        linux-x64     LuaLS/lua-language-server 3.19.2 93ad326b10f6c00911dd8c450fa098332dbd8f9f45d1052f5636a2d54479b947 lua-language-server-{tag}-linux-x64.tar.gz bin/lua-language-server
+vhs          linux-x64     charmbracelet/vhs      v0.12.1  eb33787a5b1cebf91fe0b18bd231e2d71d36c1ff4babd99ddac1a6ab411efd10  vhs_{version}_Linux_x86_64.tar.gz           vhs_{version}_Linux_x86_64/vhs
+ttyd         linux-x64     tsl0922/ttyd           1.7.7    8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55  ttyd.x86_64                                 ttyd

@@ -3,13 +3,10 @@
 [![ci](https://github.com/anhtt20172948/dotfiles/actions/workflows/ci.yml/badge.svg)](https://github.com/anhtt20172948/dotfiles/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<!--
-  HERO MEDIA PLACEHOLDER (deferred; scout report item R5).
-  Goes here: a short recording of one wallpaper change re-theming kitty, tmux,
-  local Neovim and Neovim over SSH, plus a still screenshot for the social
-  preview. Keep it reproducible (scripted, from the palette fixtures) so it can
-  be regenerated when the look changes.
--->
+![One tmux session with Neovim beside a Starship shell, shown under the Catppuccin Mocha fallback palette, then a DMS palette from a dark wallpaper, then one from a light wallpaper](docs/demo/media/hero.gif)
+
+<sub>The same session under the Mocha fallback and two DMS palettes, rendered in
+CI from the palette fixtures ([docs/demo](docs/demo/README.md)).</sub>
 
 An Arch Linux + Hyprland workstation whose colours come from the wallpaper and
 follow you everywhere. DMS derives a palette from the wallpaper, kitty applies
@@ -606,6 +603,12 @@ linters, weekly and after a release is a week old. Neovim stays on its minor
 release until the config moves on deliberately. The
 [lazy-lock update](.github/workflows/lazy-lock.yml) workflow runs `Lazy! update`
 weekly and opens a pull request when the updated plugins boot cleanly.
+
+A separate, non-blocking [demo workflow](.github/workflows/demo.yml) renders
+tmux, Neovim, yazi and lazygit under the Mocha fallback and the recorded DMS
+dark and light palettes with VHS on every pull request that touches the
+configuration, and uploads the GIFs and stills to compare
+([docs/demo](docs/demo/README.md)).
 
 ## License
 

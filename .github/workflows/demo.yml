@@ -1,0 +1,109 @@
+name: demo
+
+# Renders docs/demo/tapes against the palette fixtures (docs/demo/README.md) and
+# uploads the GIFs and stills, which double as visual regression artifacts.
+# Non-blocking for now: it is a separate workflow, the job may fail without
+# failing the run, and it needs the network (plugins, Mason, downloads).
+on:
+  pull_request:
+    paths:
+      - .config/**
+      - .tmux.conf
+      - install.sh
+      - docs/demo/**
+      - tests/fixtures/palettes/**
+      - .github/workflows/demo.yml
+  push:
+    branches: [main]
+    paths:
+      - .config/**
+      - .tmux.conf
+      - install.sh
+      - docs/demo/**
+      - tests/fixtures/palettes/**
+      - .github/workflows/demo.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # The shell pane and lazygit show recent history.
+          fetch-depth: 30
+      # A pull request checks out a merge commit; render the branch head
+      # (render.sh installs HEAD).
+      - if: github.event_name == 'pull_request'
+        run: git checkout --quiet --detach "${{ github.event.pull_request.head.sha }}"
+      # The runner's Azure mirror sometimes stalls on ffmpeg's many packages; a
+      # second attempt goes to the main Ubuntu archive.
+      - name: Install tmux, ffmpeg and python3-venv (Mason's debugpy)
+        timeout-minutes: 20
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          install() {
+            sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update &&
+              sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 \
+                install -y --no-install-recommends tmux ffmpeg python3-venv
+          }
+          install || {
+            sudo sed -i 's|http://azure.archive.ubuntu.com|http://archive.ubuntu.com|g' \
+              /etc/apt/sources.list.d/ubuntu.sources
+            install
+          }
+      # Pinned in .github/ci-tools.txt (Renovate keeps them current): the
+      # workstation's versions, lua_ls included for the Neovim pane.
+      - name: Install Neovim, Starship, yazi, lazygit, delta, LuaLS, VHS and ttyd
+        run: |
+          bash .github/install-ci-tools.sh "$RUNNER_TEMP/ci-bin" \
+            nvim starship yazi lazygit delta luals vhs ttyd
+          echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
+      # A FOSS Nerd Font for this render only. The workstation uses the patched
+      # SFMono Nerd Font Complete family, which may not be redistributed.
+      - name: Install JetBrainsMono Nerd Font 3.5.1
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/JetBrainsMono.tar.xz -o font.tar.xz
+          echo '04d5e8f903693f9dd13e16f867e994834e681eb3c72c0d337a770dcda09010cf  font.tar.xz' | sha256sum -c -
+          mkdir fonts
+          tar -xJf font.tar.xz -C fonts
+          echo "DEMO_FONT_DIR=$PWD/fonts" >> "$GITHUB_ENV"
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.cache/dotfiles-demo-nvim
+          key: demo-nvim-${{ hashFiles('.config/nvim/lazy-lock.json') }}
+      - name: Render
+        env:
+          # Ubuntu 24.04 blocks the unprivileged user namespaces Chrome's
+          # sandbox needs; the page VHS records is local.
+          VHS_NO_SANDBOX: 'true'
+        run: |
+          export DEMO_NVIM_DATA="$HOME/.cache/dotfiles-demo-nvim"
+          nvim --version | head -n 1
+          starship --version | head -n 1
+          lazygit --version
+          delta --version
+          vhs --version
+          ttyd --version
+          tmux -V
+          lua-language-server --version
+          ffmpeg -version | head -n 1
+          bash docs/demo/render.sh -o "$RUNNER_TEMP/demo"
+      - name: Upload renders
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: demo-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/demo
+          if-no-files-found: warn

@@ -69,6 +69,8 @@ install_tool() {
 	*.tar.gz | *.tar.xz) tar -xf "$file" -C "$dir" ;;
 	*.zip) unzip -q "$file" -d "$dir" ;;
 	*.gz) gunzip -c "$file" >"$dir/$bin" ;;
+	# A bare executable (ttyd.x86_64): the bin column is its name.
+	*.x86_64) mv "$file" "$dir/$bin" ;;
 	*)
 		echo "$tool: unknown archive type: $asset" >&2
 		return 1
