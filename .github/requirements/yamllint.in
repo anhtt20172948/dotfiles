@@ -1,0 +1,4 @@
+# yamllint for tests/run.sh lint in CI. Edit this file, then regenerate the
+# hash-pinned lockfile next to it (Renovate does both):
+#   uv pip compile --universal --python-version=3.12 --generate-hashes --output-file=yamllint.txt yamllint.in
+yamllint==1.38.0

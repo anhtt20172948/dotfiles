@@ -1,0 +1,9 @@
+# taplo (TOML): tests/run.sh lint runs `taplo fmt --check` and
+# `taplo lint --no-schema` on every tracked *.toml.
+
+# The yazi keymap aligns `on` / `run` / `desc` within each binding.
+[[rule]]
+include = [".config/yazi/keymap.toml"]
+
+[rule.formatting]
+align_entries = true

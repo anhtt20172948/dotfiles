@@ -1,19 +1,15 @@
 [opener]
-edit = [
-	{ run = 'nvim "$@"', block = true },
-]
-play = [
-    { run = 'vlc "$@"', block = false },
-]
+edit = [{ run = 'nvim "$@"', block = true }]
+play = [{ run = 'vlc "$@"', block = false }]
 
 [preview]
-max_width=3000
-max_height=3000
-wrap="yes"
+max_width = 3000
+max_height = 3000
+wrap = "yes"
 
 [mgr]
-ratio=[2,4,4]
-show_hidden=true
+ratio = [2, 4, 4]
+show_hidden = true
 linemode = "size_and_mtime"
 
 
@@ -22,11 +18,11 @@ linemode = "size_and_mtime"
 # Previewers and preloaders need the same rules.
 [[plugin.prepend_previewers]]
 mime = "{audio,video,image}/*"
-run  = "center-media"
+run = "center-media"
 
 [[plugin.prepend_preloaders]]
 mime = "{audio,video,image}/*"
-run  = "center-media"
+run = "center-media"
 
 # duckdb: tabular data previews; duckdb-guard falls back to plain text without the duckdb CLI.
 # JSON is left out on purpose: nested config files read far better in Yazi's

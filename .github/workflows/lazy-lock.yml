@@ -1,0 +1,106 @@
+name: lazy-lock update
+
+# Weekly `Lazy! update` of the Neovim plugins. The updated plugins must boot the
+# full config without errors (tests/smoke/nvim_plugins.sh update) before the new
+# lazy-lock.json is proposed as a pull request. Plugin code (build hooks,
+# configs) only runs in the read-only `update` job; the job holding the write
+# token receives nothing but the lockfile and the PR text.
+#
+# Needs "Allow GitHub Actions to create and approve pull requests" (Settings >
+# Actions > General). Pull requests opened with GITHUB_TOKEN do not trigger the
+# ci workflow; close and reopen the PR (or push to it) to run it.
+
+on:
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Neovim
+        run: |
+          bash .github/install-ci-tools.sh "$RUNNER_TEMP/ci-bin" nvim
+          echo "$RUNNER_TEMP/ci-bin" >> "$GITHUB_PATH"
+      - name: Update plugins and boot the full config
+        env:
+          SMOKE_OUT: ${{ runner.temp }}/smoke
+          SMOKE_BUDGET_MS: '250'
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          bash tests/smoke/nvim_plugins.sh update
+          cat "$SMOKE_OUT/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          mkdir "$RUNNER_TEMP/proposal"
+          cp .config/nvim/lazy-lock.json "$RUNNER_TEMP/proposal/"
+          {
+            echo "Weekly \`Lazy! update\` from the [lazy-lock update workflow]($RUN_URL)."
+            echo
+            cat <<'EOF'
+          The updated plugins booted the full config headless without an error
+          message (`tests/smoke/nvim_plugins.sh update`).
+
+          #### Changed plugins
+
+          EOF
+            cat "$SMOKE_OUT/lock-changes.md"
+            echo
+            cat "$SMOKE_OUT/summary.md"
+          } > "$RUNNER_TEMP/proposal/pr-body.md"
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: lazy-lock-update-smoke
+          path: ${{ runner.temp }}/smoke
+          if-no-files-found: ignore
+      - name: Upload the proposal
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: lazy-lock-proposal
+          path: ${{ runner.temp }}/proposal
+          if-no-files-found: error
+
+  pull-request:
+    needs: update
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: lazy-lock-proposal
+          path: ${{ runner.temp }}/proposal
+      # Only a lockfile of {plugin: {branch?, commit}} entries is accepted.
+      - name: Apply the new lazy-lock.json
+        env:
+          PROPOSAL: ${{ runner.temp }}/proposal
+        run: |
+          jq -e 'type == "object" and all(.[]; type == "object" and (.commit | test("^[0-9a-f]{40}$")))' \
+            "$PROPOSAL/lazy-lock.json" >/dev/null
+          cp "$PROPOSAL/lazy-lock.json" .config/nvim/lazy-lock.json
+      - name: Open or update the pull request
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: ci/lazy-lock-update
+          delete-branch: true
+          add-paths: .config/nvim/lazy-lock.json
+          commit-message: 'chore(nvim): update lazy-lock.json'
+          title: 'chore(nvim): update lazy-lock.json'
+          body-path: ${{ runner.temp }}/proposal/pr-body.md

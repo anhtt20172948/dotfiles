@@ -1,0 +1,15 @@
+# yamllint for the tracked YAML (tests/run.sh lint runs it with --strict).
+extends: default
+
+rules:
+  # Tool configs, not multi-document streams.
+  document-start: disable
+  # Long tmux and shell commands are kept on one line.
+  line-length: disable
+  # GitHub Actions' `on:` key.
+  truthy:
+    check-keys: false
+  # Renovate writes action pins as `@<sha> # vX.Y.Z`. require-starting-space
+  # still catches tmux's " #{...}" swallowed as a comment by a plain scalar.
+  comments:
+    min-spaces-from-content: 1
