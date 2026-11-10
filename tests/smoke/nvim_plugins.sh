@@ -49,6 +49,9 @@ done
 export HOME="$WORK/home" XDG_CONFIG_HOME="$WORK/config" XDG_DATA_HOME="$WORK/data"
 export XDG_STATE_HOME="$WORK/state" XDG_CACHE_HOME="$WORK/cache"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
+# Workstation mode even over SSH: on a server lazy.nvim writes a private lock
+# (configs/lazy_lock.lua), and `update` copies the config's lock back.
+export DOTFILES_HOST_ROLE=workstation
 cp -R "$ROOT/.config/nvim" "$XDG_CONFIG_HOME/nvim"
 LOCK="$XDG_CONFIG_HOME/nvim/lazy-lock.json"
 LAZY_DIR="$XDG_DATA_HOME/nvim/lazy"

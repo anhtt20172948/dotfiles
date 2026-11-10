@@ -21,6 +21,10 @@ vim.opt.rtp:prepend(lazypath)
 vim.g.mapleader = " "
 vim.g.maplocalleader = "\\"
 
+-- Servers never write the tracked lazy-lock.json (see configs/lazy_lock.lua).
+local lock = require("configs.lazy_lock")
+local lock_options = lock.options(lock.role())
+
 -- Setup lazy.nvim
 require("lazy").setup({
 	ui = { border = "rounded", backdrop = 100 },
@@ -37,6 +41,7 @@ require("lazy").setup({
 	-- Configure any other settings here. See the documentation for more details.
 	-- colorscheme that will be used when installing plugins.
 	-- install = { colorscheme = { "habamax" } },
-	-- automatically check for plugin updates
-	checker = { enabled = true },
+	-- the tracked lockfile and automatic update checks on the workstation only
+	lockfile = lock_options.lockfile,
+	checker = lock_options.checker,
 })

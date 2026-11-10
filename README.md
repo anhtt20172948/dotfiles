@@ -291,6 +291,20 @@ palette's text color; named folder icons keep their mini.icons identities.
 | `<leader>aF` / `<leader>aR` | Open Firstmate / review a worker's changes. |
 | `<leader>au` | Open the Claude account menu. |
 
+Plugin versions are pinned in the tracked `lazy-lock.json`, which only the
+workstation updates: there `:Lazy update` rewrites it and the bump lands through
+a pull request, and lazy.nvim checks for updates in the background. On a server
+([configs/lazy_lock.lua](.config/nvim/lua/configs/lazy_lock.lua)) lazy.nvim
+uses a private copy in `~/.local/state/nvim/lazy-lock.json`, replaced by the
+tracked lock on every start, so the dotfiles checkout stays clean: missing
+plugins install at the pinned commits, `:Lazy restore` (or
+`nvim --headless "+Lazy! restore" +qa`) moves installed ones to them after a
+pull, and `:Lazy update`/`sync` only change the copy. The update checker is off.
+A host is a server inside an SSH session (`SSH_CONNECTION`);
+`DOTFILES_HOST_ROLE=server` or `=workstation` overrides that, for example on a
+server whose tmux server was started outside SSH (tmux panes keep the
+`SSH_CONNECTION` of the client that started it).
+
 #### Neovim colours
 
 Neovim uses Kitty/DMS foreground and background for its neutral layers, keeping
@@ -564,6 +578,7 @@ tests/run.sh lint   # ShellCheck (LINT_FILES), actionlint, taplo (TOML), yamllin
 tests/run.sh test   # tests/*.lua in headless Neovim, tests/*_test.sh, test_material_folder_icons.py
 tests/run.sh        # both
 tests/smoke/nvim_plugins.sh   # real plugins from lazy-lock.json; needs network
+tests/smoke/nvim_lazy_lock.sh # server Lazy! sync keeps lazy-lock.json clean; clones lazy.nvim
 ```
 
 Tests use stubs instead of downloaded plugins and need no network or display;
@@ -584,6 +599,10 @@ on any parse error, missing highlighter or missing injection; headless Neovim
 never redraws, so the plain boots never run those queries.
 `tests/smoke/nvim_plugins.sh update` does the same after
 `Lazy! update` and writes the new `lazy-lock.json` back.
+`tests/smoke/nvim_lazy_lock.sh` runs the checkout's lazy.nvim loader with real
+lazy.nvim and local fixture plugins: in server mode, installing a plugin added
+by a pull, `Lazy! sync` and `Lazy! restore` leave a git checkout of the config
+clean, while a workstation `Lazy! sync` bumps its tracked lock.
 
 [CI](.github/workflows/ci.yml) runs on pull requests and pushes to `main`, with
 pinned action SHAs and checksummed tool downloads. Tool versions and checksums
@@ -596,6 +615,8 @@ live in [`.github/ci-tools.txt`](.github/ci-tools.txt) (installed by
   in a scratch `HOME`.
 - **arch**: lint and tests in an `archlinux` container with Arch's current
   tmux, Neovim and Starship, as an unprivileged user.
+- **nvim-lazy-lock**: `tests/smoke/nvim_lazy_lock.sh`, the server lockfile
+  policy against real lazy.nvim.
 - **nvim-plugins**: the real-plugin smoke test and startup budget; it does not
   block merging yet (`continue-on-error`).
 - **macos**: lint and tests on macOS 15 with stock `/bin/bash` 3.2 and BSD
