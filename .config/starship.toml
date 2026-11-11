@@ -12,10 +12,11 @@
 # - Never `purple` (ANSI 5) or `bright-black` (ANSI 8) as text: DMS makes those
 #   slots dark container tones (see .config/tmux/status.conf).
 # - Every module reads state Starship already has (env vars, the exit status,
-#   the clock) except git, which runs the git CLI so command_timeout bounds it.
-#   Nothing else shells out per prompt, which is why there is no `sudo` module.
-# - The info line: the user when it is not the login user (red for root), host
-#   over SSH, directory, git (branch, state, status, uncommitted line counts),
+#   the clock) except git, which runs the git CLI, and custom.root, which runs
+#   one `sh` to read the uid; command_timeout bounds both. Nothing else shells
+#   out per prompt, which is why there is no `sudo` module.
+# - The info line: root in red when the shell is root, host over SSH,
+#   directory, git (branch, state, status, uncommitted line counts),
 #   virtualenv or conda env, background jobs, then, right-aligned by $fill, the
 #   last command's duration and the clock. The input line: the failed command's
 #   exit status, then the prompt character.
@@ -27,7 +28,7 @@
 #   a Nerd Font: STARSHIP_CONFIG=~/.config/starship-plain.toml.
 
 format = """
-$username\
+${custom.root}\
 $hostname\
 $directory\
 $git_branch\
@@ -47,11 +48,16 @@ add_newline = true
 continuation_prompt = "[\u2219 ](cyan)"
 command_timeout = 500
 
-# Only when it is not the login user: root in red, anyone else as the host.
-[username]
-format = "[$user]($style) "
-style_root = "bold red"
-style_user = "bright-purple"
+# Root in red - locally, over SSH and after `su` or `sudo -s` - and never any
+# other user. Starship's username module always shows the user over SSH, and its
+# only off switch (a negated detect_env_vars) hides root too, so this is a custom
+# module gated on the effective uid. `sh`, not $STARSHIP_SHELL, so zsh does not
+# read .zshenv; $EUID saves the `id` fork where sh is bash.
+[custom.root]
+when = '[ "${EUID:-$(id -u)}" = 0 ]'
+shell = ["sh"]
+format = "[root]($style) "
+style = "bold red"
 
 # Only over SSH, with the same icon and colour as the tmux status bar.
 [hostname]

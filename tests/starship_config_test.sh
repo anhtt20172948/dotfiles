@@ -53,10 +53,16 @@ if main['format'] != plain['format']:
     errors.append('starship-plain.toml format differs from starship.toml')
 if set(main) != set(plain):
     errors.append(f'module tables differ: {sorted(set(main) ^ set(plain))}')
-for module in ('username', 'hostname', 'directory', 'git_branch', 'git_status', 'git_metrics',
+if main.get('custom') != plain.get('custom'):
+    errors.append('custom modules differ between the two files (they are glyph-free)')
+for module in ('custom.root', 'hostname', 'directory', 'git_branch', 'git_status', 'git_metrics',
                'python', 'conda', 'jobs', 'fill', 'cmd_duration', 'time', 'status'):
-    if f'${module}' not in main['format']:
+    if f'${module}' not in main['format'] and f'${{{module}}}' not in main['format']:
         errors.append(f'format is missing ${module}')
+# Starship's username module always shows the user over SSH, and its only gate
+# (a negated detect_env_vars) would hide root too; the root warning is custom.root.
+if '$username' in main['format']:
+    errors.append('format has $username, which shows every user over SSH')
 
 for name, config in (('starship.toml', main), ('starship-plain.toml', plain)):
     # `starship init bash` draws a right prompt only under ble.sh, so anything in
@@ -142,13 +148,16 @@ DIR=$TMP/repo/src/app
 host=$(uname -n)
 host=${host%%.*}
 
+me=$(id -un)
+
 # prompt <config> <shell> [width] [conda env]: the rendered prompt over SSH, in
 # a venv and a conda env, with two background jobs, after a 5.3 s command that
-# exited 1. Starship's config warnings go to stderr, so any stderr output fails
-# the test.
+# exited 1, plus any NAME=value pairs in PROMPT_ENV. Starship's config warnings
+# go to stderr, so any stderr output fails the test.
+PROMPT_ENV=()
 prompt() {
   local out err
-  out=$(cd "$DIR" && env -i PATH="$PATH" HOME="$TMP/home" TERM=xterm-256color \
+  out=$(cd "$DIR" && env -i PATH="$PATH" HOME="$TMP/home" TERM=xterm-256color ${PROMPT_ENV[@]+"${PROMPT_ENV[@]}"} \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 STARSHIP_LOG=warn \
     STARSHIP_CACHE="$TMP/cache" STARSHIP_CONFIG="$1" STARSHIP_SHELL="$2" PWD="$DIR" \
     SSH_CONNECTION='10.0.0.1 1 10.0.0.2 22' VIRTUAL_ENV="$TMP/.venv" \
@@ -189,6 +198,17 @@ for shell in bash zsh; do
       fail "$label: \$fill should right-align the clock at column $wide, got width $width"
     assert_contains "$label marks the failed command red" $'\e[1;31m' "$out"
     assert_lacks "$label shows no repo path above its root" "$TMP" "$out"
+    # The user name is noise unless it is root: hidden over SSH, and when the
+    # shell's user is not the login user (su to another account).
+    if [[ $me != root && $host != *"$me"* && $DIR != *"$me"* ]]; then
+      assert_lacks "$label hides the user over SSH" "$me" "$out"
+      PROMPT_ENV=(LOGNAME=someone-else)
+      assert_lacks "$label hides a user other than the login user" "$me" "$(prompt "$config" "$shell")"
+      PROMPT_ENV=()
+    fi
+    if [[ $(id -u) != 0 ]]; then
+      assert_lacks "$label shows root only to root" root "$out"
+    fi
     case $shell in
       bash) assert_contains "$label wraps escapes for readline" '\[' "$out" ;;
       zsh) assert_contains "$label wraps escapes for zle" '%{' "$out" ;;
@@ -222,14 +242,23 @@ for shell in bash zsh; do
 done
 
 # --- root: an unprivileged user namespace maps us to uid 0 ----------------------
+# Root is flagged locally, over SSH, and after `su`, which keeps the caller's
+# USER and LOGNAME.
 if command -v unshare >/dev/null && [[ $(unshare -r id -u 2>/dev/null) == 0 ]]; then
   for config in "$MAIN" "$PLAIN"; do
-    out=$(cd "$DIR" && env -i PATH="$PATH" HOME="$TMP/home" TERM=xterm-256color \
-      GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 STARSHIP_CACHE="$TMP/cache" \
-      STARSHIP_CONFIG="$config" STARSHIP_SHELL=zsh PWD="$DIR" \
-      unshare -r starship prompt --terminal-width 120 2>"$TMP/err")
-    [[ -z $(cat "$TMP/err") ]] || fail "${config##*/} as root printed warnings: $(cat "$TMP/err")"
-    assert_contains "${config##*/} warns in red when root" $'%{\e[1;31m%}root' "$out"
+    for case in local ssh su; do
+      case $case in
+        local) extra_env=() ;;
+        ssh) extra_env=('SSH_CONNECTION=10.0.0.1 1 10.0.0.2 22') ;;
+        su) extra_env=("USER=$me" "LOGNAME=$me") ;;
+      esac
+      out=$(cd "$DIR" && env -i PATH="$PATH" HOME="$TMP/home" TERM=xterm-256color ${extra_env[@]+"${extra_env[@]}"} \
+        GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 STARSHIP_CACHE="$TMP/cache" \
+        STARSHIP_CONFIG="$config" STARSHIP_SHELL=zsh PWD="$DIR" \
+        unshare -r starship prompt --terminal-width 120 2>"$TMP/err")
+      [[ -z $(cat "$TMP/err") ]] || fail "${config##*/} as root printed warnings: $(cat "$TMP/err")"
+      assert_contains "${config##*/} warns in red when root ($case)" $'%{\e[1;31m%}root' "$out"
+    done
   done
 else
   echo "skip: no unprivileged user namespaces, root warning not exercised"
@@ -255,7 +284,7 @@ for shell in "${shells[@]}"; do
     zsh) cmd='zsh -f -i' ;;
   esac
   win=$(tmux -u -L "$SOCK" new-window -P -F '#{window_id}' -t init -c "$DIR" \
-    "env -i PATH='$PATH' HOME='$TMP/home' TERM=xterm-256color GIT_CONFIG_GLOBAL=/dev/null STARSHIP_CACHE='$TMP/cache' STARSHIP_CONFIG='$MAIN' $cmd")
+    "env -i PATH='$PATH' HOME='$TMP/home' TERM=xterm-256color GIT_CONFIG_GLOBAL=/dev/null STARSHIP_CACHE='$TMP/cache' STARSHIP_CONFIG='$MAIN' SSH_CONNECTION='10.0.0.1 1 10.0.0.2 22' $cmd")
   tmux -L "$SOCK" send-keys -t "$win" "eval \"\$(starship init $shell)\"" Enter
   screen=''
   for _ in $(seq 1 50); do
@@ -267,6 +296,10 @@ for shell in "${shells[@]}"; do
     fail "$shell exited (status $(tmux -L "$SOCK" display -p -t "$win" '#{pane_dead_status}')): $screen"
   assert_contains "$shell prompt after starship init" $'\xee\x82\xba repo/src/app \xee\x82\xbc' "$screen"
   assert_contains "$shell prompt shows the branch" main "$screen"
+  assert_contains "$shell prompt over SSH shows the host" "$host" "$screen"
+  if [[ $me != root && $host != *"$me"* && $DIR != *"$me"* ]]; then
+    assert_lacks "$shell prompt over SSH hides the user" "$me" "$screen"
+  fi
   assert_contains "$shell prompt ends in the prompt character" $'\xe2\x9d\xaf' "$screen"
   assert_lacks "$shell prompt leaks no escape markers" '\[' "$screen"
   assert_lacks "$shell prompt leaks no zsh markers" '%{' "$screen"
