@@ -157,7 +157,7 @@ me=$(id -un)
 PROMPT_ENV=()
 prompt() {
   local out err
-  out=$(cd "$DIR" && env -i PATH="$PATH" HOME="$TMP/home" TERM=xterm-256color "${PROMPT_ENV[@]}" \
+  out=$(cd "$DIR" && env -i PATH="$PATH" HOME="$TMP/home" TERM=xterm-256color ${PROMPT_ENV[@]+"${PROMPT_ENV[@]}"} \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 STARSHIP_LOG=warn \
     STARSHIP_CACHE="$TMP/cache" STARSHIP_CONFIG="$1" STARSHIP_SHELL="$2" PWD="$DIR" \
     SSH_CONNECTION='10.0.0.1 1 10.0.0.2 22' VIRTUAL_ENV="$TMP/.venv" \
@@ -252,7 +252,7 @@ if command -v unshare >/dev/null && [[ $(unshare -r id -u 2>/dev/null) == 0 ]]; 
         ssh) extra_env=('SSH_CONNECTION=10.0.0.1 1 10.0.0.2 22') ;;
         su) extra_env=("USER=$me" "LOGNAME=$me") ;;
       esac
-      out=$(cd "$DIR" && env -i PATH="$PATH" HOME="$TMP/home" TERM=xterm-256color "${extra_env[@]}" \
+      out=$(cd "$DIR" && env -i PATH="$PATH" HOME="$TMP/home" TERM=xterm-256color ${extra_env[@]+"${extra_env[@]}"} \
         GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 STARSHIP_CACHE="$TMP/cache" \
         STARSHIP_CONFIG="$config" STARSHIP_SHELL=zsh PWD="$DIR" \
         unshare -r starship prompt --terminal-width 120 2>"$TMP/err")
