@@ -1,5 +1,6 @@
 -- Light-mode legibility: every syntax and text highlight group keeps its floor
--- against the light background, and dark palettes keep their colours.
+-- against the light backdrop (the palette background as kitty draws it at
+-- background_opacity over the wallpaper), and dark palettes keep their colours.
 -- CATPPUCCIN_TEST_RTP=<catppuccin checkout> enumerates the real highlight groups
 -- (tests/run.sh sets it from lazy.nvim's copy when there is one); without it
 -- only the palette derivation is checked.
@@ -84,18 +85,74 @@ local function use(fixture)
 	return assert(kitty.active)
 end
 
--- Palette derivation: light syntax >= LIGHT_SYNTAX_FLOOR, muted layers >= LIGHT_MUTED_FLOOR.
+-- HSL hue in degrees and saturation, to check lifted accents keep their identity.
+local function hue(color)
+	local r, g, b =
+		tonumber(color:sub(2, 3), 16) / 255, tonumber(color:sub(4, 5), 16) / 255, tonumber(color:sub(6, 7), 16) / 255
+	local max, min = math.max(r, g, b), math.min(r, g, b)
+	local delta = max - min
+	if delta == 0 then
+		return nil, 0
+	end
+	local h = max == r and ((g - b) / delta) % 6 or max == g and (b - r) / delta + 2 or (r - g) / delta + 4
+	return h * 60, delta / (1 - math.abs(max + min - 1))
+end
+local accents = {
+	"rosewater",
+	"flamingo",
+	"pink",
+	"mauve",
+	"red",
+	"maroon",
+	"peach",
+	"yellow",
+	"green",
+	"teal",
+	"sky",
+	"sapphire",
+	"blue",
+	"lavender",
+}
+
+-- Palette derivation: light syntax >= LIGHT_SYNTAX_FLOOR, muted layers >=
+-- LIGHT_MUTED_FLOOR, both against the backdrop rather than the palette colour.
 for _, fixture in ipairs({ "dms-light.conf", "dms-light-recorded.conf" }) do
 	local active = use(fixture)
 	assert(active.flavour == "latte", fixture .. " must derive a light flavour")
 	local colors = kitty.colors(latte)
+	local backdrop = kitty.backdrop(colors.base)
+	assert(
+		kitty.contrast(backdrop, "#000000") < kitty.contrast(colors.base, "#000000"),
+		fixture .. " backdrop must be darker than the palette background"
+	)
 	for key, color in pairs(colors) do
 		if not layers[key] then
 			local floor = muted[key] and kitty.LIGHT_MUTED_FLOOR or kitty.LIGHT_SYNTAX_FLOOR
-			local ratio = kitty.contrast(color, colors.base)
-			assert(ratio >= floor, ("%s %s %s is %.2f:1, below %s:1"):format(fixture, key, color, ratio, floor))
+			local ratio = kitty.contrast(color, backdrop)
+			assert(
+				ratio >= floor,
+				("%s %s %s is %.2f:1 on %s, below %s:1"):format(fixture, key, color, ratio, backdrop, floor)
+			)
 		end
 	end
+	-- Muted layers stay quieter than the foreground.
+	assert(kitty.contrast(colors.overlay0, backdrop) < kitty.contrast(colors.text, backdrop))
+	-- Darkening keeps each accent's hue (OKLab lightness only) and keeps the
+	-- accents apart, so syntax roles stay distinguishable.
+	local seen = {}
+	for _, key in ipairs(accents) do
+		local stock_hue = hue(latte[key])
+		local lifted_hue, saturation = hue(colors[key])
+		assert(lifted_hue and saturation > 0.2, ("%s %s %s lost its colour"):format(fixture, key, colors[key]))
+		local drift = math.abs(lifted_hue - stock_hue)
+		drift = math.min(drift, 360 - drift)
+		assert(
+			drift <= 15,
+			("%s %s hue drifted %.1f degrees (%s -> %s)"):format(fixture, key, drift, latte[key], colors[key])
+		)
+		seen[colors[key]] = true
+	end
+	assert(vim.tbl_count(seen) >= 12, fixture .. " lifted accents must stay distinct")
 end
 -- Dark palettes keep the AA floor, so their colours do not change.
 for _, fixture in ipairs({ "dms-dark.conf" }) do
@@ -171,6 +228,8 @@ local strong = {
 	"@module",
 	"@constructor",
 	"@tag",
+	"Normal",
+	"CursorLineNr",
 }
 local function hex(value)
 	return ("#%06x"):format(value)
@@ -204,7 +263,7 @@ for _, fixture in ipairs({ "dms-light.conf", "dms-light-recorded.conf" }) do
 	use(fixture)
 	apply()
 	assert(vim.o.background == "light", fixture .. " must set background=light")
-	local base = kitty.active.colors.base
+	local base = kitty.backdrop(kitty.active.colors.base)
 	local checked = 0
 	local function ratio(name)
 		local hl = vim.api.nvim_get_hl(0, { name = name, link = false })
@@ -237,8 +296,8 @@ for _, fixture in ipairs({ "dms-light.conf", "dms-light-recorded.conf" }) do
 		)
 	end
 	-- Every other text group (popups, neo-tree, pickers, git, diagnostics)
-	-- keeps AA against its own background; rules and guides stay quiet.
-	local low = ui.low_contrast(kitty.TEXT_FLOOR)
+	-- keeps the muted floor against its own background; rules and guides stay quiet.
+	local low = ui.low_contrast(kitty.text_floor(true))
 	assert(#low == 0, fixture .. " low-contrast text groups: " .. vim.inspect(vim.tbl_map(function(item)
 		return ("%s %s on %s %.2f:1"):format(item.name, item.fg, item.bg, item.ratio)
 	end, low)))
@@ -260,7 +319,7 @@ vim.api.nvim_exec_autocmds("User", { pattern = "VeryLazy" })
 assert(
 	vim.wait(1000, function()
 		local hl = vim.api.nvim_get_hl(0, { name = "TestPluginReverse", link = false })
-		return kitty.contrast(hex(hl.fg), hex(hl.bg)) >= 4.5
+		return kitty.contrast(hex(hl.fg), hex(hl.bg)) >= kitty.LIGHT_MUTED_FLOOR
 	end, 10),
 	"a plugin group defined after the colorscheme must be lifted"
 )
@@ -269,7 +328,7 @@ vim.api.nvim_exec_autocmds("User", { pattern = "LazyLoad", data = "later-plugin"
 assert(
 	vim.wait(1000, function()
 		local hl = vim.api.nvim_get_hl(0, { name = "TestLaterPlugin", link = false })
-		return kitty.contrast(hex(hl.fg), hex(hl.bg)) >= 4.5
+		return kitty.contrast(hex(hl.fg), hex(hl.bg)) >= kitty.LIGHT_MUTED_FLOOR
 	end, 10),
 	"a plugin loaded after startup must be lifted on its LazyLoad"
 )

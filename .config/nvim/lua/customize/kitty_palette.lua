@@ -36,14 +36,92 @@ function M.contrast(a, b)
 	return (math.max(x, y) + 0.05) / (math.min(x, y) + 0.05)
 end
 
-function M.ensure_contrast(color, background, foreground, floor)
-	if M.contrast(color, background) >= floor then
-		return color
+-- OKLab (Björn Ottosson): darkening along OKLab lightness keeps a colour's hue
+-- and as much chroma as sRGB allows, so lifted syntax colours stay apart
+-- instead of all fading toward the same grey-black.
+local function oklch(color)
+	local r, g, b = rgb(color)
+	r, g, b = linear(r), linear(g), linear(b)
+	local l = (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b) ^ (1 / 3)
+	local m = (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b) ^ (1 / 3)
+	local s = (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b) ^ (1 / 3)
+	local L = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s
+	local A = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s
+	local B = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+	return L, math.sqrt(A * A + B * B), math.atan2(B, A)
+end
+
+-- Linear sRGB channels for an OKLCH colour (may fall outside 0..1).
+local function oklch_linear(L, C, h)
+	local A, B = C * math.cos(h), C * math.sin(h)
+	local l = (L + 0.3963377774 * A + 0.2158037573 * B) ^ 3
+	local m = (L - 0.1055613458 * A - 0.0638541728 * B) ^ 3
+	local s = (L - 0.0894841775 * A - 1.2914855480 * B) ^ 3
+	return 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+		-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+		-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+end
+
+local function in_gamut(r, g, b)
+	local e = 1e-6
+	return r >= -e and r <= 1 + e and g >= -e and g <= 1 + e and b >= -e and b <= 1 + e
+end
+
+local function encode(channel)
+	channel = math.min(1, math.max(0, channel))
+	local value = channel <= 0.0031308 and channel * 12.92 or 1.055 * channel ^ (1 / 2.4) - 0.055
+	return math.floor(value * 255 + 0.5)
+end
+
+-- The sRGB colour at OKLab lightness L with hue h, keeping chroma up to C.
+local function oklch_hex(L, C, h)
+	local r, g, b = oklch_linear(L, C, h)
+	if not in_gamut(r, g, b) then
+		local low, high = 0, C
+		for _ = 1, 16 do
+			local mid = (low + high) / 2
+			if in_gamut(oklch_linear(L, mid, h)) then
+				low = mid
+			else
+				high = mid
+			end
+		end
+		r, g, b = oklch_linear(L, low, h)
 	end
-	-- A malformed/low-contrast terminal foreground cannot be our endpoint.
+	return ("#%02x%02x%02x"):format(encode(r), encode(g), encode(b))
+end
+
+-- Darken toward black along OKLab lightness until `floor` holds against a
+-- light background: the lightest same-hue colour that is readable.
+local function darken(color, background, floor)
+	local black = ("#%06x"):format(0)
+	if M.contrast(black, background) < floor then
+		return black
+	end
+	local L, C, h = oklch(color)
+	local low, high = 0, L
+	for _ = 1, 24 do
+		local mid = (low + high) / 2
+		if M.contrast(oklch_hex(mid, C, h), background) >= floor then
+			low = mid
+		else
+			high = mid
+		end
+	end
+	local result = oklch_hex(low, C, h)
+	return M.contrast(result, background) >= floor and result or black
+end
+
+local function light()
+	return M.active and M.active.flavour == "latte"
+end
+
+-- Blend toward the foreground until `floor` holds; when the foreground cannot
+-- reach it, toward black on a bright background and white on a dark one.
+local function blend_toward(color, background, foreground, floor)
 	local target = foreground
 	if M.contrast(target, background) < floor then
-		target = luminance(background) > 0.179 and string.format("#%06x", 0) or string.format("#%06x", 16777215)
+		target = luminance(background) > 0.179 and ("#%06x"):format(0) or ("#%06x"):format(0xffffff)
 	end
 	-- Find the smallest blend that meets the floor, including 8-bit rounding.
 	local low, high = 0, 1
@@ -58,36 +136,82 @@ function M.ensure_contrast(color, background, foreground, floor)
 	return blend(color, target, high)
 end
 
--- WCAG AA (4.5:1) is the floor for every text colour. Dark text on a light
--- background reads fainter than the same ratio inverted (thin strokes at kitty's
--- 9pt font), and Catppuccin Latte's pastel accents all land exactly on the
--- floor, so light palettes hold syntax further from the background. Muted
--- layers (comments, line numbers, punctuation, inlay hints) stay quieter than
--- syntax. Dark palettes keep the AA floor and their colours.
+-- The colour, moved just far enough from `background` to hold `floor`. Light
+-- palettes darken text on bright backgrounds along OKLab lightness (hue kept);
+-- everything else, and every dark palette, blends as before. Results are
+-- memoised: highlight scans repeat colours.
+local lifted = {}
+function M.ensure_contrast(color, background, foreground, floor)
+	if M.contrast(color, background) >= floor then
+		return color
+	end
+	local oklab = light() and luminance(background) > 0.179
+	local key = table.concat({ color, background, foreground, floor, tostring(oklab) }, ":")
+	if not lifted[key] then
+		lifted[key] = oklab and darken(color, background, floor) or blend_toward(color, background, foreground, floor)
+	end
+	return lifted[key]
+end
+
+-- Contrast floors, in one place. WCAG AA (4.5:1) is the floor for every text
+-- colour on a dark palette, which keeps its colours.
+--
+-- Light palettes need far more. Dark text on a light background reads fainter
+-- than the same ratio inverted (thin strokes at kitty's 9pt font), Catppuccin
+-- Latte's pastel accents sit on the AA floor, and kitty draws the default
+-- background at background_opacity over the wallpaper, so the background text
+-- actually sits on is darker than the palette's. Light floors are measured
+-- against that backdrop: the palette background at LIGHT_OPACITY over
+-- LIGHT_SHOW_THROUGH, a mid grey that is more conservative than the light
+-- wallpapers DMS light mode pairs with. Normal text and syntax hold WCAG AAA
+-- (7:1); muted layers (comments, line numbers, punctuation, inlay hints,
+-- neo-tree's dim and git-ignored entries, whitespace) stay quieter but hold
+-- LIGHT_MUTED_FLOOR, which is also the floor for every other text group.
+-- Cells with their own background (pills, selections) are opaque in kitty and
+-- are measured against that background.
 M.TEXT_FLOOR = 4.5
-M.LIGHT_SYNTAX_FLOOR = 6
-M.LIGHT_MUTED_FLOOR = 5
+M.LIGHT_SYNTAX_FLOOR = 7
+M.LIGHT_MUTED_FLOOR = 6
+M.LIGHT_OPACITY = 0.8
+M.LIGHT_SHOW_THROUGH = ("#%06x"):format(0x808080)
 local muted = { overlay0 = true, overlay1 = true, overlay2 = true, subtext0 = true, subtext1 = true }
 
--- The contrast floor a palette key keeps against the background.
-function M.floor(key)
-	if not (M.active and M.active.flavour == "latte") then
+-- The floor for text: syntax/normal text, or a muted layer when `quiet`.
+function M.text_floor(quiet)
+	if not light() then
 		return M.TEXT_FLOOR
 	end
-	return muted[key] and M.LIGHT_MUTED_FLOOR or M.LIGHT_SYNTAX_FLOOR
+	return quiet and M.LIGHT_MUTED_FLOOR or M.LIGHT_SYNTAX_FLOOR
+end
+
+-- The contrast floor a palette key keeps against the backdrop.
+function M.floor(key)
+	return M.text_floor(muted[key])
+end
+
+-- What text on a transparent cell is drawn over (see the floors above).
+function M.backdrop(base)
+	return light() and blend(base, M.LIGHT_SHOW_THROUGH, 1 - M.LIGHT_OPACITY) or base
 end
 
 -- Called after lazy.nvim adds Catppuccin to runtimepath. Never require the
 -- plugin while reading the plugin specs, or startup depends on load order.
 function M.colors(stock)
 	local colors = vim.tbl_extend("force", {}, stock, M.active and M.active.colors or {})
-	local foreground = colors.text
+	local foreground, backdrop = colors.text, M.backdrop(colors.base)
 	for key, color in pairs(colors) do
 		if not vim.tbl_contains({ "base", "mantle", "crust", "surface0", "surface1", "surface2" }, key) then
-			colors[key] = M.ensure_contrast(color, colors.base, foreground, M.floor(key))
+			colors[key] = M.ensure_contrast(color, backdrop, foreground, M.floor(key))
 		end
 	end
 	return colors
+end
+
+-- The accent for borders, the cursor line number and search: the terminal's
+-- cursor colour, readable as text on the backdrop.
+function M.primary(colors)
+	local color = M.active and M.active.primary or colors.lavender or colors.text
+	return M.ensure_contrast(color, M.backdrop(colors.base), colors.text, M.text_floor())
 end
 
 -- Keep syntax colours intact: reduce the selection tint, never recolour tokens.

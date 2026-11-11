@@ -64,8 +64,7 @@ for _, case in ipairs({
 		for _, name in ipairs({ "CurSearch", "IncSearch" }) do
 			local hl = vim.api.nvim_get_hl(0, { name = name, link = false })
 			assert(
-				("#%06x"):format(assert(hl.bg))
-					== (plugin and kitty.ensure_contrast(case.primary, colors.base, colors.text, 4.5) or case.primary),
+				("#%06x"):format(assert(hl.bg)) == (plugin and kitty.primary(colors) or case.primary),
 				name .. " must use DMS primary"
 			)
 			assert(kitty.contrast(("#%06x"):format(assert(hl.fg)), ("#%06x"):format(hl.bg)) >= 4.5)

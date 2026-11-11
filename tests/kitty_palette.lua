@@ -283,12 +283,30 @@ assert(select(2, theme.resolve()) == "LC_KITTY_PALETTE")
 vim.env.TMUX = nil
 vim.env.LC_KITTY_PALETTE = nil
 vim.env.LC_KITTY_PALETTE_SRC = nil
--- Light palettes hold syntax further from the background; dark ones keep AA.
+-- Light palettes hold text at WCAG AAA and muted text close to it, measured
+-- against the backdrop kitty's background_opacity shows; dark ones keep AA.
 theme.active = { flavour = "latte", colors = { base = "#f8f8f8", text = "#191c1e" } }
 assert(theme.floor("blue") == theme.LIGHT_SYNTAX_FLOOR and theme.floor("overlay2") == theme.LIGHT_MUTED_FLOOR)
+assert(theme.text_floor() == theme.LIGHT_SYNTAX_FLOOR and theme.text_floor(true) == theme.LIGHT_MUTED_FLOOR)
+assert(theme.LIGHT_SYNTAX_FLOOR >= 7 and theme.LIGHT_MUTED_FLOOR >= 5.5, "light text holds AAA, muted text near it")
 assert(theme.LIGHT_SYNTAX_FLOOR > theme.LIGHT_MUTED_FLOOR and theme.LIGHT_MUTED_FLOOR > theme.TEXT_FLOOR)
+assert(theme.LIGHT_OPACITY > 0 and theme.LIGHT_OPACITY <= 1)
+local backdrop = theme.backdrop("#f8f8f8")
+assert(backdrop ~= "#f8f8f8" and theme.contrast(backdrop, "#000000") < theme.contrast("#f8f8f8", "#000000"))
+-- Light backgrounds darken a colour along OKLab lightness: the hue stays.
+local darkened = theme.ensure_contrast("#40a02b", backdrop, "#191c1e", theme.LIGHT_SYNTAX_FLOOR)
+assert(theme.contrast(darkened, backdrop) >= theme.LIGHT_SYNTAX_FLOOR)
+local r, g, b = tonumber(darkened:sub(2, 3), 16), tonumber(darkened:sub(4, 5), 16), tonumber(darkened:sub(6, 7), 16)
+assert(g > r + 20 and g > b + 20, "a lifted green stays green, got " .. darkened)
+assert(theme.ensure_contrast("#40a02b", backdrop, "#191c1e", 30) == "#000000", "an unreachable floor yields black")
 theme.active = { flavour = "mocha", colors = { base = "#0b0f11", text = "#dfe6ee" } }
 assert(theme.floor("blue") == theme.TEXT_FLOOR and theme.floor("overlay2") == theme.TEXT_FLOOR)
+assert(theme.text_floor() == theme.TEXT_FLOOR and theme.text_floor(true) == theme.TEXT_FLOOR)
+assert(theme.backdrop("#0b0f11") == "#0b0f11", "dark palettes are measured against their own background")
+-- A dark palette keeps the sRGB blend even on a bright opaque background (a
+-- pastel cursor colour behind CurSearch): these are the pre-OKLab results.
+assert(theme.ensure_contrast("#40a02b", "#eeeeee", "#dddddd", 4.5) == "#317b21")
+assert(theme.ensure_contrast("#d20f39", "#c0c8f0", "#cdd6f4", 4.5) == "#ab0c2f")
 theme.active = nil
 assert(theme.floor("blue") == theme.TEXT_FLOOR, "plain Mocha keeps AA")
 print("kitty palette: OK")

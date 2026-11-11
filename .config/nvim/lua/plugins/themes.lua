@@ -27,8 +27,7 @@ return {
 		config = function()
 			local flavour = kitty.active and kitty.active.flavour or "mocha"
 			local palette = kitty.colors(require("catppuccin.palettes." .. flavour))
-			local primary = kitty.active and kitty.active.primary or palette.lavender
-			primary = kitty.ensure_contrast(primary or palette.lavender, palette.base, palette.text, 4.5)
+			local primary = kitty.primary(palette)
 			require("catppuccin").setup({
 				flavour = kitty.active and kitty.active.flavour or "mocha",
 				transparent_background = true,

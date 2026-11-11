@@ -8,12 +8,14 @@ return {
 		local primary = ui.primary()
 		local icons = require("lib.icons")
 		local ascii = vim.env.NVIM_ASCII == "1"
-		local function text(color, background)
-			return kitty.ensure_contrast(color, background or palette.base, palette.text, 4.5)
+		-- Transparent sections sit on the backdrop; surface pills are opaque.
+		local backdrop = kitty.backdrop(palette.base)
+		local function text(color, background, quiet)
+			return kitty.ensure_contrast(color, background or backdrop, palette.text, kitty.text_floor(quiet))
 		end
 		local colors = {
 			text = text(palette.text),
-			dim = text(palette.subtext0),
+			dim = text(palette.subtext0, nil, true),
 			green = text(palette.green),
 			mauve = text(palette.mauve),
 			red = text(palette.red),
@@ -40,7 +42,7 @@ return {
 			-- A light palette can produce dark accents. Lift the background separately
 			-- so its dark label stays readable without changing section colours.
 			local ink = string.format("#%06x", 0)
-			local background = kitty.ensure_contrast(color, ink, string.format("#%06x", 16777215), 4.5)
+			local background = kitty.ensure_contrast(color, ink, string.format("#%06x", 16777215), kitty.text_floor())
 			theme[mode] = {
 				a = { fg = ink, bg = background, gui = "bold" },
 				b = surface(palette.text),

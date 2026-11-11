@@ -2,13 +2,7 @@ local M = {}
 
 function M.primary()
 	local kitty = require("customize.kitty_palette")
-	local colors = kitty.palette()
-	return kitty.ensure_contrast(
-		kitty.active and kitty.active.primary or colors.lavender or colors.text,
-		colors.base,
-		colors.text,
-		4.5
-	)
+	return kitty.primary(kitty.palette())
 end
 
 function M.truncate(text, width)
@@ -72,13 +66,15 @@ function M.icons()
 	end
 	local kitty = require("customize.kitty_palette")
 	local colors = kitty.palette()
+	-- Icons are glyphs, not words: they keep the muted floor so they stay quieter than names.
+	local backdrop, floor = kitty.backdrop(colors.base), kitty.text_floor(true)
 	-- Always start from the provider colours, not a previous palette's adjustment.
 	icon_sources = icon_sources or vim.deepcopy(devicons.get_icons())
 	default_icon_source = default_icon_source or vim.deepcopy(devicons.get_default_icon())
 	local overrides = {}
 	for key, icon in pairs(icon_sources) do
 		overrides[key] = vim.tbl_extend("force", icon, {
-			color = kitty.ensure_contrast(icon.color, colors.base, colors.text, 4.5),
+			color = kitty.ensure_contrast(icon.color, backdrop, colors.text, floor),
 			icon = vim.env.NVIM_ASCII == "1" and "." or icon.icon,
 		})
 	end
@@ -86,7 +82,7 @@ function M.icons()
 	local default = default_icon_source
 	devicons.set_default_icon(
 		vim.env.NVIM_ASCII == "1" and "." or default.icon,
-		kitty.ensure_contrast(default.color, colors.base, colors.text, 4.5),
+		kitty.ensure_contrast(default.color, backdrop, colors.text, floor),
 		default.cterm_color
 	)
 end
@@ -116,7 +112,7 @@ function M.decorations()
 end
 
 -- Rules, guides and lualine's separator glyphs, not text: they stay quiet on purpose.
-local decorative = { "Separator", "Split", "Indent", "Whitespace", "VirtLine", "lualine_transitional_" }
+local decorative = { "Separator", "Split", "Indent", "VirtLine", "lualine_transitional_" }
 
 local function is_decorative(name)
 	for _, part in ipairs(decorative) do
@@ -127,11 +123,11 @@ local function is_decorative(name)
 	return false
 end
 
--- Text highlight groups below floor against their own background (the terminal
--- background when transparent): { name, hl, fg, bg, ratio } records.
+-- Text highlight groups below floor against their own background (the
+-- backdrop kitty shows through when transparent): { name, hl, fg, bg, ratio }.
 function M.low_contrast(floor)
 	local kitty = require("customize.kitty_palette")
-	local base = kitty.palette().base
+	local base = kitty.backdrop(kitty.palette().base)
 	local result = {}
 	for name, hl in pairs(vim.api.nvim_get_hl(0, {})) do
 		if hl.fg and not hl.link and not hl.reverse and not is_decorative(name) then
@@ -148,17 +144,19 @@ function M.low_contrast(floor)
 end
 
 -- Catppuccin, its integrations and plugins derive some text colours for dark
--- backgrounds (selection, match, blame text, lspsaga's black-on-accent pills).
--- On a light palette, lift every text group below 4.5:1 against its own
--- background. Dark palettes keep their colours.
+-- backgrounds (selection, match, blame text, lspsaga's black-on-accent pills,
+-- devicon and mini.icons hues). On a light palette, lift every text group below
+-- the muted floor against its own background, or the backdrop when
+-- transparent. Dark palettes keep their colours.
 function M.light_contrast()
 	local kitty = require("customize.kitty_palette")
 	if kitty.background() ~= "light" then
 		return
 	end
 	local text = kitty.palette().text
-	for _, low in ipairs(M.low_contrast(kitty.TEXT_FLOOR)) do
-		local lifted = kitty.ensure_contrast(low.fg, low.bg, text, kitty.TEXT_FLOOR)
+	local floor = kitty.text_floor(true)
+	for _, low in ipairs(M.low_contrast(floor)) do
+		local lifted = kitty.ensure_contrast(low.fg, low.bg, text, floor)
 		-- A kept `default` would leave the plugin's own definition in place.
 		vim.api.nvim_set_hl(0, low.name, vim.tbl_extend("force", low.hl, { fg = lifted, default = false }))
 	end
