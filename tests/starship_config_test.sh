@@ -180,8 +180,13 @@ for shell in bash zsh; do
     assert_contains "$label shows the lines added" '+2' "$out"
     assert_contains "$label shows the lines deleted" '-1' "$out"
     [[ $out =~ [0-9]{2}:[0-9]{2} ]] || fail "$label shows no clock: $out"
-    [[ $(info_width "$out") == 120 ]] ||
-      fail "$label: \$fill should right-align the clock at column 120, got width $(info_width "$out")"
+    # The info line's own width depends on the host name (CI runners have long
+    # ones), so measure it with $fill empty, then give $fill 40 columns to pad.
+    natural=$(info_width "$(prompt "$config" "$shell" 1)")
+    wide=$((natural + 40))
+    width=$(info_width "$(prompt "$config" "$shell" "$wide")")
+    [[ $width == "$wide" ]] ||
+      fail "$label: \$fill should right-align the clock at column $wide, got width $width"
     assert_contains "$label marks the failed command red" $'\e[1;31m' "$out"
     assert_lacks "$label shows no repo path above its root" "$TMP" "$out"
     case $shell in
@@ -193,9 +198,12 @@ for shell in bash zsh; do
     label="${config##*/} ($shell)"
     out=$(prompt "$config" "$shell" 120 base)
     assert_lacks "$label hides the conda base env" base "$out"
-    # Too narrow for both sides: $fill shrinks to nothing rather than failing.
+    # Too narrow for both sides: $fill shrinks to nothing rather than failing,
+    # and every module stays.
+    natural=$(info_width "$(prompt "$config" "$shell" 1)")
     out=$(prompt "$config" "$shell" 30)
-    (($(info_width "$out") > 30)) || fail "$label at 30 columns should keep every module, got: $out"
+    [[ $(info_width "$out") == "$natural" ]] ||
+      fail "$label at 30 columns should be its unpadded width $natural, got: $out"
     [[ $out =~ [0-9]{2}:[0-9]{2} ]] || fail "$label at 30 columns lost the clock: $out"
   done
   out=$(prompt "$MAIN" "$shell")
