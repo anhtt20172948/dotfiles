@@ -7,7 +7,7 @@
 # glyphs differ, and the directory is bold cyan text instead of a pill.
 
 format = """
-$username\
+${custom.root}\
 $hostname\
 $directory\
 $git_branch\
@@ -27,10 +27,11 @@ add_newline = true
 continuation_prompt = "[. ](cyan)"
 command_timeout = 500
 
-[username]
-format = "[$user]($style) "
-style_root = "bold red"
-style_user = "bright-purple"
+[custom.root]
+when = '[ "${EUID:-$(id -u)}" = 0 ]'
+shell = ["sh"]
+format = "[root]($style) "
+style = "bold red"
 
 [hostname]
 ssh_only = true
