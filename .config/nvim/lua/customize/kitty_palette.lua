@@ -461,10 +461,17 @@ function M.from_values(values)
 	end
 	local edge = light and string.format("#%06x", 16777215) or string.format("#%06x", 0)
 	colors.mantle, colors.crust = blend(bg, edge, 0.15), blend(bg, edge, 0.3)
+	-- The 16 ANSI colours, indexed 0-15, for groups that must match what the
+	-- ANSI-only tools draw (customize/tree_colors.lua: neo-tree as yazi).
+	local ansi = {}
+	for i = 0, 15 do
+		ansi[i] = values["color" .. i]
+	end
 
 	return {
 		flavour = light and "latte" or "mocha",
 		colors = colors,
+		ansi = ansi,
 		primary = values.cursor or values.url_color,
 		cursor = values.cursor,
 		selection_background = values.selection_background,

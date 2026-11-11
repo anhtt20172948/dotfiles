@@ -50,14 +50,17 @@ local defaults = config.default_component_configs or {}
 local icon = defaults.icon or {}
 local diagnostics = defaults.diagnostics or {}
 
-local directory_glyphs = vim.empty_dict()
+local directory_glyphs, directory_hls = vim.empty_dict(), vim.empty_dict()
 for _, dependency in ipairs(specs[2].dependencies) do
 	if type(dependency) == "table" and dependency[1] == "echasnovski/mini.icons" then
 		for name, entry in pairs(dependency.opts.directory) do
 			directory_glyphs[name] = entry.glyph
+			directory_hls[name] = entry.hl
 		end
 	end
 end
+-- The ANSI slots neo-tree's folders and current row are drawn in.
+local tree = require("customize.tree_colors")
 
 print(vim.json.encode({
 	setup_count = #setup_calls,
@@ -75,4 +78,6 @@ print(vim.json.encode({
 	shared_diagnostics = require("lib.icons").diagnostics,
 	diagnostic_config_calls = diagnostic_config_calls,
 	directory_glyphs = directory_glyphs,
+	directory_hls = directory_hls,
+	tree_colors = { directory = tree.DIRECTORY, icons = tree.ICONS, cursor = tree.CURSOR },
 }))
