@@ -11,21 +11,47 @@
 #   the right. Glyphs are written as \u escapes so they survive any editor.
 # - Never `purple` (ANSI 5) or `bright-black` (ANSI 8) as text: DMS makes those
 #   slots dark container tones (see .config/tmux/status.conf).
+# - Every module reads state Starship already has (env vars, the exit status,
+#   the clock) except git, which runs the git CLI so command_timeout bounds it.
+#   Nothing else shells out per prompt, which is why there is no `sudo` module.
+# - The info line: the user when it is not the login user (red for root), host
+#   over SSH, directory, git (branch, state, status, uncommitted line counts),
+#   virtualenv or conda env, background jobs, then, right-aligned by $fill, the
+#   last command's duration and the clock. The input line: the failed command's
+#   exit status, then the prompt character.
+# - The right side is $fill, not right_format: `starship init bash` draws a
+#   right prompt only under ble.sh, so right_format would drop the duration in
+#   bash. On a pane too narrow for both sides $fill shrinks to nothing and the
+#   line wraps, as any long info line does.
 # - starship-plain.toml is the same prompt in plain ASCII, for terminals without
 #   a Nerd Font: STARSHIP_CONFIG=~/.config/starship-plain.toml.
 
 format = """
+$username\
 $hostname\
 $directory\
 $git_branch\
 $git_state\
 $git_status\
+$git_metrics\
 $python\
+$conda\
+$jobs\
+$fill\
 $cmd_duration\
+$time\
 $line_break\
+$status\
 $character"""
 add_newline = true
 continuation_prompt = "[\u2219 ](cyan)"
+command_timeout = 500
+
+# Only when it is not the login user: root in red, anyone else as the host.
+[username]
+format = "[$user]($style) "
+style_root = "bold red"
+style_user = "bright-purple"
 
 # Only over SSH, with the same icon and colour as the tmux status bar.
 [hostname]
@@ -51,12 +77,23 @@ style = "bright-purple"
 style = "bold yellow"
 
 # Ahead green, behind red, the rest yellow: the tmux git segment's colours.
+# The git CLI rather than Starship's built-in gitoxide: in a 100k-file repo it
+# is 2-3x faster, and only an external command is cut off at command_timeout.
+# git_metrics follows this setting too.
 [git_status]
+use_git_executable = true
 format = "([$all_status$ahead_behind]($style) )"
 style = "yellow"
 ahead = "[\u21e1${count}](green)"
 behind = "[\u21e3${count}](red)"
 diverged = "[\u21e1${ahead_count}](green)[\u21e3${behind_count}](red)"
+
+# Lines added and deleted in tracked files since the last commit.
+[git_metrics]
+disabled = false
+format = "([+$added]($added_style) )([-$deleted]($deleted_style) )"
+added_style = "green"
+deleted_style = "red"
 
 # Only the active virtualenv: no project detection, no `python --version` call.
 [python]
@@ -67,10 +104,41 @@ symbol = "\ue606 "
 format = "[$symbol$virtualenv]($style) "
 style = "blue"
 
+# The active conda env from $CONDA_DEFAULT_ENV; base stays quiet.
+[conda]
+ignore_base = true
+symbol = "\ue715 "
+format = "[$symbol$environment]($style) "
+style = "green"
+
+[jobs]
+symbol = "\u2726"
+number_threshold = 1
+format = "[$symbol$number]($style) "
+style = "blue"
+
+# The failed command's exit code, beside the red prompt character.
+[status]
+disabled = false
+symbol = "\uf467 "
+format = "[$symbol$status]($style) "
+style = "bold red"
+
+# Blank space between the left modules and the right-aligned duration and clock.
+[fill]
+symbol = " "
+style = "none"
+
 [cmd_duration]
 min_time = 2000
-format = "[\U000f051f $duration]($style) "
+format = "[\U000f051f $duration]($style)"
 style = "yellow"
+
+[time]
+disabled = false
+time_format = "%H:%M"
+format = "[ \uf43a $time]($style)"
+style = "white"
 
 [character]
 success_symbol = "[\u276f](bold cyan)"
