@@ -74,7 +74,8 @@ done
 # (claude-code) and exactly the palettes theme.ts defines.
 crew=$ROOT/$MODS/crew-watch
 options=$(jq -r '.userConfig.theme | select(.default == "default") | .options[]' "$crew/.claude-plugin/plugin.json")
-[[ $(head -n2 <<<"$options" | paste -sd' ') == "default claude-code" ]] || fail "crew-watch Theme options must start with default, claude-code"
+[[ $(jq -r '.userConfig.theme.options[:2] | join(" ")' "$crew/.claude-plugin/plugin.json") == "default claude-code" ]] ||
+	fail "crew-watch Theme options must start with default, claude-code"
 offered=$(sed '/^default$/d; /^claude-code$/d' <<<"$options" | sort)
 defined=$(sed -n "s/^  '\{0,1\}\([a-z-]*\)'\{0,1\}: {\$/\1/p" "$crew/hooks/theme.ts" | sort)
 [[ -n $offered && $offered == "$defined" ]] || fail "crew-watch Theme options '$offered' differ from theme.ts palettes '$defined'"
