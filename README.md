@@ -33,7 +33,8 @@ it on Ubuntu, Arch Linux and stock macOS.
   carry the structure.
 - **One accent, one shape.** Cyan (ANSI 6, which DMS fills with its primary
   colour) is the only marker of what is active: the kitty tab, the tmux session
-  pill, current window and pane border, the fzf pointer, yazi's hovered row,
+  pill, current window and pane border, the fzf pointer, yazi's hovered row
+  and neo-tree's current row,
   Neovim's borders and the prompt's directory. Pills and tabs share lualine's
   slanted caps, and kitty's tab bar appears only with two or more tabs.
 - **One prompt on every host.** [.config/starship.toml](.config/starship.toml)
@@ -319,7 +320,8 @@ The DMS cursor colour (or URL colour when available) supplies borders, cursor an
 active line accents. Neovim, sidebars, status lines and all popup surfaces use
 transparent backgrounds, sharing Kitty's terminal opacity. Popup borders remain
 visible, while cursor lines, visual selections and selected menu entries keep a
-subtle surface fill. Contrast is measured against the Kitty/DMS background
+subtle surface fill (neo-tree's current row is the accent pill instead, as in
+yazi; see below). Contrast is measured against the Kitty/DMS background
 behind the transparent window; for light palettes, that background as kitty
 draws it at 0.8 opacity over the wallpaper.
 
@@ -333,12 +335,25 @@ readonly variables.
 
 File icons retain nvim-web-devicons' per-filetype colours, adjusted to at least
 4.5:1 contrast against the resolved terminal background, including the generic
-file icon. Neo-tree, Snacks file pickers and Lualine use these colours;
-mini.icons folder icons keep their existing appearance. `NVIM_ASCII=1` retains
-the ASCII fallback. Theme reloads recompute from the original icon colours.
+file icon. Neo-tree, Snacks file pickers and Lualine use these colours.
+`NVIM_ASCII=1` retains the ASCII fallback. Theme reloads recompute from the original icon colours.
 `tests/nvim_icons.lua` covers palette changes without plugins; with the installed
 plugins, run `nvim --headless -u NONE -i NONE -l tests/helpers/check_devicon_colors.lua "$PWD"`
 (and repeat with `NVIM_ASCII=1`) to check the providers and picker formatter.
+
+Neo-tree is drawn as yazi draws the same tree. Folders (icon and name), the
+named mini.icons folder icons and the current row are the ANSI slots yazi's
+theme names, resolved through the kitty palette instead of taken from
+Catppuccin (`customize/tree_colors.lua`): folders are blue (ANSI 4), each
+mini.icons group has the slot yazi uses for those folder names (which-key's
+mini.icons icons share these groups), and the current row is yazi's hovered-row
+pill, black on cyan (ANSI 0 on 6). Neovim's floors still apply: on a light
+palette a slot below them is darkened along OKLab lightness, keeping its hue,
+so neo-tree is darker than yazi there. Folder names are the common case (a
+light palette's ANSI 4 sits under the 7:1 text floor); the pale bright slots
+11, 13 and 14 shift the most. On a dark palette every slot clears the floor and
+the colours are identical. `tests/test_material_folder_icons.py` keeps the slots and glyphs
+equal in both configs; `tests/nvim_tree_colors.lua` checks the derived colours.
 
 ### The ANSI slot contract
 

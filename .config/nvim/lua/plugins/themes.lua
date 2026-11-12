@@ -69,6 +69,8 @@ return {
 				},
 				highlight_overrides = {
 					all = function(colors)
+						-- neo-tree's folders and current row as yazi draws them.
+						local tree = require("customize.tree_colors").highlights(colors)
 						return vim.tbl_deep_extend("force", {
 							CursorLineNr = { fg = primary },
 							Cursor = { fg = colors.base, bg = primary },
@@ -105,7 +107,7 @@ return {
 							rainbow4 = { fg = colors.green },
 							rainbow5 = { fg = colors.peach },
 							rainbow6 = { fg = colors.flamingo },
-						}, require("customize.transparent").highlights(colors, primary))
+						}, require("customize.transparent").highlights(colors, primary), tree)
 					end,
 				},
 				color_overrides = { [flavour] = palette },

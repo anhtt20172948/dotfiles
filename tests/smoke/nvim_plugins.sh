@@ -110,7 +110,7 @@ boot() {
 # (the offline suite has no plugins and runs them without it).
 catppuccin_cases() {
 	local name status=0
-	for name in kitty_palette_follow nvim_light_contrast nvim_transparency nvim_visual; do
+	for name in kitty_palette_follow nvim_light_contrast nvim_transparency nvim_tree_colors nvim_visual; do
 		if CATPPUCCIN_TEST_RTP="$LAZY_DIR/catppuccin" TMUX='' \
 			nvim --headless -u NONE -i NONE -l "$ROOT/tests/$name.lua" "$ROOT" >"$OUT/$name.log" 2>&1; then
 			echo "ok   $name ($(tail -n 1 "$OUT/$name.log"))"

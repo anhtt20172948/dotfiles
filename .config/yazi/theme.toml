@@ -1,22 +1,51 @@
 # No [flavor]: yazi falls back to its built-in theme, which uses terminal colours,
 # so the file manager follows the terminal palette (kitty, and through it DMS).
+# The exception is the preset's icon colours (fixed Material tones): folders and
+# named folders are set here; file-type icons keep the preset's.
+
+# neo-tree draws its folders and current row from these same ANSI slots
+# (.config/nvim/lua/customize/tree_colors.lua), so the two read as one system;
+# tests/test_material_folder_icons.py keeps them in step.
 
 # The hovered row is the accent: ANSI cyan (DMS primary), the same marker as the
-# tmux current window and the fzf pointer. Upstream reverses the row's colours.
+# tmux current window, the fzf pointer and neo-tree's current row. Upstream
+# reverses the row's colours.
 [indicator]
 parent = { fg = "black", bg = "cyan" }
 current = { fg = "black", bg = "cyan", bold = true }
 
+# The preset's rules with the slot contract applied (media is lightmagenta, not
+# magenta; nothing is darkgray), owned here so the folder-name colour is
+# explicit: folders are blue, like neo-tree's directory names.
+[filetype]
+rules = [
+  { mime = "**/image/*", fg = "yellow" },
+  { mime = "**/{audio,video}/*", fg = "lightmagenta" },
+  { mime = "**/application/{zip,rar,7z*,tar,gzip,xz,zstd,bzip*,lzma,compress,archive,cpio,arj,xar,ms-cab*}", fg = "red" },
+  { mime = "**/application/{pdf,doc,rtf}", fg = "cyan" },
+  { mime = "vfs/{absent,stale}", fg = "gray" },
+  { url = "*", is = "orphan", bg = "red" },
+  { url = "*", is = "exec", fg = "green" },
+  { url = "*", is = "dummy", bg = "red" },
+  { url = "*/", is = "dummy", bg = "red" },
+  { url = "*/", fg = "blue" },
+]
+
 # Named directory icons (synced with neo-tree/mini.icons): distinct Material Design
 # folder-* variants in the Nerd Fonts PUA, verified to render in kitty.
-# Colours are ANSI names (the terminal's 16-colour palette), never hex. They
-# follow the old catppuccin mapping: mauve->lightmagenta, blue->blue,
-# teal->cyan, sapphire->lightcyan, peach->yellow, yellow->lightyellow,
-# green->green, red->red, overlay_1 (muted)->gray. Not darkgray: that is ANSI 8,
-# a surface tone in DMS's palette (under 2:1 on the background), and magenta
-# (ANSI 5) is a dark container tone there; neither is ever used as text.
+# Colours are ANSI names (the terminal's 16-colour palette), never hex. Each
+# mini.icons group neo-tree uses has one slot (tree_colors.lua): Azure->blue,
+# Blue->lightcyan, Cyan->cyan, Green->green, Grey->gray, Orange->yellow,
+# Purple->lightmagenta, Red->red, Yellow->lightyellow. Not darkgray: that is
+# ANSI 8, a surface tone in DMS's palette (under 2:1 on the background), and
+# magenta (ANSI 5) is a dark container tone there; neither is ever used as text.
 # ratatui names: gray = ANSI 7, darkgray = 8, white = 15.
+#
+# Any other folder gets neo-tree's closed-folder glyph in blue. The preset's
+# fallback is a fixed Material light blue that ignores the palette (and is too
+# light to read on a light one).
 [icon]
+prepend_conds = [{ if = "dir", text = "󰉋", fg = "blue" }]
 prepend_dirs = [
   { name = "src", text = "󰝰", fg = "lightmagenta" },
   { name = "components", text = "󰉓", fg = "blue" },

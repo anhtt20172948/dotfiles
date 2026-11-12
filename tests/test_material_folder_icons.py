@@ -49,12 +49,24 @@ EXPECTED_GROUPS = {
 }
 
 
+# ratatui colour names (yazi) -> ANSI slot: gray = 7, darkgray = 8, white = 15.
+YAZI_SLOTS = {
+    "black": 0, "red": 1, "green": 2, "yellow": 3, "blue": 4, "magenta": 5, "cyan": 6, "gray": 7,
+    "darkgray": 8, "lightred": 9, "lightgreen": 10, "lightyellow": 11, "lightblue": 12,
+    "lightmagenta": 13, "lightcyan": 14, "white": 15,
+}
+
+
 def expected_icons():
     return {name: glyph for glyph, names in EXPECTED_GROUPS.items() for name in names}
 
 
 def parse_yazi_prepend_dirs(theme):
     return [(entry["name"], entry["text"]) for entry in theme["icon"]["prepend_dirs"]]
+
+
+def load_yazi():
+    return tomllib.loads(YAZI.read_text(encoding="utf-8"))
 
 
 @functools.cache
@@ -84,6 +96,41 @@ class MaterialFolderIconsTest(unittest.TestCase):
 
         self.assertEqual(expected, dict(yazi_entries))
         self.assertEqual(expected, inspect_neo_tree()["directory_glyphs"])
+
+    def test_yazi_named_directory_colours_are_neo_trees_slots(self):
+        # neo-tree resolves each mini.icons group to one ANSI slot through kitty's
+        # palette (customize/tree_colors.lua); yazi must name that same slot.
+        config = inspect_neo_tree()
+        slots = config["tree_colors"]["icons"]
+        yazi = {entry["name"]: entry["fg"] for entry in load_yazi()["icon"]["prepend_dirs"]}
+        self.assertEqual(set(slots), set(config["directory_hls"].values()))
+        for name, group in config["directory_hls"].items():
+            with self.subTest(directory=name, group=group):
+                self.assertEqual(slots[group], YAZI_SLOTS[yazi[name]])
+
+    def test_yazi_plain_folders_are_neo_trees_directory_slot_and_glyph(self):
+        config = inspect_neo_tree()
+        directory = config["tree_colors"]["directory"]
+        theme = load_yazi()
+        dir_conds = [c for c in theme["icon"].get("prepend_conds", []) if "dir" in c["if"]]
+        # Without it yazi falls back to the preset's fixed, palette-blind colour.
+        self.assertEqual(1, len(dir_conds), "yazi needs exactly one dir icon in [icon] prepend_conds")
+        self.assertEqual({"if", "text", "fg"}, set(dir_conds[0]))
+        self.assertEqual("dir", dir_conds[0]["if"])
+        self.assertEqual(config["folder_closed"], dir_conds[0]["text"])
+        self.assertEqual(directory, YAZI_SLOTS[dir_conds[0]["fg"]])
+        # The folder-name rule: the first plain `*/` rule decides every folder name.
+        names = [r for r in theme["filetype"]["rules"] if r.get("url") == "*/" and "is" not in r]
+        self.assertEqual(directory, YAZI_SLOTS[names[0]["fg"]])
+
+    def test_yazi_hovered_row_is_neo_trees_current_row(self):
+        cursor = inspect_neo_tree()["tree_colors"]["cursor"]
+        indicator = load_yazi()["indicator"]
+        for row in ("parent", "current"):
+            with self.subTest(row=row):
+                self.assertEqual(cursor["fg"], YAZI_SLOTS[indicator[row]["fg"]])
+                self.assertEqual(cursor["bg"], YAZI_SLOTS[indicator[row]["bg"]])
+        self.assertEqual(cursor["bold"], indicator["current"].get("bold", False))
 
     def test_neo_tree_runtime_configuration_is_single_and_preserves_options(self):
         config = inspect_neo_tree()
