@@ -362,7 +362,9 @@ built-in theme (no flavour), tmux, lazygit, lazydocker, duckdb, Starship, bat
 (`.config/bat`), delta (the `[delta]` section of `.config/git/config`, also
 used by lazygit) and fzf (`.config/fzf/fzfrc` for the shell, read through
 `FZF_DEFAULT_OPTS_FILE`; the tmux pickers use the same spec from
-`.config/tmux/scripts/fzf-colors.sh`). They follow one slot contract, because
+`.config/tmux/scripts/fzf-colors.sh`) and the Claude Code Crew Monitor's
+default theme (crew-watch, `TERMINAL_SLOTS` in its `hooks/theme.ts`). They
+follow one slot contract, because
 DMS's dank16 palette gives two slots dark tones whatever the wallpaper:
 
 - text uses ANSI 1-4, 6, 7, 9-15 or the default foreground;
@@ -380,7 +382,8 @@ commented exceptions cover kitty palettes, crew-watch named palettes, pixel-pet
 sprite artwork, test fixtures/assertions, documentation, and generated
 dependency locks. `tests/palette_contract.py` (run by the same test) also
 rejects truecolor and 256-colour escapes, enforces the slot contract in tmux,
-fzf, shell, Starship, yazi, lazygit, lazydocker and duckdb configuration, and
+fzf, shell, Starship, yazi, lazygit, lazydocker, duckdb and crew-watch
+configuration, and
 checks every text slot they use at 4.5:1 against Catppuccin Mocha and recorded
 DMS dark and light palettes (`tests/fixtures/palettes/`). kitty's
 `kitten themes` downloads other terminal themes on demand, so none are

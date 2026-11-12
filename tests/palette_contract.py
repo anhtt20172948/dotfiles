@@ -14,7 +14,8 @@ The checks, over every tracked file outside the documented exceptions:
   1. no truecolor or 256-colour escapes (38;2 / 48;2 / 38;5 / 48;5), no rgb()
      literals outside the Hyprland baselines, no tmux colourN;
   2. no text in ANSI 0, 5 or 8 in tmux styles, fzf specs, shell SGR escapes,
-     yazi, lazygit/lazydocker, duckdb and Starship (black on its own coloured
+     yazi, lazygit/lazydocker, duckdb, Starship and crew-watch's default
+     theme (black on its own coloured
      background, a pill, is fine); no ANSI 0 selection surface; the fzf spec
      in fzf-colors.sh and fzfrc identical;
   3. every text slot those configs use reaches 4.5:1 against the background of
@@ -294,6 +295,26 @@ def check_duckdb():
             use_text(DUCKDB_NAMES[colour], where)
 
 
+def check_crew_watch():
+    """crew-watch's default theme: its TERMINAL_SLOTS table in hooks/theme.ts.
+    Every role is text except `border` (rules, bar tracks, frames); `null` is
+    the terminal's own foreground. The rest of theme.ts is named hex palettes,
+    which stay exempt as explicitly selectable themes."""
+    name = ".config/claude-mods/crew-watch/hooks/theme.ts"
+    table = re.search(r"^export const TERMINAL_SLOTS = \{(.*?)\}", (ROOT / name).read_text(), re.M | re.S)
+    if not table:
+        fail(name, "TERMINAL_SLOTS is missing")
+        return
+    for role, slot in re.findall(r"(\w+):\s*(null|\d+)", table.group(1)):
+        where = "{} (TERMINAL_SLOTS.{})".format(name, role)
+        if slot == "null":
+            continue
+        if int(slot) > 15:
+            fail(where, "ANSI {} is not one of the 16 palette slots".format(slot))
+        elif role != "border":
+            use_text(int(slot), where)
+
+
 # --- 3. contrast against the fixture palettes ----------------------------------
 def palette(path):
     colours = {}
@@ -344,6 +365,7 @@ def main():
     check_lazy(".config/lazygit/config.yml")
     check_lazy(".config/lazydocker/config.yml")
     check_duckdb()
+    check_crew_watch()
     for name in (".config/starship.toml", ".config/starship-plain.toml"):
         if (ROOT / name).is_file():
             check_starship(name)

@@ -18,12 +18,46 @@ follows secondmate homes, and shows a summary in the status line. The layout tak
 
 ## Look
 
+The default theme draws the pane in the terminal's own 16 colours, so it
+matches kitty, neo-tree and yazi in dark and light mode alike: kitty resolves
+each ANSI slot through its palette, which DMS rewrites when it switches mode,
+and the open pane changes with it at once. The slots follow the
+[ANSI slot contract](../../../README.md#the-ansi-slot-contract) and the slots
+neo-tree and yazi already use:
+
+| Role | Slot | Same slot elsewhere |
+| --- | --- | --- |
+| text | the terminal's foreground | fzf `fg:-1` |
+| subtle (metadata) | 7, gray | fzf `info:7`, yazi's gray |
+| border (frames, rules, bar tracks) | 8, bright black | tmux and fzf borders |
+| success | 2, green | |
+| error (blocked) | 1, red | |
+| claude (amber) and warning | 3, yellow | neo-tree and yazi orange icons |
+| codex, permission (blue) | 4, blue | neo-tree and yazi folders |
+| suggestion | 6, cyan | |
+| merged (purple) | 13, bright magenta | neo-tree and yazi purple icons |
+
+Every text role but purple keeps to slots 1 to 7, which DMS keeps legible on its
+light palette; its bright 11 (yellow) is under 3:1 there, so warning shares
+Claude's yellow, and the status glyph or word still tells them apart. DMS's
+gray (7) is about as strong as its foreground, so on DMS metadata reads at full
+strength and the hierarchy comes from weight (bold titles) and the dim cards at
+rest; with kitty's Catppuccin fallback, 7 is a softer gray. Dim text is no way
+out: kitty draws it at 40% (`dim_opacity`), about 2.5:1 on a light palette.
+
+The pane names a slot as `ansi256(0)` to `ansi256(15)` (SGR `38;5;n`), which a
+terminal draws from its 16-colour palette like SGR 30-37 and 90-97: the engine
+refuses `ansi:blue` in a mod's tree and draws a bare `blue` in no colour.
+The pane's background is the engine's own fill (see
+[Pane background](#pane-background)), which follows Claude Code's theme; with
+Claude Code's theme on `auto`, it turns light and dark with kitty too.
+
 All themes use `paneStyles()` in `hooks/theme.ts` for the same visual rules:
 rounded frames in `border` for every zone, stat tile and help box; bold `text`
 for titles (including card names and detail headings); regular `subtle` for
 metadata; and regular `border` for heading rules, the footer separator and bar
-tracks. Each palette defines those roles; `default` resolves them through the
-engine's theme. Agent cards and their expanded details use their harness colour:
+tracks. `default` maps those roles to terminal slots, each palette defines them
+in hex, and `claude-code` resolves them through the engine's theme. Agent cards and their expanded details use their harness colour:
 Claude amber, Codex blue, other harnesses neutral. Running and blocked cards
 use full colour; quiet, paused, stale and done cards are dim. The status glyph
 and word keep the state readable, with blocked status in red.
@@ -383,20 +417,26 @@ empty defaults to the session's working directory), `intervalSeconds`
 cached in `~/.cache/crew-watch/cache.json` so refreshes read only appended
 content.
 
-The `theme` option picks the dashboard's colours. `default` uses Claude Code's
-own theme keys, so the pane follows your theme; every other value maps the
+The `theme` option picks the dashboard's colours. `default` maps the
 dashboard's roles (text, subtle, success, warning, blocked, merged, the
-per-harness accents and borders) to one palette, defined once in
-`hooks/theme.ts`. A theme changes colours only, never text, layout or
-truncation. Palettes are truecolor; without `COLORTERM=truecolor` they use the
-nearest 256-colour index, and `NO_COLOR` turns colour off. Light palettes are
-for light terminals and dark palettes for dark ones: a light palette on a dark
-terminal is not legible by design. Each role keeps at least 4.5:1 contrast
-(text, subtle) or 3:1 (accents) on its palette's own background.
+per-harness accents and borders) to the terminal's 16 ANSI colours (see
+[Look](#look)), so the pane follows kitty's palette in dark and light mode;
+`claude-code` uses Claude Code's own theme keys, so the pane follows your
+Claude Code theme; every other value maps the roles to one palette, defined
+once in `hooks/theme.ts`. A theme changes colours only, never text, layout or
+truncation. `default` draws the same slots with or without truecolor; the
+palettes are truecolor and without `COLORTERM=truecolor` use the nearest
+256-colour index. `NO_COLOR` turns colour off in `default` and the palettes.
+Light palettes are for light terminals and dark palettes for dark ones: a light
+palette on a dark terminal is not legible by design. Each palette role keeps at
+least 4.5:1 contrast (text, subtle) or 3:1 (accents) on its palette's own
+background; `tests/palette_contract.py` holds `default`'s slots to the ANSI
+slot contract and checks their contrast on the fixture palettes.
 
 | `theme` | Palette | Terminal |
 | --- | --- | --- |
-| `default` | Claude Code's theme keys | any |
+| `default` | the terminal's 16 colours (kitty's, from DMS) | any, dark or light |
+| `claude-code` | Claude Code's theme keys | any |
 | `tokyo-night` | Tokyo Night | dark |
 | `catppuccin-mocha` | Catppuccin Mocha | dark |
 | `catppuccin-latte` | Catppuccin Latte | light |

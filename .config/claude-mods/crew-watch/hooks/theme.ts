@@ -2,10 +2,13 @@
  * Colour themes for the dashboard. Pure data and pure functions: no engine calls.
  *
  * The dashboard names colours by semantic role (the engine's own theme keys).
- * The `default` theme leaves those keys alone, so the pane follows the person's
- * Claude Code theme. Every other theme maps each role to one hex colour of a
- * well-known palette, defined once below. A theme only changes colours: no
- * layout, width, truncation or text.
+ * The `default` theme maps each role to one of the terminal's 16 ANSI colours,
+ * so the terminal draws it from its own palette: kitty's here, which DMS
+ * rewrites for dark and light mode, so the pane follows both like every other
+ * tool in this setup. The `claude-code` theme leaves the keys alone, so the
+ * pane follows the person's Claude Code theme. Every other theme maps each
+ * role to one hex colour of a well-known palette, defined once below. A theme
+ * only changes colours: no layout, width, truncation or text.
  *
  * Gauges (▰▱) are glyphs inside a line of text, so a gauge takes its line's
  * role colour. A bar (━ filled, ─ the rest) and the activity chart draw their
@@ -25,7 +28,35 @@ export type Palette = {
   colors: Record<Role, string>
 }
 
+/** The terminal's palette: the default, and what this setup's kitty draws. */
 export const DEFAULT_THEME = 'default'
+/** The engine's theme keys, drawn as Claude Code's own theme colours them. */
+export const ENGINE_THEME = 'claude-code'
+
+/**
+ * The default theme: each role's ANSI slot, or `null` for the terminal's own foreground. The terminal
+ * resolves a slot through its palette at draw time, so the pane changes with kitty's dark and light
+ * palettes the moment DMS switches them, with no file to read or reload.
+ *
+ * The slots follow the repository's ANSI slot contract (README, "The ANSI slot contract"), and match the
+ * other tools where a role overlaps: text is the terminal foreground and metadata gray (7), as fzf's
+ * `fg:-1` and `info:7` and yazi's gray; borders and tracks the border tone (8), as tmux's and fzf's
+ * borders; Claude amber is yellow (3), the slot neo-tree and yazi give their orange icons; Codex blue
+ * is blue (4), their folder colour; purple is bright magenta (13), never magenta (5), a dark container
+ * tone in DMS's palette. Warning shares Claude's yellow: the bright yellow (11) is under 3:1 on a light
+ * palette, and every text role but purple keeps to slots 1-7, which read on DMS's dark and light palettes.
+ */
+export const TERMINAL_SLOTS = {
+  text: null, subtle: 7, success: 2, warning: 3, error: 1, merged: 13, permission: 4, suggestion: 6, claude: 3, codex: 4, border: 8,
+} as const satisfies Record<Role, number | null>
+
+/**
+ * The engine colour for one ANSI slot, 0 to 15. The first 16 of the 256 indexes are the terminal's own
+ * 16 colours, so kitty draws `ansi256(4)` (SGR 38;5;4) from its palette exactly as SGR 34. A mod cannot
+ * name the slot any other way: the engine refuses `ansi:blue` in a mod's tree, and draws a bare `blue`
+ * in no colour.
+ */
+export const ansiColor = (slot: number): string => `ansi256(${slot})`
 
 export const PALETTES = {
   'tokyo-night': {
@@ -70,9 +101,9 @@ export const PALETTES = {
   },
 } satisfies Record<string, Palette>
 
-export type ThemeName = typeof DEFAULT_THEME | keyof typeof PALETTES
+export type ThemeName = typeof DEFAULT_THEME | typeof ENGINE_THEME | keyof typeof PALETTES
 
-export const THEME_NAMES: readonly string[] = [DEFAULT_THEME, ...Object.keys(PALETTES)]
+export const THEME_NAMES: readonly string[] = [DEFAULT_THEME, ENGINE_THEME, ...Object.keys(PALETTES)]
 
 export const isThemeName = (name: string): name is ThemeName => THEME_NAMES.includes(name)
 
@@ -158,9 +189,21 @@ export const harnessStyle = (name: string): HarnessStyle => {
   return CLAUDE_NAMES.test(key) ? HARNESS_STYLES.claude : CODEX_NAMES.test(key) ? HARNESS_STYLES.codex : HARNESS_STYLES.other
 }
 
+/**
+ * The default theme's painter. A slot is the same on any colour terminal, truecolor or not; a role it does not
+ * know stays the engine key. `null` (text) sets no colour, so the terminal draws its own foreground.
+ */
+const terminalPainter = (support: ColorSupport): Paint => role => {
+  if (support.isNoColor) return undefined
+  if (role === undefined || !Object.hasOwn(TERMINAL_SLOTS, role)) return role
+  const slot: number | null = TERMINAL_SLOTS[role as Role]
+  return slot === null ? undefined : ansiColor(slot)
+}
+
 export const themePainter = (name: string, support: ColorSupport): Paint => {
-  // The engine has no border key: the default theme keeps the log box's old colour.
-  if (!isThemeName(name) || name === DEFAULT_THEME) return role => (role === 'border' ? 'subtle' : role === 'codex' ? 'permission' : role)
+  if (!isThemeName(name) || name === DEFAULT_THEME) return terminalPainter(support)
+  // The engine has no border key: the engine's theme keeps the log box's old colour.
+  if (name === ENGINE_THEME) return role => (role === 'border' ? 'subtle' : role === 'codex' ? 'permission' : role)
   const { colors } = PALETTES[name]
   return role => {
     if (support.isNoColor) return undefined
