@@ -4,13 +4,16 @@ import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import type { CrewHistory, CrewMember, CrewReport, ModelUsage, QuotaFigure, QuotaReading } from '../types'
-import { PALETTES, THEME_NAMES, themePainter } from '../hooks/theme'
+import { DEFAULT_THEME, ENGINE_THEME, PALETTES, THEME_NAMES, themePainter } from '../hooks/theme'
 import { accountFromLimits } from '../hooks/account'
 import { callTokensText, cells, clockText, estimateText, quotaRows, toolTokenNote, toolTokenText } from '../hooks/format'
 import { barParts, logEntries, logKey, runnerParts } from '../hooks/view'
 import type { RunnerPart } from '../hooks/view'
 
 const NOW = 1_800_000_000_000
+
+/** What a role draws in the default theme, the one a test without a theme option runs. */
+const ink = themePainter(DEFAULT_THEME, { isNoColor: false, isTruecolor: true })
 
 const KEY = 'claude|andang|seven_day'
 const OTHER = 'claude|thanhnv|seven_day'
@@ -341,9 +344,9 @@ test('the pane draws a header, the six zones in their own boxes in order, and a 
   expect(await textAt(ui, `quota-bar-5h-${KEY}`)).toBe(bar(53))
   for (const key of [`quota-bar-${OTHER}`, `quota-bar-5h-${OTHER}`]) expect(await ui.find({ key })).toBeUndefined()
   // The provider takes its harness's icon and colour, as do its bars; labels are meta, the account plain text.
-  expect(((await ui.find({ key: `quota-line-${CODEX}` }) as Drawn).children ?? []).map(t => [textOf(t), (t as Drawn).props?.color])).toEqual([['◆ codex', 'permission'], [' Plus', 'text']])
-  expect(((await ui.find({ key: `quota-bar-5h-${CODEX}` }) as Drawn).children?.[0] as Drawn).props?.color).toBe('permission')
-  expect(((await ui.find({ key: `quota-bar-5h-${KEY}` }) as Drawn).children?.[0] as Drawn).props?.color).toBe('claude')
+  expect(((await ui.find({ key: `quota-line-${CODEX}` }) as Drawn).children ?? []).map(t => [textOf(t), (t as Drawn).props?.color])).toEqual([['◆ codex', ink('codex')], [' Plus', ink('text')]])
+  expect(((await ui.find({ key: `quota-bar-5h-${CODEX}` }) as Drawn).children?.[0] as Drawn).props?.color).toBe(ink('codex'))
+  expect(((await ui.find({ key: `quota-bar-5h-${KEY}` }) as Drawn).children?.[0] as Drawn).props?.color).toBe(ink('claude'))
   expect(accounts.some(line => /source|est|uncalibrated|tools direct|measured|neither exact/.test(line))).toBe(false)
   expect(shown.some(line => /61%|average|total quota/i.test(line))).toBe(false)
   // Usage by Model: the quota week by default, one row per model in its harness's colour, then the total.
@@ -353,7 +356,7 @@ test('the pane draws a header, the six zones in their own boxes in order, and a 
   expect(await textAt(ui, 'usage-codex-gpt-6.1-sol')).toBe(`${'◆ gpt-6.1-sol'.padEnd(67)}      8    800   8.0k   800k    40k   849k      1`)
   expect(await textAt(ui, 'usage-total')).toBe(`${'total'.padEnd(67)}     60   6.0k    60k  6.00M   300k  6.37M      3`)
   const modelColor = async (key: string) => (((await ui.find({ key }) as Drawn).children?.[0]) as Drawn).props?.color
-  expect([await modelColor('usage-claude-claude-opus-5-5'), await modelColor('usage-codex-gpt-6.1-sol')]).toEqual(['claude', 'permission'])
+  expect([await modelColor('usage-claude-claude-opus-5-5'), await modelColor('usage-codex-gpt-6.1-sol')]).toEqual([ink('claude'), ink('codex')])
   expect(((await ui.find({ key: 'usage-total' }) as Drawn).children as Drawn[]).every(t => t.props?.weight === 'bold')).toBe(true)
   // Activity: the whole crew per minute, the current minute busy, an hour wide, with its scale.
   expect(await rowsAt(ui, 'activity-title')).toEqual(['ACTIVITY', 'LAST 60 MIN · peak 4/min'])
@@ -367,7 +370,7 @@ test('the pane draws a header, the six zones in their own boxes in order, and a 
   expect(logs.some(line => /W=\.; O=…\/report\.json; python3 -I scripts\/crew_usage\.py .*…$/.test(line))).toBe(true)
   // Each tag is a badge in its crewmate's harness colour: Codex blue, Claude amber.
   const badges = (await ui.findAll({ type: 'Text' })).map(t => t as Drawn).filter(t => t.props?.inverse === true).map(t => [textOf(t), t.props?.color])
-  expect(badges).toEqual([[' EXEC ', 'permission'], [' EXEC ', 'permission'], [' READ ', 'claude'], [' BASH ', 'claude']])
+  expect(badges).toEqual([[' EXEC ', ink('codex')], [' EXEC ', ink('codex')], [' READ ', ink('claude')], [' BASH ', ink('claude')]])
   expect(shown.some(line => line.includes('/home/anhtran'))).toBe(false)
   // The footer: the engine's keys on the left, the pane's hotkeys on the right.
   expect(shown.slice(-7)).toEqual(['ctrl+x tab to use keys', 'd: details', 'i: notes', 'l: more', 'f: filter All', 'u: all time', 'h: help'])
@@ -386,18 +389,18 @@ test('a card border takes its harness colour, full while it runs and dim once do
   await start($)
   const ui = await $.ui.mount(sized(120, 40))
   const panel = async (id: string) => (await ui.find({ key: `panel-/fm:${id}` }) as Drawn | undefined)?.props
-  expect(await panel('crew-demo-scout')).toMatchObject({ borderColor: 'claude', borderDimColor: true })
-  expect(await panel('workflow-cryptography-advisory')).toMatchObject({ borderColor: 'permission', borderDimColor: false })
+  expect(await panel('crew-demo-scout')).toMatchObject({ borderColor: ink('claude'), borderDimColor: true })
+  expect(await panel('workflow-cryptography-advisory')).toMatchObject({ borderColor: ink('codex'), borderDimColor: false })
   const title = await ui.find({ key: 'title-/fm:crew-demo-scout' }) as Drawn
   const [mark, word] = (title.children ?? []).filter(child => (child as Drawn)?.type === 'Text') as Drawn[]
-  expect([textOf(mark), mark?.props?.color]).toEqual(['✓ ', 'success'])
-  expect([textOf(word), word?.props?.color]).toEqual(['DONE · 6m', 'success'])
+  expect([textOf(mark), mark?.props?.color]).toEqual(['✓ ', ink('success')])
+  expect([textOf(word), word?.props?.color]).toEqual(['DONE · 6m', ink('success')])
   // The name is bold, as the control that opens the details.
   const name = (title.children ?? []).find(child => (child as Drawn)?.type === 'Button') as Drawn
   expect((name.children?.[0] as Drawn | undefined)?.props?.weight).toBe('bold')
   expect(lines(await ui.drawn())).toContain('✓ Scout report written')
   expect(await rowsAt(ui, 'tile-done')).toEqual(['01', 'DONE'])
-  expect((await ui.find({ key: 'tile-done' }) as Drawn | undefined)?.children?.map(child => (child as Drawn).props?.color)).toEqual(['success', 'subtle'])
+  expect((await ui.find({ key: 'tile-done' }) as Drawn | undefined)?.children?.map(child => (child as Drawn).props?.color)).toEqual([ink('success'), ink('subtle')])
   expect(await rowsAt(ui, 'tile-running')).toEqual(['01', 'RUNNING'])
   await ui.unmount()
 })
@@ -936,13 +939,33 @@ const drawThemed = async ($: Engine, on: On, label: string, env: Record<string, 
   await ui.unmount()
 }
 
-test('the default theme draws the engine keys', async ($, on) => {
+test('the default theme draws only the terminal\'s 16 colours', async ($, on) => {
   await drawThemed($, on, 'default', {})
   const { colors } = drawings.get('default') ?? { colors: [] }
+  expect(colors.length > 0).toBe(true)
+  // ansi256(0) to ansi256(15) are the palette's own slots: the terminal resolves them, kitty through DMS.
+  expect(colors.filter(color => !/^ansi256\((\d|1[0-5])\)$/.test(color))).toEqual([])
+  expect(colors).toContain(ink('claude'))
+  expect(colors).toContain(ink('subtle'))
+})
+
+test('the default theme draws the same slots on a truecolor terminal', async ($, on) => {
+  await drawThemed($, on, 'default-truecolor', { COLORTERM: 'truecolor' })
+  expect(drawings.get('default-truecolor')?.colors).toEqual(drawings.get('default')?.colors)
+})
+
+test('the claude-code theme draws the engine keys', { options: { theme: ENGINE_THEME } }, async ($, on) => {
+  await drawThemed($, on, ENGINE_THEME, { COLORTERM: 'truecolor' })
+  const { colors } = drawings.get(ENGINE_THEME) ?? { colors: [] }
   expect(colors.length > 0).toBe(true)
   expect(colors.filter(color => color.startsWith('#') || color.startsWith('ansi256'))).toEqual([])
   expect(colors).toContain('claude')
   expect(colors).toContain('subtle')
+})
+
+test('NO_COLOR draws no colour in the default theme', async ($, on) => {
+  await drawThemed($, on, 'default-none', { NO_COLOR: '1' })
+  expect(drawings.get('default-none')?.colors).toEqual([])
 })
 
 test('a palette theme paints hex colours from its palette on a truecolor terminal', { options: { theme: 'nord' } }, async ($, on) => {
@@ -974,7 +997,7 @@ test('an unknown theme name draws the default', { options: { theme: 'nope' } }, 
 test('a theme changes colours only, never the text or layout', () => {
   const base = drawings.get('default')
   expect(base).toBeDefined()
-  for (const label of ['nord', 'nord-256', 'dracula-none', 'unknown']) {
+  for (const label of ['default-truecolor', 'default-none', ENGINE_THEME, 'nord', 'nord-256', 'dracula-none', 'unknown']) {
     expect(drawings.get(label)?.layout).toEqual(base?.layout)
   }
 })
@@ -989,7 +1012,7 @@ const paintsBackground = (node: unknown): boolean => {
 // The engine fills a docked pane itself and has no transparent colour, so the
 // only way to stay clear of that fill is to never paint a background of our own
 // (see README, "Pane background"). Any theme, size or placement must keep it so.
-for (const theme of ['default', 'nord', 'catppuccin-latte']) {
+for (const theme of ['default', ENGINE_THEME, 'nord', 'catppuccin-latte']) {
   test(`the ${theme} theme never sets a background colour in any layout`, { options: { theme } }, async ($, on) => {
     stub(on, { env: { COLORTERM: 'truecolor' } })
     await start($)
@@ -1063,7 +1086,7 @@ test('a narrow quota row keeps its stale mark before the reset time', async ($, 
   expect(await windowAt(wide, 'week', CODEX)).toMatch(/  29% · ◷ stale · resets 23h 59m$/)
   // A stale reading's mark and reset are in the warning colour; a current one's stay quiet.
   const tails = (await wide.findAll({ type: 'Text' })).map(t => t as Drawn).filter(t => /^ · (◷ stale · )?resets 23h/.test(textOf(t)))
-  expect(tails.map(t => [textOf(t).trimEnd(), t.props?.color])).toEqual([[' · resets 23h 59m', 'subtle'], [' · ◷ stale · resets 23h 59m', 'warning']])
+  expect(tails.map(t => [textOf(t).trimEnd(), t.props?.color])).toEqual([[' · resets 23h 59m', ink('subtle')], [' · ◷ stale · resets 23h 59m', ink('warning')]])
   await wide.unmount()
   // Too narrow for a bar beside the figure, the bar takes the next row; the reset is cut, the mark kept.
   const narrow = await $.ui.mount(sized(30, 40))
@@ -1085,7 +1108,8 @@ for (const theme of THEME_NAMES) {
         const title = await ui.find({ key: `${key}-title` }) as Drawn
         const texts = (title.children ?? []).filter(n => (n as Drawn)?.type === 'Text') as Drawn[]
         const heading = texts.find(n => n.props?.weight === 'bold')
-        expect(heading?.props).toMatchObject({ color: paint('text'), weight: 'bold' })
+        // The default theme's text sets no colour (the terminal's foreground), so the prop is absent there.
+        expect([heading?.props?.color, heading?.props?.weight]).toEqual([paint('text'), 'bold'])
         if (width < 40) {
           expect(texts.map(n => n.props?.color)).toEqual(['border', 'text', 'subtle', 'border'].map(paint))
         } else if (texts[1]) expect(texts[1].props?.color).toBe(paint('subtle'))
@@ -1293,8 +1317,8 @@ test('a running card carries two full-block runs around its whole border with fr
   expect(pane.isShown).toBe(true)
   const first = await expectRun(ui, running, 58, 0, 8)
   expect(first?.rows).toBe(8)
-  expect(first?.box).toMatchObject({ borderColor: 'claude', borderDimColor: false, borderStyle: 'round', width: 58 })
-  expect((await ui.find({ key: `runner-0-${running}` }) as Drawn).children?.[0]).toMatchObject({ props: { color: 'claude' } })
+  expect(first?.box).toMatchObject({ borderColor: ink('claude'), borderDimColor: false, borderStyle: 'round', width: 58 })
+  expect((await ui.find({ key: `runner-0-${running}` }) as Drawn).children?.[0]).toMatchObject({ props: { color: ink('claude') } })
   // Two fractional frames cover one cell in 60 ms along the whole border.
   for (let frame = 1; frame <= 8; frame++) {
     await clock.advance(60)
@@ -1316,13 +1340,13 @@ test('a running card carries two full-block runs around its whole border with fr
   expect(bottom?.parts.some(p => p.isAtBottom || p.y === 7)).toBe(true)
   // A done card keeps a still border in its harness colour, dimmed.
   expect(await runAt(ui, '/fm:crew-demo-scout')).toBeUndefined()
-  expect((await ui.find({ key: 'panel-/fm:crew-demo-scout' }) as Drawn).props).toMatchObject({ borderColor: 'claude', borderDimColor: true })
+  expect((await ui.find({ key: 'panel-/fm:crew-demo-scout' }) as Drawn).props).toMatchObject({ borderColor: ink('claude'), borderDimColor: true })
   // The running crewmate's open details carry the runs on their top and bottom edges; the box keeps its own border.
   await ui.press({ key: `card-${running}` })
   const details = await runAt(ui, `details-${running}`)
   expect(details?.parts.length).toBeGreaterThan(0)
   expect(details?.parts.every(p => !p.isVertical && p.text.startsWith('█'))).toBe(true)
-  expect(details?.box).toMatchObject({ borderColor: 'claude', borderDimColor: false, width: 116 })
+  expect(details?.box).toMatchObject({ borderColor: ink('claude'), borderDimColor: false, width: 116 })
   await ui.press({ key: `card-${running}` })
   expect(overflows(await ui.drawn())).toEqual([])
   // Closed, the timer stops: no run is drawn, and moving the clock brings none back.
@@ -1347,7 +1371,7 @@ test('the border timer stops once nothing runs and starts again with a running c
   world.report = { ...REFERENCE, crew: [{ ...(REFERENCE.crew[0] as CrewMember), status: 'done [at=1]: shipped' }, DONE_SCOUT] }
   await refresh($)
   expect(await runAt(ui, running)).toBeUndefined()
-  expect((await ui.find({ key: `panel-${running}` }) as Drawn).props).toMatchObject({ borderColor: 'claude', borderDimColor: true })
+  expect((await ui.find({ key: `panel-${running}` }) as Drawn).props).toMatchObject({ borderColor: ink('claude'), borderDimColor: true })
   await clock.advance(3_000)
   expect(await runAt(ui, running)).toBeUndefined()
   // Work starts again: the runs start over from the corner.
@@ -1423,7 +1447,7 @@ test('Reduce motion keeps every border still: the timer never starts', { timeout
   await start($)
   await toggle($)
   const ui = await $.ui.mount(sized(120, 40))
-  for (const [id, color] of [['crew-watch-transparent', 'claude'], ['workflow-cryptography-advisory', 'permission']]) {
+  for (const [id, color] of [['crew-watch-transparent', ink('claude')], ['workflow-cryptography-advisory', ink('codex')]]) {
     expect(await runAt(ui, `/fm:${id}`)).toBeUndefined()
     // The full harness colour stays: only the motion is left out.
     expect((await ui.find({ key: `panel-/fm:${id}` }) as Drawn).props).toMatchObject({ borderColor: color, borderDimColor: false })

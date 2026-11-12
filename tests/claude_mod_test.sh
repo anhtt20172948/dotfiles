@@ -70,9 +70,12 @@ for name in "${NAMES[@]}"; do
 	done
 done
 
-# crew-watch's Theme option offers the default plus exactly the palettes theme.ts defines.
+# crew-watch's Theme option offers the default (the terminal's palette), the engine theme
+# (claude-code) and exactly the palettes theme.ts defines.
 crew=$ROOT/$MODS/crew-watch
-offered=$(jq -r '.userConfig.theme | select(.default == "default") | .options[]' "$crew/.claude-plugin/plugin.json" | sed '/^default$/d' | sort)
+options=$(jq -r '.userConfig.theme | select(.default == "default") | .options[]' "$crew/.claude-plugin/plugin.json")
+[[ $(head -n2 <<<"$options" | paste -sd' ') == "default claude-code" ]] || fail "crew-watch Theme options must start with default, claude-code"
+offered=$(sed '/^default$/d; /^claude-code$/d' <<<"$options" | sort)
 defined=$(sed -n "s/^  '\{0,1\}\([a-z-]*\)'\{0,1\}: {\$/\1/p" "$crew/hooks/theme.ts" | sort)
 [[ -n $offered && $offered == "$defined" ]] || fail "crew-watch Theme options '$offered' differ from theme.ts palettes '$defined'"
 
