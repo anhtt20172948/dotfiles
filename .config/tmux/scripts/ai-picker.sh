@@ -430,7 +430,7 @@ done
 printf -v preview_command 'bash %q --preview {1}' "$SCRIPT_PATH"
 
 selection=$(
-  printf '%s\n' "$entries" | fzf \
+  printf '%s\n' "$entries" | fzf --height=100% \
     --ansi \
     --delimiter=$'\t' \
     --with-nth=2,3 \

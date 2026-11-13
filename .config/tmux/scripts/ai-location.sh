@@ -79,7 +79,7 @@ header='Ctrl-j/k move  •  Enter select  •  Esc close'
   header="${header}"$'\n'"${yellow}⚠ ${AI_POPUP_DOCKER_NOTE}${reset}"
 
 selection=$(
-  printf '%s\n' "$entries" | fzf \
+  printf '%s\n' "$entries" | fzf --height=100% \
     --ansi \
     --delimiter=$'\t' \
     --with-nth=2 \
