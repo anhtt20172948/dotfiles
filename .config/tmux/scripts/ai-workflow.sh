@@ -271,7 +271,7 @@ firstmate_pick() {
   local label=$1 entries=$2 selection status value _display offered=''
   shift 2
   need fzf
-  selection=$(printf '%s' "$entries" | fzf --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
+  selection=$(printf '%s' "$entries" | fzf --height=100% --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
     --no-sort --cycle --layout=reverse --margin=1,2 --border=rounded \
     --border-label=" Firstmate $label " --info=hidden \
     --header="$FIRSTMATE_PICK_KEYS" --prompt="$label › " \
@@ -577,7 +577,7 @@ menu() {
 
   local selection
   selection=$(
-    printf '%s\n' "$entries" | fzf \
+    printf '%s\n' "$entries" | fzf --height=100% \
       --ansi \
       --delimiter=$'\t' \
       --with-nth=2 \

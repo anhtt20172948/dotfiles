@@ -16,7 +16,7 @@ done
 # Pick a session. Plain fzf, not fzf-tmux: this script already runs inside a
 # tmux display-popup (see popup.conf), and popup-in-popup does not work.
 target=$(
-  sesh list --icons | fzf --reverse \
+  sesh list --icons | fzf --height=100% --reverse \
     --no-sort --ansi --border-label ' sesh ' --prompt '⚡ ' \
     --color="$PICKER_FZF_COLORS" \
     --header ' ^a all ^t tmux ^g configs ^x zoxide ^d kill ^f find' \

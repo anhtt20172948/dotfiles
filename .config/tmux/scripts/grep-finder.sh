@@ -20,7 +20,7 @@ done
 # every line by design — fzf does the actual filtering.
 rg --column --line-number --no-heading --color=always --smart-case \
    --max-columns=200 --max-columns-preview --no-messages . 2>/dev/null | \
-  fzf --ansi --delimiter=: --reverse \
+  fzf --height=100% --ansi --delimiter=: --reverse \
       --prompt '🔎 ' --border-label ' Grep Finder ' \
       --color="$PICKER_FZF_COLORS" \
       --preview 'bat --color=always --highlight-line {2} -- {1}' \

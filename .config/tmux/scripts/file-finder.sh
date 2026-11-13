@@ -15,7 +15,7 @@ for bin in fd fzf bat nvim; do
   }
 done
 
-target=$(fd -t f -H . 2>/dev/null | fzf --reverse \
+target=$(fd -t f -H . 2>/dev/null | fzf --height=100% --reverse \
   --prompt ' ' --border-label ' File Finder ' \
   --color="$PICKER_FZF_COLORS" \
   --preview 'bat --color=always --style=numbers --line-range :200 -- {}')

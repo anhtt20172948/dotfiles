@@ -39,7 +39,7 @@ pause() {
 pick() {
   local label=$1 entries=$2 selection status value _display
   have fzf || { err "'fzf' not found"; return 1; }
-  selection=$(printf '%s' "$entries" | fzf --ansi --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
+  selection=$(printf '%s' "$entries" | fzf --height=100% --ansi --delimiter=$'\t' --with-nth=2 --accept-nth=1 \
     --no-sort --cycle --layout=reverse --margin=1,2 --border=rounded \
     --border-label=" Claude $label " --info=hidden \
     --header='Ctrl-j/k move  •  Enter select  •  Esc close' --prompt="$label › " \

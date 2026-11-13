@@ -589,7 +589,7 @@ while :; do
   fi
 
   printf -v preview_command 'bash %q --preview {1} {2} {3} {4} {5} {6} {7}' "${BASH_SOURCE[0]}"
-  fzf_output=$(printf '%s\n' "$entries" | fzf \
+  fzf_output=$(printf '%s\n' "$entries" | fzf --height=100% \
     --ansi \
     --delimiter=$'\t' \
     --with-nth=8 \
