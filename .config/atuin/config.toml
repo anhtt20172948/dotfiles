@@ -217,10 +217,8 @@ scroll_exits = false
 records = true
 
 [tmux]
-## Floating search keeps the current pane visible (tmux >= 3.2).
-enabled = true
-width = "86%"
-height = "62%"
+## Keep search inside the current pane, using inline_height instead of a tmux popup.
+enabled = false
 
 [ui]
 ## Context-rich, color-aware result list; colors inherit Kitty's Catppuccin Mocha palette.
