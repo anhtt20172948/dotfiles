@@ -25,7 +25,15 @@ class ContainerSetupTests(unittest.TestCase):
         self.git = shutil.which("git")
         self.env = dict(os.environ, HOME=str(self.home),
                         PATH=str(self.bin) + ":" + os.environ["PATH"],
-                        UPSTREAM=str(self.upstream), REAL_GIT=self.git)
+                        UPSTREAM=str(self.upstream), REAL_GIT=self.git,
+                        CONTAINER_ARCH="x86_64")
+        self.write_bin("uname", '''#!/bin/sh
+case $1 in
+    -m) printf '%s\\n' "$CONTAINER_ARCH" ;;
+    -s) printf 'Linux\\n' ;;
+    *) exit 2 ;;
+esac
+''')
         self.write_bin("docker", '''#!/usr/bin/env python3
 import os, subprocess, sys
 args = sys.argv[1:]
@@ -162,12 +170,15 @@ os.execv(os.environ['REAL_GIT'], ['git'] + args)
         self.assertTrue((self.home / "dotfiles").is_symlink())
         self.assertEqual(list(target.iterdir()), [])
 
-    def test_numbered_menu_defaults_include_setup(self):
-        # Limit PATH to real system tools plus our engine and Git stubs.
-        for name in ("bash", "sh", "python3", "uname", "mktemp", "rm", "mkdir", "tar",
+    def isolate_path(self):
+        # Exclude host menu tools and installed binaries from the fake container.
+        for name in ("bash", "sh", "python3", "mktemp", "rm", "mkdir", "tar", "gzip",
                      "cat", "grep", "touch", "readlink", "cp", "mv", "find", "chmod", "ln"):
             (self.bin / name).symlink_to(shutil.which(name))
-        self.env["PATH"] = str(self.bin)
+        self.env = dict(self.env, PATH=str(self.bin))
+
+    def test_numbered_menu_defaults_include_setup(self):
+        self.isolate_path()
         result = subprocess.run([str(SCRIPT), "--container", "test"], env=self.env,
                                 capture_output=True, text=True, input="1 2\n", timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -175,6 +186,34 @@ os.execv(os.environ['REAL_GIT'], ['git'] + args)
         self.assertIn("dotfiles [default]", result.stdout)
         self.assertTrue((self.home / ".bashrc").is_file())
         self.assertTrue((self.home / "linked").is_symlink())
+
+    def test_architecture_names_select_matching_release_assets(self):
+        self.write_bin("curl", '''#!/usr/bin/env python3
+import io, os, pathlib, sys, tarfile
+args = sys.argv[1:]
+pathlib.Path(os.environ['FETCH_LOG']).write_text(args[-1])
+with tarfile.open(args[args.index('-o') + 1], 'w:gz') as archive:
+    content = b'#!/bin/sh\\nprintf "fzf test\\n"\\n'
+    info = tarfile.TarInfo('fzf')
+    info.mode = 0o755
+    info.size = len(content)
+    archive.addfile(info, io.BytesIO(content))
+''')
+        self.isolate_path()
+        fetch_log = self.base / "fetch-url"
+        for arch, asset_arch in (("x86_64", "amd64"), ("amd64", "amd64"),
+                                 ("aarch64", "arm64"), ("arm64", "arm64")):
+            with self.subTest(arch=arch):
+                self.env = dict(self.env, CONTAINER_ARCH=arch, FETCH_LOG=str(fetch_log))
+                output = self.run_setup("fzf")
+                self.assertIn("fzf: installed", output)
+                self.assertTrue(fetch_log.read_text().endswith("linux_" + asset_arch + ".tar.gz"))
+                (self.home / ".local/bin/fzf").unlink()
+
+    def test_unsupported_architecture_is_rejected(self):
+        self.env = dict(self.env, CONTAINER_ARCH="riscv64")
+        self.assertIn("Unsupported container architecture: riscv64",
+                      self.run_setup("path", success=False))
 
     def test_invalid_selection(self):
         self.assertIn("Unknown tool", self.run_setup("bogus", success=False))

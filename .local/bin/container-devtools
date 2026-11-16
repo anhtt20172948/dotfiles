@@ -148,7 +148,11 @@ if [[ $tools_given != yes ]]; then
 fi
 
 arch=$("$engine" exec "$container" uname -m) || die 'Cannot detect container architecture'
-case $arch in x86_64|aarch64) ;; *) die "Unsupported container architecture: $arch" ;; esac
+case $arch in
+    x86_64|amd64) arch=x86_64 ;;
+    aarch64|arm64) arch=aarch64 ;;
+    *) die "Unsupported container architecture: $arch" ;;
+esac
 "$engine" exec "$container" sh -c 'test "$(uname -s)" = Linux && test -n "$HOME" && test "${HOME#/}" != "$HOME"' \
     || die 'Container requires Linux, sh, and an absolute HOME for its configured user'
 work=$(mktemp -d)
