@@ -195,6 +195,22 @@ other items.
   clangd requires glibc 2.27+ or musl 1.2+, plus zlib in the container; its musl
   wheel's C++ runtime libraries are included. Projects still need their own
   C/C++ standard library development headers and compile flags in the container.
+  Compact packages omit some optional LLVM runtime headers. For both tools,
+  setup borrows available OpenMP/OpenACC, sanitizer, XRay, fuzzer, profiling,
+  ORC and Fortran C binding headers from the container's C/C++ toolchain.
+  It preserves bundled headers and never copies GCC intrinsic headers.
+  Each tool's result lists any remaining missing files against its pinned
+  official LLVM resource-header manifest, including optional runtimes.
+  Install the corresponding runtime development SDK if your project needs a
+  listed family; setup cannot supply headers the container does not have.
+  Rerun with `--tools clangd,clang-tidy` to repair existing script-managed installs
+  without downloading the tools again. Unmanaged installations are left alone.
+  The helper and versioned manifests live in `.local/share/container-devtools`
+  alongside the script's `.local/bin` directory; keep them together when copying
+  the installer. Update the matching manifest when changing a tool version;
+  each manifest links to its upstream LLVM install lists. System headers such as
+  glibc, libstdc++ and project dependencies still come from the container's
+  toolchain and the flags in `compile_commands.json`.
   On Alpine, clang-tidy may need the GCC target in those flags (for example,
   `--extra-arg=--target=x86_64-alpine-linux-musl`, using `g++ -dumpmachine` for
   the actual target); clangd can query an explicitly trusted compiler with

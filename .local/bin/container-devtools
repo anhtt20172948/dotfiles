@@ -44,6 +44,7 @@ Pinned Linux release binaries are downloaded and unpacked on the host
 (requires curl or wget, tar, gzip). No container downloader, root, or package
 manager is required. Files go into the configured container user's ~/.local/bin.
 Existing commands, including those in ~/.local/bin, are skipped.
+Existing script-managed clang tools also receive runtime headers and an audit.
 Neovim includes its runtime. Neovim and some ARM releases require glibc;
 incompatible releases fail individually.
 clangd 22.1.1 and clang-tidy 23.1.5 support glibc and musl on both architectures.
@@ -53,6 +54,12 @@ clangd uses compact PyPI wheels from jmpfar/clangd-wheel (host unzip or python3)
 clang-tidy uses cpp-linter static binaries. Both verify pinned SHA-256 checksums
 (host sha256sum or shasum required). They are optional, not defaults.
 clangd requires glibc 2.27+ or musl 1.2+, and zlib in the container.
+Clang tools reuse missing OpenMP/compiler-runtime headers from the container's
+C/C++ toolchain, preserving bundled headers. Each result lists remaining gaps
+against its pinned full LLVM resource-header manifest, including optional SDKs.
+The host also needs the adjacent ~/.local/share/container-devtools data files.
+Projects still need their own development headers; GCC intrinsic headers are
+not copied. Install the appropriate runtime SDK for unresolved header families.
 path: add export PATH="$HOME/.local/bin:$PATH" once to the container ~/.bashrc.
 dotfiles: host Git fetches the public anhtt20172948/dotfiles default branch into
 container ~/dotfiles, then runs its install.sh (Bash, coreutils/readlink -f and
@@ -262,10 +269,30 @@ install_clang() {
     ' sh "$name" "$tag" "$bin"
 }
 
+complete_clang_headers() {
+    local name=$1 tag=$2 version major data program manifest
+    case $name in
+        clangd) version=${tag#v}; version=${version%.*} ;;
+        clang-tidy) version=${tag#llvm-} ;;
+    esac
+    major=${version%%.*}
+    data=${BASH_SOURCE[0]%/*}
+    [[ $data != "${BASH_SOURCE[0]}" ]] || data=.
+    data=$data/../share/container-devtools
+    program=$data/clang-headers.sh manifest=$data/llvm-$version-headers.txt
+    [[ -r $program && -s $manifest ]] || {
+        echo "Missing container-devtools runtime-header data in $data" >&2; return 1;
+    }
+    "$engine" exec -i "$container" sh -c "$(cat "$program")" sh "$name" "$tag" "$major" "$version" < "$manifest"
+}
+
 install_tool() {
     local name=$1 repo=$2 tag=$3 asset=$4 binary=$5 source root
     case $name in
-        clangd|clang-tidy) install_clang "$name" "$repo" "$tag" "$asset"; return $? ;;
+        clangd|clang-tidy)
+            install_clang "$name" "$repo" "$tag" "$asset" || return 1
+            clang_headers_outcome=$(complete_clang_headers "$name" "$tag")
+            return $? ;;
     esac
     if [[ $asset == *linux-gnu* || $name == neovim ]]; then
         "$engine" exec "$container" sh -c 'ldd --version 2>&1' | grep -Eqi 'glibc|GNU libc' || {
@@ -430,13 +457,16 @@ for tool in "${selected[@]}"; do
     esac
     while IFS='|' read -r name repo tag amd arm binary _; do
         [[ $name == "$tool" ]] || continue
+        clang_headers_outcome=''
         if "$engine" exec "$container" sh -c 'command -v "$1" >/dev/null 2>&1 || test -x "$HOME/.local/bin/$1"' sh "$binary"; then
-            results+=("$tool: skipped (already present)")
+            if [[ $tool == clangd || $tool == clang-tidy ]] && ! clang_headers_outcome=$(complete_clang_headers "$name" "$tag"); then
+                results+=("$tool: FAILED (runtime header setup; see error above)"); failed=1
+            else results+=("$tool: skipped (already present)${clang_headers_outcome:+; $clang_headers_outcome}"); fi
         else
             asset=$amd; [[ $arch != aarch64 ]] || asset=$arm
             printf 'Installing %s (%s)...\n' "$name" "$tag"
             if install_tool "$name" "$repo" "$tag" "$asset" "$binary"; then
-                results+=("$tool: installed ($tag)")
+                results+=("$tool: installed ($tag)${clang_headers_outcome:+; $clang_headers_outcome}")
             else results+=("$tool: FAILED (see error above)"); failed=1; fi
         fi
         break
