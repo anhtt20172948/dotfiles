@@ -183,11 +183,44 @@ function M.decorations(colors, primary)
 		"TinyInlineDiagnosticVirtualTextArrow",
 		"TinyInlineDiagnosticVirtualTextArrowNoBg",
 	}, text)
-	set({ "RenderMarkdownCode", "RenderMarkdownCodeInline" }, text)
 	set({ "SnacksDashboardDesc", "SnacksDashboardTitle", "SnacksDashboardFile", "SnacksDashboardSpecial" }, text)
 	set({ "SnacksDashboardFooter", "SnacksDashboardDir" }, quiet)
 	set({ "NeoTreeTabActive", "NeoTreeTabSeparatorActive", "NeoTreeTabSeparatorInactive" }, primary)
 	set({ "NeoTreeTabInactive" }, quiet)
+	-- Markdown surfaces and accents follow the terminal, including live palette reloads.
+	local kitty = require("customize.kitty_palette")
+	local ansi = kitty.active and kitty.active.ansi or {}
+	local backdrop, surface = kitty.backdrop(colors.base), colors.surface0 or colors.base
+	local function readable(color, background)
+		return kitty.ensure_contrast(color, background, text, kitty.text_floor())
+	end
+	local accents = {
+		primary,
+		ansi[4] or colors.blue or text,
+		ansi[14] or colors.teal or text,
+		ansi[2] or colors.green or text,
+		ansi[3] or colors.yellow or text,
+		ansi[5] or colors.mauve or text,
+	}
+	for level, accent in ipairs(accents) do
+		local background = level == 1 and surface or "NONE"
+		local foreground = readable(accent, level == 1 and surface or backdrop)
+		highlights["RenderMarkdownH" .. level] = { fg = foreground, bg = "NONE", bold = true }
+		highlights["RenderMarkdownH" .. level .. "Bg"] = { fg = foreground, bg = background, bold = true }
+	end
+	-- Background only: fenced code retains its Tree-sitter syntax colours.
+	highlights.RenderMarkdownCode = { bg = surface }
+	highlights.RenderMarkdownCodeInline = { fg = readable(text, surface), bg = surface }
+	highlights.RenderMarkdownCodeInfo = { fg = readable(primary, surface), bg = surface }
+	highlights.RenderMarkdownCodeBorder = { bg = surface }
+	set({ "RenderMarkdownBullet", "RenderMarkdownTableHead", "RenderMarkdownLink" }, primary)
+	set({ "RenderMarkdownTableRow", "RenderMarkdownQuote", "RenderMarkdownUnchecked", "RenderMarkdownDash" }, quiet)
+	set({ "@markup.quote.markdown" }, text)
+	set({ "RenderMarkdownChecked", "RenderMarkdownSuccess" }, readable(accents[4], backdrop))
+	set({ "RenderMarkdownInfo" }, readable(accents[2], backdrop))
+	set({ "RenderMarkdownHint" }, readable(accents[3], backdrop))
+	set({ "RenderMarkdownWarn" }, readable(accents[5], backdrop))
+	set({ "RenderMarkdownError" }, readable(ansi[1] or colors.red or text, backdrop))
 	for i = 1, 6 do
 		set({ "Headline" .. i .. "Fg" }, text, true)
 		set({ "Headline" .. i .. "Bg" }, primary, true)

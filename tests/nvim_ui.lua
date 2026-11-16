@@ -25,9 +25,21 @@ for _, case in ipairs({
 	local colors = kitty.colors({ base = case.base, text = case.text, overlay0 = case.primary })
 	local primary = kitty.ensure_contrast(case.primary, colors.base, colors.text, 4.5)
 	local groups = require("customize.transparent").decorations(colors, primary)
+	local markdown_surfaces = {
+		RenderMarkdownH1Bg = true,
+		RenderMarkdownCode = true,
+		RenderMarkdownCodeInline = true,
+		RenderMarkdownCodeInfo = true,
+		RenderMarkdownCodeBorder = true,
+	}
 	for name, hl in pairs(groups) do
-		assert(hl.bg == "NONE", name)
-		assert(kitty.contrast(hl.fg, colors.base) >= 4.5, name .. " needs 4.5:1 contrast")
+		local background = markdown_surfaces[name] and (colors.surface0 or colors.base) or "NONE"
+		assert(hl.bg == background, name)
+		if name == "RenderMarkdownCode" or name == "RenderMarkdownCodeBorder" then
+			assert(hl.fg == nil, name .. " must preserve syntax and language label foregrounds")
+		else
+			assert(kitty.contrast(hl.fg, colors.base) >= 4.5, name .. " needs 4.5:1 contrast")
+		end
 	end
 	assert(groups.SnacksIndentScope.fg == primary and groups.FoldColumn.fg == colors.overlay0)
 end
