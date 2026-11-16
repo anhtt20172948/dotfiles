@@ -183,6 +183,22 @@ container-devtools --container my-dev --tools ripgrep,fd # tools only
 catalog. Each selected item reports its own outcome, and a failure does not stop
 other items.
 
+- `clangd` (22.1.1) and `clang-tidy` (23.1.5) are optional selections for
+  x86_64/aarch64 on glibc and musl, with pinned SHA-256 checksums. Both install
+  builtin headers alongside their binaries under `~/.local/opt` and expose
+  commands in `~/.local/bin`. clangd uses compact
+  [PyPI wheels](https://pypi.org/project/clangd/22.1.1/) from jmpfar/clangd-wheel
+  (24-28 MB; host `unzip` required), staying one major behind to avoid the full
+  LLVM archive. clang-tidy uses
+  [cpp-linter static binaries](https://github.com/cpp-linter/clang-tools-static-binaries/releases/tag/llvm-23.1.5)
+  (87-88 MB plus 1 MB builtin headers). The host needs `sha256sum` or `shasum`.
+  clangd requires glibc 2.27+ or musl 1.2+, plus zlib in the container; its musl
+  wheel's C++ runtime libraries are included. Projects still need their own
+  C/C++ standard library development headers and compile flags in the container.
+  On Alpine, clang-tidy may need the GCC target in those flags (for example,
+  `--extra-arg=--target=x86_64-alpine-linux-musl`, using `g++ -dumpmachine` for
+  the actual target); clangd can query an explicitly trusted compiler with
+  `--query-driver=/usr/bin/g++` and a matching compilation database.
 - `path` adds `export PATH="$HOME/.local/bin:$PATH"` to the container user's
   `~/.bashrc` once, creating it when missing. Open a new interactive Bash shell
   to use it. Only the container's Bash configuration changes.
