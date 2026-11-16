@@ -18,6 +18,7 @@ assert(icons.diagnostics.Warn == icons.diagnostics.Warning and icons.diagnostics
 vim.env.NVIM_ASCII = saved_ascii
 package.loaded["lib.icons"] = nil
 local kitty = require("customize.kitty_palette")
+kitty.active = nil
 for _, case in ipairs({
 	{ base = "#101010", text = "#ffffff", primary = "#222222" },
 	{ base = "#ffffff", text = "#101010", primary = "#dddddd" },

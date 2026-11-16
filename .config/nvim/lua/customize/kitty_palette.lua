@@ -258,6 +258,14 @@ function M.search_background(colors, primary)
 	return blend(colors.base, visual, 0.5)
 end
 
+function M.markdown_heading_background(colors, accent, level)
+	if light() then
+		-- Stronger title bands taper toward quieter subsection bands.
+		return blend(colors.base, accent, 0.22 - level * 0.02)
+	end
+	return level == 1 and (colors.surface0 or colors.base) or "NONE"
+end
+
 local function parse_encoded(encoded)
 	if not encoded or (#encoded ~= 125 and #encoded ~= 132) then
 		return nil

@@ -203,8 +203,11 @@ function M.decorations(colors, primary)
 		ansi[5] or colors.mauve or text,
 	}
 	for level, accent in ipairs(accents) do
-		local background = level == 1 and surface or "NONE"
+		local background = kitty.markdown_heading_background(colors, accent, level)
 		local foreground = readable(accent, level == 1 and surface or backdrop)
+		if kitty.background() == "light" then
+			foreground = readable(readable(accent, backdrop), background)
+		end
 		highlights["RenderMarkdownH" .. level] = { fg = foreground, bg = "NONE", bold = true }
 		highlights["RenderMarkdownH" .. level .. "Bg"] = { fg = foreground, bg = background, bold = true }
 	end
