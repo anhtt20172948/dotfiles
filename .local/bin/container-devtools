@@ -14,7 +14,19 @@ neovim|neovim/neovim|v0.11.7|nvim-linux-x86_64.tar.gz|nvim-linux-arm64.tar.gz|nv
 lazygit|jesseduffield/lazygit|v0.66.3|lazygit_0.66.3_linux_x86_64.tar.gz|lazygit_0.66.3_linux_arm64.tar.gz|lazygit|yes
 eza|eza-community/eza|v0.23.4|eza_x86_64-unknown-linux-musl.tar.gz|eza_aarch64-unknown-linux-gnu.tar.gz|eza|yes
 zoxide|ajeetdsouza/zoxide|v0.9.8|zoxide-0.9.8-x86_64-unknown-linux-musl.tar.gz|zoxide-0.9.8-aarch64-unknown-linux-musl.tar.gz|zoxide|yes
-btop|aristocratos/btop|v1.4.8|btop-x86_64-unknown-linux-musl.tar.gz|btop-aarch64-unknown-linux-musl.tar.gz|btop|no'
+btop|aristocratos/btop|v1.4.8|btop-x86_64-unknown-linux-musl.tar.gz|btop-aarch64-unknown-linux-musl.tar.gz|btop|no
+clangd|jmpfar/clangd-wheel|v22.1.1.0|wheel|wheel|clangd|no
+clang-tidy|cpp-linter/clang-tools-static-binaries|llvm-23.1.5|clang-tidy-23_linux-amd64|clang-tidy-23_linux-arm64|clang-tidy|no'
+
+# Wheel hashes are published by PyPI; static tool/header hashes were verified
+# against the immutable cpp-linter release's SHA512SUMS before pinning here.
+CLANG_SHA256='clangd-22.1.1-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl|861ccf58c143bcfcb3afd23c1e6c5d09144d3d634152221065d84102dfc35d4a
+clangd-22.1.1-py2.py3-none-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl|672338afbbb5989b66cd0c1354eb2406f77fdc2a97d5b594ee8dd26c745b250f
+clangd-22.1.1-py2.py3-none-musllinux_1_2_x86_64.whl|73b1fb277e1dc12057e859a874f2241d062e808bfff839cc18eb70517be6f4e2
+clangd-22.1.1-py2.py3-none-musllinux_1_2_aarch64.whl|7b3fdb2db5a6e6e7c2abfe130a2652b78bf8ced4c5ea7c727489120342d64937
+clang-tidy-23_linux-amd64|0fd09356fd3702fef54e6f318d4c25672ec29081e37f30f947620fea8be12c3c
+clang-tidy-23_linux-arm64|5846c599e532118db0b9bbf122b5180d7945d10c5b0b66b1291de264ec70cc69
+clang-resource-headers-23.tar.gz|24e42ca18012fcd9e714c6eb5310fed870138dc48578121dc1282e27b43015ac'
 
 usage() {
     cat <<'HELP'
@@ -25,15 +37,22 @@ Without gum/fzf, use numbered prompts. Blank tool input accepts the defaults;
 enter "none" to cancel. With fzf: Tab toggles a tool, Enter confirms.
 
 Items (--tools): ripgrep, fd, fzf, bat, jq, neovim, lazygit, eza, zoxide, btop,
-                path, dotfiles
+                clangd, clang-tidy, path, dotfiles
 Defaults: ripgrep, fd, fzf, bat, jq, lazygit, eza, zoxide, path, dotfiles
 
-Pinned official Linux release binaries are downloaded and unpacked on the host
+Pinned Linux release binaries are downloaded and unpacked on the host
 (requires curl or wget, tar, gzip). No container downloader, root, or package
 manager is required. Files go into the configured container user's ~/.local/bin.
 Existing commands, including those in ~/.local/bin, are skipped.
 Neovim includes its runtime. Neovim and some ARM releases require glibc;
 incompatible releases fail individually.
+clangd 22.1.1 and clang-tidy 23.1.5 support glibc and musl on both architectures.
+They include builtin headers under ~/.local/opt; project C/C++ standard library
+headers and compile flags must already be available in the container.
+clangd uses compact PyPI wheels from jmpfar/clangd-wheel (host unzip or python3);
+clang-tidy uses cpp-linter static binaries. Both verify pinned SHA-256 checksums
+(host sha256sum or shasum required). They are optional, not defaults.
+clangd requires glibc 2.27+ or musl 1.2+, and zlib in the container.
 path: add export PATH="$HOME/.local/bin:$PATH" once to the container ~/.bashrc.
 dotfiles: host Git fetches the public anhtt20172948/dotfiles default branch into
 container ~/dotfiles, then runs its install.sh (Bash, coreutils/readlink -f and
@@ -70,7 +89,7 @@ done <<< "$CATALOG"
 validate_tools() {
     local tool known valid
     [[ -n $tools && $tools != ,* && $tools != *, && $tools != *,,* ]] || die 'Empty tool selection'
-    [[ $tools =~ ^[a-z]+(,[a-z]+)*$ ]] || die 'Invalid tool list: use comma-separated tool names'
+    [[ $tools =~ ^[a-z]+(-[a-z]+)*(,[a-z]+(-[a-z]+)*)*$ ]] || die 'Invalid tool list: use comma-separated tool names'
     IFS=',' read -ra selected <<< "$tools"
     for tool in "${selected[@]}"; do
         valid=no
@@ -176,8 +195,78 @@ fetch() {
     else echo 'Host requires curl or wget' >&2; return 1; fi
 }
 
+fetch_clang() {
+    local repo=$1 tag=$2 asset=$3 destination=$4 entry expected='' actual
+    while IFS='|' read -r entry actual; do
+        [[ $entry != "$asset" ]] || expected=$actual
+    done <<< "$CLANG_SHA256"
+    [[ -n $expected ]] || { echo "No pinned checksum for $asset" >&2; return 1; }
+    fetch "https://github.com/$repo/releases/download/$tag/$asset" "$destination" || return 1
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum "$destination") || return 1
+    elif command -v shasum >/dev/null 2>&1; then
+        actual=$(shasum -a 256 "$destination") || return 1
+    else echo 'Host requires sha256sum or shasum for checksum verification' >&2; return 1; fi
+    [[ ${actual%% *} == "$expected" ]] || { echo "SHA-256 checksum mismatch: $asset" >&2; return 1; }
+}
+
+unpack_clangd() {
+    if command -v unzip >/dev/null 2>&1; then
+        unzip -q "$1" 'clangd/data/*' -d "$2" || return 1
+        if [[ $3 == musllinux* ]]; then
+            unzip -q "$1" 'clangd.libs/*' -d "$2" || return 1
+        fi
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 - "$1" "$2" <<'PY'
+import sys
+import zipfile
+
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    for entry in archive.infolist():
+        if entry.filename.startswith(("clangd/data/", "clangd.libs/")):
+            archive.extract(entry, sys.argv[2])
+PY
+    else echo 'Host requires unzip or python3 for clangd wheels' >&2; return 1; fi
+}
+
+install_clang() {
+    local name=$1 repo=$2 tag=$3 asset=$4 root=$work/$1/unpack libc platform bin=bin
+    mkdir -p "$root/bin" || return 1
+    if [[ $name == clangd ]]; then
+        libc=$("$engine" exec "$container" sh -c 'ldd --version 2>&1 || true') || return 1
+        case $libc in
+            *musl*) platform=musllinux_1_2_$arch ;;
+            *glibc*|*GLIBC*|*'GNU libc'*) platform=manylinux_2_27_$arch.manylinux_2_28_$arch ;;
+            *) echo 'Cannot identify container libc for clangd (requires glibc 2.27+ or musl 1.2+)' >&2; return 1 ;;
+        esac
+        asset=clangd-22.1.1-py2.py3-none-$platform.whl
+        fetch_clang "$repo" "$tag" "$asset" "$work/$name/asset" || return 1
+        unpack_clangd "$work/$name/asset" "$root" "$platform" || return 1
+        bin=clangd/data/bin
+    else
+        fetch_clang "$repo" "$tag" "$asset" "$root/bin/$name" || return 1
+        fetch_clang "$repo" "$tag" clang-resource-headers-23.tar.gz "$work/$name/headers" || return 1
+        tar -xzf "$work/$name/headers" -C "$root" || return 1
+    fi
+    chmod +x "$root/$bin/$name" || return 1
+    # Keep the real executable beside its resource directory, including on musl.
+    tar -cf - -C "$root" . | "$engine" exec -i "$container" sh -c '
+        set -eu
+        mkdir -p "$HOME/.local/opt" "$HOME/.local/bin"
+        stage=$(mktemp -d "$HOME/.local/opt/$1-$2.XXXXXXXX")
+        trap '\''rm -rf "$stage"'\'' EXIT
+        tar -xf - -C "$stage"
+        "$stage/$3/$1" --version >/dev/null
+        ln -sf "$stage/$3/$1" "$HOME/.local/bin/$1"
+        trap - EXIT
+    ' sh "$name" "$tag" "$bin"
+}
+
 install_tool() {
     local name=$1 repo=$2 tag=$3 asset=$4 binary=$5 source root
+    case $name in
+        clangd|clang-tidy) install_clang "$name" "$repo" "$tag" "$asset"; return $? ;;
+    esac
     if [[ $asset == *linux-gnu* || $name == neovim ]]; then
         "$engine" exec "$container" sh -c 'ldd --version 2>&1' | grep -Eqi 'glibc|GNU libc' || {
             echo 'This upstream asset requires glibc; no compatible official musl release.' >&2; return 1;

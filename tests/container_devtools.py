@@ -1,10 +1,15 @@
 """Exercise the real setup entry point with a local upstream and isolated user home."""
+import hashlib
+import io
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import unittest
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ".local/bin/container-devtools"
@@ -20,6 +25,7 @@ class ContainerSetupTests(unittest.TestCase):
         self.home.mkdir()
         self.bin = self.base / "bin"
         self.bin.mkdir()
+        self.script = SCRIPT
         self.upstream = self.base / "upstream"
         self.upstream.mkdir()
         self.git = shutil.which("git")
@@ -74,7 +80,7 @@ os.execv(os.environ['REAL_GIT'], ['git'] + args)
         self.git_run("commit", "-m", message)
 
     def run_setup(self, items, success=True, input=""):
-        result = subprocess.run([str(SCRIPT), "--container", "test", "--tools", items],
+        result = subprocess.run([str(self.script), "--container", "test", "--tools", items],
                                 env=self.env, capture_output=True, text=True, input=input, timeout=30)
         if success:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -227,6 +233,10 @@ printf 'test (debian) Up 5 minutes\\n'
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("path [default]", result.stdout)
         self.assertIn("dotfiles [default]", result.stdout)
+        self.assertIn("clangd", result.stdout)
+        self.assertIn("clang-tidy", result.stdout)
+        self.assertNotIn("clangd [default]", result.stdout)
+        self.assertNotIn("clang-tidy [default]", result.stdout)
         self.assertTrue((self.home / ".bashrc").is_file())
         self.assertTrue((self.home / "linked").is_symlink())
 
@@ -257,6 +267,131 @@ with tarfile.open(args[args.index('-o') + 1], 'w:gz') as archive:
         self.env = dict(self.env, CONTAINER_ARCH="riscv64")
         self.assertIn("Unsupported container architecture: riscv64",
                       self.run_setup("path", success=False))
+
+    def clang_fixtures(self, headers_present=True):
+        self.isolate_path()
+        # Exercise the Python fallback even on developer hosts that have unzip.
+        for name in ("sha256sum", "shasum", "perl"):
+            path = shutil.which(name)
+            if path:
+                (self.bin / name).symlink_to(path)
+        self.write_bin("ldd", '#!/bin/sh\necho "${TEST_LIBC:-GNU libc}"\n')
+        fixtures = self.base / "assets"
+        fixtures.mkdir()
+        binary = b'#!/bin/sh\nset -e\nexe=$(readlink -f "$0")\ntest -f "${exe%/bin/*}/lib/clang/22/include/stddef.h"\n'
+        # The fake executable refuses to run without its adjacent resource tree.
+        wheel = fixtures / "clangd.whl"
+        with zipfile.ZipFile(wheel, "w") as z:
+            z.writestr("clangd/data/bin/clangd", binary +
+                       b'if [ "${TEST_LIBC:-}" = musl ]; then test -f "${exe%/clangd/data/bin/*}/clangd.libs/runtime.so"; fi\n')
+            if headers_present:
+                z.writestr("clangd/data/lib/clang/22/include/stddef.h", "// builtin\n")
+            z.writestr("clangd.libs/runtime.so", "bundled runtime\n")
+        tidy = fixtures / "clang-tidy"
+        tidy.write_bytes(binary.replace(b"clang/22", b"clang/23"))
+        headers = fixtures / "headers.tar.gz"
+        with tarfile.open(headers, "w:gz") as t:
+            content = b"// builtin\n"
+            info = tarfile.TarInfo("lib/clang/23/include/stddef.h")
+            info.size = len(content)
+            t.addfile(info, io.BytesIO(content))
+        hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+                  for p in (wheel, tidy, headers)}
+        source = SCRIPT.read_text()
+
+        def fixture_hash(match):
+            asset = match[1]
+            key = ("clangd.whl" if asset.endswith(".whl") else
+                   "headers.tar.gz" if asset.endswith(".tar.gz") else "clang-tidy")
+            return asset + "|" + hashes[key]
+
+        source = re.sub(r"(clang[^|\n]+)\|[a-f0-9]{64}", fixture_hash, source)
+        self.script = self.base / "container-devtools"
+        self.script.write_text(source)
+        self.script.chmod(0o755)
+        self.env = dict(self.env, CLANG_FIXTURES=str(fixtures))
+        self.write_bin("curl", '''#!/usr/bin/env python3
+import os, pathlib, shutil, sys
+args = sys.argv[1:]
+url = args[-1]
+with open(os.environ['HOME'] + '/fetch-log', 'a') as log: log.write(url + '\\n')
+name = 'clangd.whl' if url.endswith('.whl') else 'headers.tar.gz' if url.endswith('.tar.gz') else 'clang-tidy'
+shutil.copyfile(pathlib.Path(os.environ['CLANG_FIXTURES']) / name, args[args.index('-o') + 1])
+''')
+
+    def test_clang_tools_install_resources_for_both_architectures_and_libcs(self):
+        self.clang_fixtures()
+        for arch in ("x86_64", "aarch64"):
+            for libc, platform in (("Debian GLIBC 2.41", "manylinux"), ("musl", "musllinux")):
+                with self.subTest(arch=arch, libc=libc):
+                    self.env = dict(self.env, CONTAINER_ARCH=arch, TEST_LIBC=libc)
+                    output = self.run_setup("clangd,clang-tidy")
+                    self.assertIn("clangd: installed", output)
+                    self.assertIn("clang-tidy: installed", output)
+                    for tool in ("clangd", "clang-tidy"):
+                        subprocess.run([str(self.home / ".local/bin" / tool), "--version"],
+                                       env=self.env, check=True)
+                    log = (self.home / "fetch-log").read_text()
+                    self.assertIn(platform, log)
+                    self.assertIn(arch, log)
+                    self.assertIn("skipped (already present)", self.run_setup("clangd,clang-tidy"))
+                    shutil.rmtree(self.home / ".local")
+                    (self.home / "fetch-log").unlink()
+
+    def test_clang_checksum_failure_preserves_destination_and_continues(self):
+        self.clang_fixtures()
+        (self.base / "assets/clangd.whl").write_bytes(b"corrupt download")
+        output = self.run_setup("clangd,path", success=False)
+        self.assertIn("checksum", output.lower())
+        self.assertIn("clangd: FAILED", output)
+        self.assertIn("path: configured", output)
+        self.assertFalse((self.home / ".local/bin/clangd").exists())
+
+    def test_clang_failed_probe_removes_stage_and_continues(self):
+        self.clang_fixtures(headers_present=False)
+        output = self.run_setup("clangd,path", success=False)
+        self.assertIn("clangd: FAILED", output)
+        self.assertIn("path: configured", output)
+        self.assertFalse((self.home / ".local/bin/clangd").exists())
+        self.assertEqual(list((self.home / ".local/opt").iterdir()), [])
+
+    def test_clang_checksums_with_macos_shasum(self):
+        self.clang_fixtures()
+        sha256 = self.bin / "sha256sum"
+        if sha256.exists():
+            sha256.unlink()
+        if not (self.bin / "shasum").exists():
+            self.skipTest("shasum is not installed")
+        self.assertIn("clangd: installed", self.run_setup("clangd"))
+
+    def test_clang_extracts_with_unzip_when_python_is_unavailable(self):
+        unzip = shutil.which("unzip")
+        if not unzip:
+            self.skipTest("unzip is not installed")
+        self.clang_fixtures()
+        (self.bin / "unzip").symlink_to(unzip)
+        for name in ("docker", "curl"):
+            path = self.bin / name
+            path.write_text(path.read_text().replace("#!/usr/bin/env python3",
+                                                    "#!" + shutil.which("python3")))
+        (self.bin / "python3").unlink()
+        self.env = dict(self.env, TEST_LIBC="musl")
+        self.assertIn("clangd: installed", self.run_setup("clangd"))
+
+    def test_clang_no_extractor_reports_reason_after_checksum_validation(self):
+        self.clang_fixtures()
+        for name in ("docker", "curl"):
+            path = self.bin / name
+            path.write_text(path.read_text().replace("#!/usr/bin/env python3",
+                                                    "#!" + shutil.which("python3")))
+        (self.bin / "python3").unlink()
+        output = self.run_setup("clangd,path", success=False)
+        self.assertIn("requires unzip or python3", output)
+        self.assertIn("path: configured", output)
+        (self.base / "assets/clangd.whl").write_bytes(b"corrupt download")
+        output = self.run_setup("clangd,path", success=False)
+        self.assertIn("checksum mismatch", output)
+        self.assertNotIn("requires unzip or python3", output)
 
     def test_invalid_selection(self):
         self.assertIn("Unknown tool", self.run_setup("bogus", success=False))
