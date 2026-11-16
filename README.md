@@ -188,8 +188,8 @@ other items.
   builtin headers alongside their binaries under `~/.local/opt` and expose
   commands in `~/.local/bin`. clangd uses compact
   [PyPI wheels](https://pypi.org/project/clangd/22.1.1/) from jmpfar/clangd-wheel
-  (24-28 MB; host `unzip` required), staying one major behind to avoid the full
-  LLVM archive. clang-tidy uses
+  (24-28 MB; host `unzip` or Python 3 required), staying one major behind to avoid
+  the full LLVM archive. clang-tidy uses
   [cpp-linter static binaries](https://github.com/cpp-linter/clang-tools-static-binaries/releases/tag/llvm-23.1.5)
   (87-88 MB plus 1 MB builtin headers). The host needs `sha256sum` or `shasum`.
   clangd requires glibc 2.27+ or musl 1.2+, plus zlib in the container; its musl

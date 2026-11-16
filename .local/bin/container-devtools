@@ -49,7 +49,7 @@ incompatible releases fail individually.
 clangd 22.1.1 and clang-tidy 23.1.5 support glibc and musl on both architectures.
 They include builtin headers under ~/.local/opt; project C/C++ standard library
 headers and compile flags must already be available in the container.
-clangd uses compact PyPI wheels from jmpfar/clangd-wheel (host unzip required);
+clangd uses compact PyPI wheels from jmpfar/clangd-wheel (host unzip or python3);
 clang-tidy uses cpp-linter static binaries. Both verify pinned SHA-256 checksums
 (host sha256sum or shasum required). They are optional, not defaults.
 clangd requires glibc 2.27+ or musl 1.2+, and zlib in the container.
@@ -210,11 +210,29 @@ fetch_clang() {
     [[ ${actual%% *} == "$expected" ]] || { echo "SHA-256 checksum mismatch: $asset" >&2; return 1; }
 }
 
+unpack_clangd() {
+    if command -v unzip >/dev/null 2>&1; then
+        unzip -q "$1" 'clangd/data/*' -d "$2" || return 1
+        if [[ $3 == musllinux* ]]; then
+            unzip -q "$1" 'clangd.libs/*' -d "$2" || return 1
+        fi
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 - "$1" "$2" <<'PY'
+import sys
+import zipfile
+
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    for entry in archive.infolist():
+        if entry.filename.startswith(("clangd/data/", "clangd.libs/")):
+            archive.extract(entry, sys.argv[2])
+PY
+    else echo 'Host requires unzip or python3 for clangd wheels' >&2; return 1; fi
+}
+
 install_clang() {
     local name=$1 repo=$2 tag=$3 asset=$4 root=$work/$1/unpack libc platform bin=bin
     mkdir -p "$root/bin" || return 1
     if [[ $name == clangd ]]; then
-        command -v unzip >/dev/null 2>&1 || { echo 'Host requires unzip for clangd wheels' >&2; return 1; }
         libc=$("$engine" exec "$container" sh -c 'ldd --version 2>&1 || true') || return 1
         case $libc in
             *musl*) platform=musllinux_1_2_$arch ;;
@@ -223,10 +241,7 @@ install_clang() {
         esac
         asset=clangd-22.1.1-py2.py3-none-$platform.whl
         fetch_clang "$repo" "$tag" "$asset" "$work/$name/asset" || return 1
-        unzip -q "$work/$name/asset" 'clangd/data/*' -d "$root" || return 1
-        if [[ $platform == musllinux* ]]; then
-            unzip -q "$work/$name/asset" 'clangd.libs/*' -d "$root" || return 1
-        fi
+        unpack_clangd "$work/$name/asset" "$root" "$platform" || return 1
         bin=clangd/data/bin
     else
         fetch_clang "$repo" "$tag" "$asset" "$root/bin/$name" || return 1

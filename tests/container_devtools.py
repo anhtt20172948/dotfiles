@@ -270,7 +270,8 @@ with tarfile.open(args[args.index('-o') + 1], 'w:gz') as archive:
 
     def clang_fixtures(self, headers_present=True):
         self.isolate_path()
-        for name in ("unzip", "sha256sum", "shasum", "perl"):
+        # Exercise the Python fallback even on developer hosts that have unzip.
+        for name in ("sha256sum", "shasum", "perl"):
             path = shutil.which(name)
             if path:
                 (self.bin / name).symlink_to(path)
@@ -362,6 +363,35 @@ shutil.copyfile(pathlib.Path(os.environ['CLANG_FIXTURES']) / name, args[args.ind
         if not (self.bin / "shasum").exists():
             self.skipTest("shasum is not installed")
         self.assertIn("clangd: installed", self.run_setup("clangd"))
+
+    def test_clang_extracts_with_unzip_when_python_is_unavailable(self):
+        unzip = shutil.which("unzip")
+        if not unzip:
+            self.skipTest("unzip is not installed")
+        self.clang_fixtures()
+        (self.bin / "unzip").symlink_to(unzip)
+        for name in ("docker", "curl"):
+            path = self.bin / name
+            path.write_text(path.read_text().replace("#!/usr/bin/env python3",
+                                                    "#!" + shutil.which("python3")))
+        (self.bin / "python3").unlink()
+        self.env = dict(self.env, TEST_LIBC="musl")
+        self.assertIn("clangd: installed", self.run_setup("clangd"))
+
+    def test_clang_no_extractor_reports_reason_after_checksum_validation(self):
+        self.clang_fixtures()
+        for name in ("docker", "curl"):
+            path = self.bin / name
+            path.write_text(path.read_text().replace("#!/usr/bin/env python3",
+                                                    "#!" + shutil.which("python3")))
+        (self.bin / "python3").unlink()
+        output = self.run_setup("clangd,path", success=False)
+        self.assertIn("requires unzip or python3", output)
+        self.assertIn("path: configured", output)
+        (self.base / "assets/clangd.whl").write_bytes(b"corrupt download")
+        output = self.run_setup("clangd,path", success=False)
+        self.assertIn("checksum mismatch", output)
+        self.assertNotIn("requires unzip or python3", output)
 
     def test_invalid_selection(self):
         self.assertIn("Unknown tool", self.run_setup("bogus", success=False))
