@@ -166,6 +166,39 @@ jq '{currentThemeName, matugenScheme, matugenSpec, radiusStrength, fontFamily,
   blurBorderOpacity}' ~/.config/dms/settings.json
 ```
 
+### Container devtools
+
+Press tmux **prefix + B**, choose a running Docker container (or Podman when
+Docker is absent), then choose tools and setup items. `path` and `dotfiles` are
+selected by default alongside the usual tools. The host needs curl or wget for
+release binaries and Git for dotfiles; the container needs no downloader.
+
+```bash
+container-devtools --container my-dev --tools ripgrep,fd,path,dotfiles
+container-devtools --container my-dev --tools ripgrep,fd # tools only
+```
+
+`--tools` selects exactly the comma-separated items, including `path` and
+`dotfiles`; omit either to opt out. Run `container-devtools --help` for the full
+catalog. Each selected item reports its own outcome, and a failure does not stop
+other items.
+
+- `path` adds `export PATH="$HOME/.local/bin:$PATH"` to the container user's
+  `~/.bashrc` once, creating it when missing. Open a new interactive Bash shell
+  to use it. Only the container's Bash configuration changes.
+- `dotfiles` fetches the default branch of
+  [this public repository](https://github.com/anhtt20172948/dotfiles) on the
+  host and copies it to the container user's `~/dotfiles`. It then runs that
+  checkout's `install.sh`, preserving the installer's conflict backups.
+- Linking requires Bash, coreutils (including `readlink -f`) and Python 3.11+.
+  Missing requirements leave the checkout downloaded and show **linking SKIPPED**
+  in the summary. No system packages are installed automatically.
+- Reruns update standalone Git checkouts using fast-forward merges, preserving
+  local edits and untracked files. Conflicting edits or divergent history fail
+  the item and leave the container checkout untouched. A replaced checkout is
+  saved under `~/.dotfiles-backup/checkout.*/dotfiles`. Existing non-Git
+  directories and symlinks at `~/dotfiles` are left untouched with an error.
+
 ### What `install.sh` does
 
 The linker needs Bash, coreutils (including `readlink -f`) and Python 3.11+
