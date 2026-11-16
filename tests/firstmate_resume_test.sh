@@ -157,11 +157,12 @@ exit 0
                 assert f"{agent}:{firstmate}:{resume_args(agent)}\n" in output, output
                 assert "Model ›" not in output and "Effort ›" not in output, output
                 assert "debug models" not in output, output
+                args = [line[4:] for line in output.splitlines() if line.startswith("arg:")]
                 if agent == "codex":
-                    assert f"arg:resume\narg:-C\narg:{firstmate}\narg:{codex_id}\n" in output, output
+                    assert args == ["resume", "-C", str(firstmate), codex_id], output
                     assert "--last" not in output, output
                 else:
-                    assert f"arg:--resume\narg:{claude_id}\n" in output, output
+                    assert args == ["--resume", claude_id], output
                     assert "--continue" not in output, output
                     assert f"account:exec --account test claude --resume {claude_id}" in output, output
                     # The pane is bound by name; the selector follows once the pane exists.

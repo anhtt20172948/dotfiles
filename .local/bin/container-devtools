@@ -20,19 +20,28 @@ usage() {
     cat <<'HELP'
 Usage: container-devtools [--container NAME_OR_ID] [--tools TOOL,TOOL,...]
 
-Select a running Docker container (Podman when Docker is absent), then tools.
+Select a running Docker container (Podman when Docker is absent), then setup items.
 Without gum/fzf, use numbered prompts. Blank tool input accepts the defaults;
 enter "none" to cancel. With fzf: Tab toggles a tool, Enter confirms.
 
-Tools: ripgrep, fd, fzf, bat, jq, neovim, lazygit, eza, zoxide, btop
-Defaults: ripgrep, fd, fzf, bat, jq, lazygit, eza, zoxide
+Items (--tools): ripgrep, fd, fzf, bat, jq, neovim, lazygit, eza, zoxide, btop,
+                path, dotfiles
+Defaults: ripgrep, fd, fzf, bat, jq, lazygit, eza, zoxide, path, dotfiles
 
 Pinned official Linux release binaries are downloaded and unpacked on the host
 (requires curl or wget, tar, gzip). No container downloader, root, or package
 manager is required. Files go into the configured container user's ~/.local/bin.
 Existing commands, including those in ~/.local/bin, are skipped.
 Neovim includes its runtime. Neovim and some ARM releases require glibc;
-incompatible releases fail individually. Shell configuration is never modified.
+incompatible releases fail individually.
+path: add export PATH="$HOME/.local/bin:$PATH" once to the container ~/.bashrc.
+dotfiles: host Git fetches the public anhtt20172948/dotfiles default branch into
+container ~/dotfiles, then runs its install.sh (Bash, coreutils/readlink -f and
+Python 3.11+ required). Missing prerequisites skip linking, keeping the download.
+Existing checkouts update fast-forward only, preserving local edits; conflicts
+fail this item without replacing the checkout. Replaced checkouts are backed up
+under ~/.dotfiles-backup. No system packages or host shell files are changed.
+--tools selects exactly the listed items; omit path/dotfiles to opt out.
 Interactive tools may also need TERM/terminfo; lazygit requires git to use.
 
 Example: container-devtools --container my-dev --tools ripgrep,fd,fzf,jq
@@ -52,7 +61,7 @@ while (($#)); do
     esac
 done
 
-names=() defaults=()
+names=(path dotfiles) defaults=(path dotfiles)
 while IFS='|' read -r name _ _ _ _ _ preset; do
     names+=("$name")
     [[ $preset != yes ]] || defaults+=("$name")
@@ -104,7 +113,7 @@ if [[ $tools_given != yes ]]; then
     if command -v gum >/dev/null 2>&1; then
         defaults_csv=$(IFS=,; echo "${defaults[*]}")
         tools=$(printf '%s\n' "${names[@]}" | gum choose --no-limit --selected "$defaults_csv" \
-            --header 'Choose tools (Enter installs)' | paste -sd, -) || exit 130
+            --header 'Choose tools and setup (Enter installs)' | paste -sd, -) || exit 130
     elif command -v fzf >/dev/null 2>&1; then
         # Put defaults first, then select exactly those rows after input loads.
         choices=("${defaults[@]}")
@@ -139,7 +148,11 @@ if [[ $tools_given != yes ]]; then
 fi
 
 arch=$("$engine" exec "$container" uname -m) || die 'Cannot detect container architecture'
-case $arch in x86_64|aarch64) ;; *) die "Unsupported container architecture: $arch" ;; esac
+case $arch in
+    x86_64|amd64) arch=x86_64 ;;
+    aarch64|arm64) arch=aarch64 ;;
+    *) die "Unsupported container architecture: $arch" ;;
+esac
 "$engine" exec "$container" sh -c 'test "$(uname -s)" = Linux && test -n "$HOME" && test "${HOME#/}" != "$HOME"' \
     || die 'Container requires Linux, sh, and an absolute HOME for its configured user'
 work=$(mktemp -d)
@@ -197,8 +210,127 @@ install_tool() {
     fi
 }
 
+install_path() {
+    "$engine" exec "$container" sh -c '
+        set -eu
+        line='\''export PATH="$HOME/.local/bin:$PATH"'\''
+        touch "$HOME/.bashrc"
+        if ! grep -Fqx "$line" "$HOME/.bashrc"; then
+            printf "\n%s\n" "$line" >> "$HOME/.bashrc"
+        fi
+    '
+}
+
+# Run Git against a host-side snapshot, never against the live container tree.
+# Hooks and filesystem monitors from an existing checkout must not run on host.
+dotfiles_git() {
+    git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$work/dotfiles" "$@"
+}
+
+snapshot_dotfiles() {
+    "$engine" exec "$container" sh -c '
+        test ! -L "$HOME/dotfiles" && test -d "$HOME/dotfiles/.git" &&
+        test ! -L "$HOME/dotfiles/.git"
+    ' || { echo 'Existing ~/dotfiles is not a standalone Git checkout; left untouched.' >&2; return 1; }
+    "$engine" exec "$container" sh -c 'tar -cf - -C "$HOME/dotfiles" .' |
+        tar -xf - -C "$work/dotfiles" || return 1
+    # Container Git metadata must not redirect host writes or execute filters.
+    if [[ -n $(find "$work/dotfiles/.git" -type l -print -quit) ||
+          -e $work/dotfiles/.git/commondir || -e $work/dotfiles/.git/objects/info/alternates ]]; then
+        echo 'Checkout uses shared or symlinked Git metadata; left untouched.' >&2
+        return 1
+    fi
+    cp "$work/dotfiles/.git/config" "$work/git-config" || return 1
+    printf '[core]\nrepositoryformatversion = 0\nbare = false\n' > "$work/dotfiles/.git/config" || return 1
+}
+
+fetch_dotfiles() {
+    local existing=no before='' after
+    command -v git >/dev/null || { echo 'Host requires git to fetch dotfiles' >&2; return 1; }
+    mkdir -p "$work/dotfiles" || return 1
+    if "$engine" exec "$container" sh -c 'test -e "$HOME/dotfiles" || test -L "$HOME/dotfiles"'; then
+        snapshot_dotfiles || return 1
+        before=$(dotfiles_git rev-parse HEAD) || return 1
+        existing=yes
+    else
+        dotfiles_git init -q || return 1
+        dotfiles_git remote add origin https://github.com/anhtt20172948/dotfiles || return 1
+    fi
+    dotfiles_git fetch --no-tags https://github.com/anhtt20172948/dotfiles HEAD || return 1
+    if [[ $existing == yes ]]; then
+        dotfiles_git merge --ff-only FETCH_HEAD || {
+            echo 'Dotfiles update conflicts or history diverged; container checkout left untouched.' >&2
+            return 1
+        }
+    else
+        dotfiles_git checkout -q -b container-dotfiles FETCH_HEAD || return 1
+    fi
+    after=$(dotfiles_git rev-parse HEAD) || return 1
+    if [[ $existing == yes ]]; then
+        cp "$work/git-config" "$work/dotfiles/.git/config" || return 1
+    fi
+    dotfiles_changed=no
+    [[ $before == "$after" ]] || dotfiles_changed=yes
+}
+
+publish_dotfiles() {
+    local stage
+    stage=$("$engine" exec "$container" sh -c 'mktemp -d "$HOME/.dotfiles-stage.XXXXXXXX"') || return 1
+    if ! tar -cf - -C "$work/dotfiles" . |
+        "$engine" exec -i "$container" sh -c 'tar -xof - -C "$1"' sh "$stage"; then
+        "$engine" exec "$container" sh -c 'rm -rf -- "$1"' sh "$stage"
+        return 1
+    fi
+    "$engine" exec "$container" sh -c '
+        set -eu
+        stage=$1
+        trap '\''rm -rf -- "$stage"'\'' EXIT
+        if [ -e "$HOME/dotfiles" ]; then
+            mkdir -p "$HOME/.dotfiles-backup"
+            backup=$(mktemp -d "$HOME/.dotfiles-backup/checkout.XXXXXXXX")
+            mv "$HOME/dotfiles" "$backup/dotfiles"
+            if ! mv "$stage" "$HOME/dotfiles"; then
+                mv "$backup/dotfiles" "$HOME/dotfiles"
+                exit 1
+            fi
+        else
+            mv "$stage" "$HOME/dotfiles"
+        fi
+    ' sh "$stage" || return 1
+}
+
+install_dotfiles() {
+    fetch_dotfiles || return 1
+    if [[ $dotfiles_changed == yes ]]; then publish_dotfiles || return 1; fi
+    if ! "$engine" exec "$container" sh -c '
+        command -v bash >/dev/null && command -v readlink >/dev/null &&
+        readlink -f "$HOME/dotfiles" >/dev/null &&
+        command -v python3 >/dev/null &&
+        python3 -c "import sys, tomllib; assert sys.version_info >= (3, 11)"
+    '; then
+        dotfiles_outcome='downloaded/updated; linking SKIPPED (requires Bash, coreutils/readlink -f, Python 3.11+)'
+        return 0
+    fi
+    "$engine" exec "$container" sh -c '
+        export PATH="$HOME/.local/bin:$PATH"
+        bash "$HOME/dotfiles/install.sh"
+    ' || return 1
+    dotfiles_outcome='downloaded/updated and linked'
+}
+
 results=() failed=0
 for tool in "${selected[@]}"; do
+    case $tool in
+        path)
+            if install_path; then results+=("path: configured (~/.bashrc; open a new Bash shell)")
+            else results+=("path: FAILED (see error above)"); failed=1; fi
+            continue ;;
+        dotfiles)
+            printf 'Fetching and installing dotfiles...\n'
+            if install_dotfiles; then results+=("dotfiles: $dotfiles_outcome")
+            else results+=("dotfiles: FAILED (see error above)"); failed=1; fi
+            continue ;;
+    esac
     while IFS='|' read -r name repo tag amd arm binary _; do
         [[ $name == "$tool" ]] || continue
         if "$engine" exec "$container" sh -c 'command -v "$1" >/dev/null 2>&1 || test -x "$HOME/.local/bin/$1"' sh "$binary"; then
@@ -215,9 +347,4 @@ for tool in "${selected[@]}"; do
 done
 printf '\nResults:\n'
 printf '  %s\n' "${results[@]}"
-"$engine" exec "$container" sh -c '
-    case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *)
-        printf '\''Add this in your container shell: export PATH="%s/.local/bin:$PATH"\n'\'' "$HOME" ;;
-    esac
-' || failed=1
 exit "$failed"
