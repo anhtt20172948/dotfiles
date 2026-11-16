@@ -115,6 +115,10 @@ end
 local decorative = { "Separator", "Split", "Indent", "VirtLine", "lualine_transitional_" }
 
 local function is_decorative(name)
+	-- Thin Markdown fences draw surface-coloured block glyphs, not text.
+	if name == "RenderMarkdown_RenderMarkdownCodeBorder_bg_as_fg" then
+		return true
+	end
 	for _, part in ipairs(decorative) do
 		if name:find(part, 1, true) then
 			return true
