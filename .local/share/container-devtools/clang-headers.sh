@@ -3,9 +3,12 @@
 set -eu
 name=$1 tag=$2 major=$3 version=$4
 executable=$(readlink -f "$HOME/.local/bin/$name" 2>/dev/null) || executable=''
+# readlink -f resolves every symlink, so compare against the physical HOME
+# (e.g. /home -> /var/home, or macOS /var -> /private/var).
+home=$(cd "$HOME" 2>/dev/null && pwd -P) || home=$HOME
 case $name:$executable in
-    clangd:"$HOME"/.local/opt/clangd-"$tag".*/clangd/data/bin/clangd) ;;
-    clang-tidy:"$HOME"/.local/opt/clang-tidy-"$tag".*/bin/clang-tidy) ;;
+    clangd:"$home"/.local/opt/clangd-"$tag".*/clangd/data/bin/clangd) ;;
+    clang-tidy:"$home"/.local/opt/clang-tidy-"$tag".*/bin/clang-tidy) ;;
     *) printf 'resource header audit skipped (unmanaged or different version)'; exit 0 ;;
 esac
 include=${executable%/bin/*}/lib/clang/$major/include

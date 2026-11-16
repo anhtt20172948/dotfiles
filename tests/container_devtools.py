@@ -438,6 +438,19 @@ esac
         self.assertEqual(supplied.read_bytes(), header.read_bytes())
         self.assertEqual(header.read_text(), "/* container OpenMP runtime API */\n")
 
+    def test_clangd_supplies_openmp_header_when_home_is_a_symlink(self):
+        self.clang_fixtures()
+        header = self.openmp_compiler()
+        linked_home = self.base / "linked home"
+        linked_home.symlink_to(self.home)
+        self.env = dict(self.env, HOME=str(linked_home), CONTAINER_ARCH="aarch64")
+        output = self.run_setup("clangd")
+        self.assertNotIn("audit skipped", output)
+        executable = (linked_home / ".local/bin/clangd").resolve()
+        supplied = executable.parent.parent / "lib/clang/22/include/omp.h"
+        self.assertTrue(supplied.is_file(), output)
+        self.assertEqual(supplied.read_bytes(), header.read_bytes())
+
     def test_clangd_repairs_existing_managed_install_without_download(self):
         self.clang_fixtures()
         self.run_setup("clangd,clang-tidy")
@@ -532,7 +545,7 @@ esac
         local.parent.mkdir(parents=True)
         local.symlink_to(external)
         self.run_setup("clangd")
-        self.assertEqual(local.resolve(), external)
+        self.assertEqual(local.resolve(), external.resolve())
         self.assertEqual(sorted(str(p.relative_to(external.parent.parent))
                                 for p in external.parent.parent.rglob("*")),
                          ["bin", "bin/clangd"])
