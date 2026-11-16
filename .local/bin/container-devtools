@@ -101,7 +101,8 @@ if [[ -z $container ]]; then
     elif command -v gum >/dev/null 2>&1; then
         choice=$(printf '%s\n' "$rows" | gum choose --header 'Choose a container') || exit 130
     else
-        mapfile -t options <<< "$rows"
+        options=()
+        while IFS= read -r row; do options+=("$row"); done <<< "$rows"
         for i in "${!options[@]}"; do printf '%d) %s\n' "$((i+1))" "${options[i]}"; done
         read -rp 'Container number: ' choice || exit 130
         [[ $choice =~ ^[0-9]{1,6}$ ]] || die 'Invalid container number'

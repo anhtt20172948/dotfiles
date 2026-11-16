@@ -210,6 +210,9 @@ printf 'test (debian) Up 5 minutes\\n'
             with self.subTest(picker=picker):
                 if picker == "numbered":
                     self.isolate_path()
+                    bash_env = self.base / "bash-env"
+                    bash_env.write_text("enable -n mapfile 2>/dev/null || true\n")
+                    self.env = dict(self.env, BASH_ENV=str(bash_env))
                 else:
                     self.write_bin("gum", "#!/bin/sh\ncat\n")
                 result = subprocess.run([str(SCRIPT), "--tools", "path"], env=self.env,
