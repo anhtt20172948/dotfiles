@@ -37,7 +37,9 @@ esac
         self.write_bin("docker", '''#!/usr/bin/env python3
 import os, subprocess, sys
 args = sys.argv[1:]
-if args[0] == 'ps': print('abc test (debian)')
+if args[0] == 'ps':
+    assert args[-1] == '{{.Names}} ({{.Image}}) {{.Status}}', args
+    print('test (debian) Up 5 minutes')
 elif args[0] == 'inspect': print('true' if 'Running' in args[2] else 'abc')
 elif args[0] == 'exec':
     args = args[1:]
@@ -126,7 +128,7 @@ os.execv(os.environ['REAL_GIT'], ['git'] + args)
         self.assertEqual(config.read_text(), "user edit\n")
 
     def test_missing_requirements_keeps_download_and_reports_skip(self):
-        self.write_bin("python3", "#!/bin/sh\nexit 1\n")
+        self.write_bin("python3", "#!/bin/sh\necho 'ModuleNotFoundError: No module named tomllib' >&2\nexit 1\n")
         # Keep engine/git stubs runnable even when the container python probe fails.
         for name in ("docker", "git"):
             path = self.bin / name
@@ -134,6 +136,7 @@ os.execv(os.environ['REAL_GIT'], ['git'] + args)
         output = self.run_setup("dotfiles,path")
         self.assertIn("downloaded", output)
         self.assertIn("Python 3.11+", output)
+        self.assertNotIn("ModuleNotFoundError", output)
         self.assertFalse((self.home / "linked").exists())
         self.assertTrue((self.home / "dotfiles/install.sh").is_file())
 
@@ -176,6 +179,46 @@ os.execv(os.environ['REAL_GIT'], ['git'] + args)
                      "cat", "grep", "touch", "readlink", "cp", "mv", "find", "chmod", "ln"):
             (self.bin / name).symlink_to(shutil.which(name))
         self.env = dict(self.env, PATH=str(self.bin))
+
+    def test_fzf_container_picker_precedes_gum_and_resolves_name(self):
+        self.isolate_path()
+        self.env = dict(self.env, XDG_CONFIG_HOME=str(ROOT / ".config"))
+        self.write_bin("gum", "#!/bin/sh\nexit 99\n")
+        self.write_bin("fzf", """#!/bin/sh
+printf '%s\\n' "$@" > "$HOME/fzf-args"
+cat > "$HOME/fzf-rows"
+printf 'test (debian) Up 5 minutes\\n'
+""")
+        docker = self.bin / "docker"
+        docker.write_text(docker.read_text().replace(
+            "elif args[0] == 'inspect': print('true' if 'Running' in args[2] else 'abc')",
+            "elif args[0] == 'inspect':\n"
+            "    assert args[-1] == ('abc' if 'Running' in args[2] else 'test'), args\n"
+            "    print('true' if 'Running' in args[2] else 'abc')"))
+        result = subprocess.run([str(SCRIPT), "--tools", "path"], env=self.env,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.home / "fzf-rows").read_text(), "test (debian) Up 5 minutes\n")
+        args = (self.home / "fzf-args").read_text()
+        self.assertIn("--height=100%", args)
+        self.assertIn("--reverse", args)
+        self.assertIn("--color=16,bg:-1", args)
+        self.assertTrue((self.home / ".bashrc").is_file())
+
+    def test_container_picker_fallbacks(self):
+        for picker in ("numbered", "gum"):
+            with self.subTest(picker=picker):
+                if picker == "numbered":
+                    self.isolate_path()
+                    bash_env = self.base / "bash-env"
+                    bash_env.write_text("enable -n mapfile 2>/dev/null || true\n")
+                    self.env = dict(self.env, BASH_ENV=str(bash_env))
+                else:
+                    self.write_bin("gum", "#!/bin/sh\ncat\n")
+                result = subprocess.run([str(SCRIPT), "--tools", "path"], env=self.env,
+                                        capture_output=True, text=True, input="1\n", timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("path: configured", result.stdout)
 
     def test_numbered_menu_defaults_include_setup(self):
         self.isolate_path()

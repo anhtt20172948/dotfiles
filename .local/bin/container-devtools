@@ -85,16 +85,24 @@ validate_tools() {
 if command -v docker >/dev/null 2>&1; then engine=docker
 elif command -v podman >/dev/null 2>&1; then engine=podman
 else die 'Install Docker or Podman on the host'; fi
-rows=$("$engine" ps --format '{{.ID}} {{.Names}} ({{.Image}})') || die "$engine cannot list running containers"
+rows=$("$engine" ps --format '{{.Names}} ({{.Image}}) {{.Status}}') || die "$engine cannot list running containers"
 [[ -n $rows ]] || die 'No running containers'
 
 if [[ -z $container ]]; then
-    if command -v gum >/dev/null 2>&1; then
+    if command -v fzf >/dev/null 2>&1; then
+        picker_args=(--height=100% --reverse --prompt 'Container> ' --border-label ' Containers ')
+        palette=${XDG_CONFIG_HOME:-$HOME/.config}/tmux/scripts/fzf-colors.sh
+        if [[ -r $palette ]]; then
+            # shellcheck source=/dev/null
+            source "$palette"
+            picker_args+=(--color="$PICKER_FZF_COLORS")
+        fi
+        choice=$(printf '%s\n' "$rows" | fzf "${picker_args[@]}") || exit 130
+    elif command -v gum >/dev/null 2>&1; then
         choice=$(printf '%s\n' "$rows" | gum choose --header 'Choose a container') || exit 130
-    elif command -v fzf >/dev/null 2>&1; then
-        choice=$(printf '%s\n' "$rows" | fzf --prompt 'Container> ') || exit 130
     else
-        mapfile -t options <<< "$rows"
+        options=()
+        while IFS= read -r row; do options+=("$row"); done <<< "$rows"
         for i in "${!options[@]}"; do printf '%d) %s\n' "$((i+1))" "${options[i]}"; done
         read -rp 'Container number: ' choice || exit 130
         [[ $choice =~ ^[0-9]{1,6}$ ]] || die 'Invalid container number'
@@ -306,7 +314,7 @@ install_dotfiles() {
         command -v bash >/dev/null && command -v readlink >/dev/null &&
         readlink -f "$HOME/dotfiles" >/dev/null &&
         command -v python3 >/dev/null &&
-        python3 -c "import sys, tomllib; assert sys.version_info >= (3, 11)"
+        python3 -c "import sys, tomllib; assert sys.version_info >= (3, 11)" 2>/dev/null
     '; then
         dotfiles_outcome='downloaded/updated; linking SKIPPED (requires Bash, coreutils/readlink -f, Python 3.11+)'
         return 0
