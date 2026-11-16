@@ -5,11 +5,28 @@ return {
 	opts = {
 		heading = {
 			sign = false,
-			icons = { "# ", "## ", "### ", "#### ", "##### ", "###### " },
-			backgrounds = { "Headline1Bg", "Headline2Bg", "Headline3Bg", "Headline4Bg", "Headline5Bg", "Headline6Bg" },
-			foregrounds = { "Headline1Fg", "Headline2Fg", "Headline3Fg", "Headline4Fg", "Headline5Fg", "Headline6Fg" },
+			icons = { "󰉫 ", "󰉬 ", "󰉭 ", "󰉮 ", "󰉯 ", "󰉰 " },
+			position = "inline",
+			width = "block",
+			right_pad = 1,
 		},
-		code = { sign = false, width = "block", right_pad = 1 },
-		bullet = { enabled = true },
+		code = {
+			sign = false,
+			width = "block",
+			left_pad = 1,
+			right_pad = 1,
+			language_pad = 1,
+			border = "thin",
+			highlight_language = "RenderMarkdownCodeInfo",
+			inline_pad = 1,
+		},
+		bullet = { icons = { "•", "◦", "▪" } },
+		checkbox = {
+			unchecked = { icon = "󰄱 " },
+			checked = { icon = "󰄵 " },
+		},
+		pipe_table = { preset = "round", cell = "trimmed", alignment_indicator = "─" },
+		quote = { icon = "│", highlight = "RenderMarkdownQuote" },
+		dash = { width = 60 },
 	},
 }
