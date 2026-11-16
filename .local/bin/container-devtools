@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+# Shell snippets expand variables inside the container, not on the host.
+# shellcheck disable=SC2016
+set -Eeuo pipefail
+
+# name|repository|tag|x86_64 asset|aarch64 asset|binary|default
+# GNU assets are used only where upstream does not publish a musl build.
+CATALOG='ripgrep|BurntSushi/ripgrep|15.1.0|ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz|ripgrep-15.1.0-aarch64-unknown-linux-gnu.tar.gz|rg|yes
+fd|sharkdp/fd|v10.3.0|fd-v10.3.0-x86_64-unknown-linux-musl.tar.gz|fd-v10.3.0-aarch64-unknown-linux-gnu.tar.gz|fd|yes
+fzf|junegunn/fzf|v0.75.0|fzf-0.75.0-linux_amd64.tar.gz|fzf-0.75.0-linux_arm64.tar.gz|fzf|yes
+bat|sharkdp/bat|v0.25.0|bat-v0.25.0-x86_64-unknown-linux-musl.tar.gz|bat-v0.25.0-aarch64-unknown-linux-gnu.tar.gz|bat|yes
+jq|jqlang/jq|jq-1.8.1|jq-linux-amd64|jq-linux-arm64|jq|yes
+neovim|neovim/neovim|v0.11.7|nvim-linux-x86_64.tar.gz|nvim-linux-arm64.tar.gz|nvim|no
+lazygit|jesseduffield/lazygit|v0.66.3|lazygit_0.66.3_linux_x86_64.tar.gz|lazygit_0.66.3_linux_arm64.tar.gz|lazygit|yes
+eza|eza-community/eza|v0.23.4|eza_x86_64-unknown-linux-musl.tar.gz|eza_aarch64-unknown-linux-gnu.tar.gz|eza|yes
+zoxide|ajeetdsouza/zoxide|v0.9.8|zoxide-0.9.8-x86_64-unknown-linux-musl.tar.gz|zoxide-0.9.8-aarch64-unknown-linux-musl.tar.gz|zoxide|yes
+btop|aristocratos/btop|v1.4.8|btop-x86_64-unknown-linux-musl.tar.gz|btop-aarch64-unknown-linux-musl.tar.gz|btop|no'
+
+usage() {
+    cat <<'HELP'
+Usage: container-devtools [--container NAME_OR_ID] [--tools TOOL,TOOL,...]
+
+Select a running Docker container (Podman when Docker is absent), then tools.
+Without gum/fzf, use numbered prompts. Blank tool input accepts the defaults;
+enter "none" to cancel. With fzf: Tab toggles a tool, Enter confirms.
+
+Tools: ripgrep, fd, fzf, bat, jq, neovim, lazygit, eza, zoxide, btop
+Defaults: ripgrep, fd, fzf, bat, jq, lazygit, eza, zoxide
+
+Pinned official Linux release binaries are downloaded and unpacked on the host
+(requires curl or wget, tar, gzip). No container downloader, root, or package
+manager is required. Files go into the configured container user's ~/.local/bin.
+Existing commands, including those in ~/.local/bin, are skipped.
+Neovim includes its runtime. Neovim and some ARM releases require glibc;
+incompatible releases fail individually. Shell configuration is never modified.
+Interactive tools may also need TERM/terminfo; lazygit requires git to use.
+
+Example: container-devtools --container my-dev --tools ripgrep,fd,fzf,jq
+HELP
+}
+
+die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+container='' tools='' tools_given=no
+while (($#)); do
+    case $1 in
+        -h|--help) usage; exit 0 ;;
+        --container|--tools)
+            (($# >= 2)) && [[ -n $2 && $2 != --* ]] || die "$1 requires a value"
+            if [[ $1 == --container ]]; then container=$2; else tools=$2; tools_given=yes; fi
+            shift 2 ;;
+        *) die "Unknown option: $1 (see --help)" ;;
+    esac
+done
+
+names=() defaults=()
+while IFS='|' read -r name _ _ _ _ _ preset; do
+    names+=("$name")
+    [[ $preset != yes ]] || defaults+=("$name")
+done <<< "$CATALOG"
+
+validate_tools() {
+    local tool known valid
+    [[ -n $tools && $tools != ,* && $tools != *, && $tools != *,,* ]] || die 'Empty tool selection'
+    [[ $tools =~ ^[a-z]+(,[a-z]+)*$ ]] || die 'Invalid tool list: use comma-separated tool names'
+    IFS=',' read -ra selected <<< "$tools"
+    for tool in "${selected[@]}"; do
+        valid=no
+        for known in "${names[@]}"; do
+            [[ $tool != "$known" ]] || valid=yes
+        done
+        [[ $valid == yes ]] || die "Unknown tool: $tool"
+    done
+}
+[[ $tools_given != yes ]] || validate_tools
+
+if command -v docker >/dev/null 2>&1; then engine=docker
+elif command -v podman >/dev/null 2>&1; then engine=podman
+else die 'Install Docker or Podman on the host'; fi
+rows=$("$engine" ps --format '{{.ID}} {{.Names}} ({{.Image}})') || die "$engine cannot list running containers"
+[[ -n $rows ]] || die 'No running containers'
+
+if [[ -z $container ]]; then
+    if command -v gum >/dev/null 2>&1; then
+        choice=$(printf '%s\n' "$rows" | gum choose --header 'Choose a container') || exit 130
+    elif command -v fzf >/dev/null 2>&1; then
+        choice=$(printf '%s\n' "$rows" | fzf --prompt 'Container> ') || exit 130
+    else
+        mapfile -t options <<< "$rows"
+        for i in "${!options[@]}"; do printf '%d) %s\n' "$((i+1))" "${options[i]}"; done
+        read -rp 'Container number: ' choice || exit 130
+        [[ $choice =~ ^[0-9]{1,6}$ ]] || die 'Invalid container number'
+        index=$((10#$choice - 1))
+        ((index >= 0 && index < ${#options[@]})) || die 'Invalid container number'
+        choice=${options[index]}
+    fi
+    container=${choice%% *}
+fi
+[[ $container != -* ]] || die 'Invalid container name'
+# Resolve to an immutable ID before executing anything in the selected container.
+container=$("$engine" inspect --format '{{.Id}}' "$container") || die 'Container not found'
+[[ $("$engine" inspect --format '{{.State.Running}}' "$container") == true ]] || die 'Container is not running'
+
+if [[ $tools_given != yes ]]; then
+    if command -v gum >/dev/null 2>&1; then
+        defaults_csv=$(IFS=,; echo "${defaults[*]}")
+        tools=$(printf '%s\n' "${names[@]}" | gum choose --no-limit --selected "$defaults_csv" \
+            --header 'Choose tools (Enter installs)' | paste -sd, -) || exit 130
+    elif command -v fzf >/dev/null 2>&1; then
+        # Put defaults first, then select exactly those rows after input loads.
+        choices=("${defaults[@]}")
+        for name in "${names[@]}"; do
+            case " ${defaults[*]} " in *" $name "*) ;; *) choices+=("$name") ;; esac
+        done
+        tools=$(printf '%s\n' "${choices[@]}" | fzf --multi --prompt 'Tools> ' \
+            --bind "load:$(printf 'select+down+%.0s' "${defaults[@]}")unbind(load)" | paste -sd, -) || exit 130
+    else
+        for i in "${!names[@]}"; do
+            preset=''
+            case " ${defaults[*]} " in *" ${names[i]} "*) preset=' [default]' ;; esac
+            printf '%d) %s%s\n' "$((i+1))" "${names[i]}" "$preset"
+        done
+        read -rp 'Tool numbers separated by spaces (Enter = defaults, none = cancel): ' answer || exit 130
+        [[ $answer != none ]] || exit 0
+        choices=()
+        if [[ -z $answer ]]; then choices=("${defaults[@]}")
+        else
+            read -ra numbers <<< "$answer"
+            for number in "${numbers[@]}"; do
+                [[ $number =~ ^[0-9]{1,6}$ ]] || die "Invalid tool number: $number"
+                index=$((10#$number - 1))
+                ((index >= 0 && index < ${#names[@]})) || die "Invalid tool number: $number"
+                choices+=("${names[index]}")
+            done
+        fi
+        tools=$(IFS=,; echo "${choices[*]}")
+    fi
+    [[ -n $tools ]] || { echo 'No tools selected.'; exit 0; }
+    validate_tools
+fi
+
+arch=$("$engine" exec "$container" uname -m) || die 'Cannot detect container architecture'
+case $arch in x86_64|aarch64) ;; *) die "Unsupported container architecture: $arch" ;; esac
+"$engine" exec "$container" sh -c 'test "$(uname -s)" = Linux && test -n "$HOME" && test "${HOME#/}" != "$HOME"' \
+    || die 'Container requires Linux, sh, and an absolute HOME for its configured user'
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+fetch() {
+    if command -v curl >/dev/null 2>&1; then
+        curl --fail --location --silent --show-error --retry 2 --connect-timeout 15 --max-time 180 -o "$2" "$1"
+    elif command -v wget >/dev/null 2>&1; then
+        wget --timeout=30 --tries=2 -q -O "$2" "$1"
+    else echo 'Host requires curl or wget' >&2; return 1; fi
+}
+
+install_tool() {
+    local name=$1 repo=$2 tag=$3 asset=$4 binary=$5 source root
+    if [[ $asset == *linux-gnu* || $name == neovim ]]; then
+        "$engine" exec "$container" sh -c 'ldd --version 2>&1' | grep -Eqi 'glibc|GNU libc' || {
+            echo 'This upstream asset requires glibc; no compatible official musl release.' >&2; return 1;
+        }
+    fi
+    mkdir -p "$work/$name/unpack" || return 1
+    fetch "https://github.com/$repo/releases/download/$tag/$asset" "$work/$name/asset" || return 1
+    if [[ $asset == *.tar.gz ]]; then
+        tar -xzf "$work/$name/asset" -C "$work/$name/unpack" || return 1
+        source=$(find "$work/$name/unpack" -type f -name "$binary" -print -quit)
+        [[ -n $source ]] || { echo "Release contains no $binary" >&2; return 1; }
+    else source=$work/$name/asset; fi
+    chmod +x "$source" || return 1
+    if [[ $name == neovim ]]; then
+        root=${source%/bin/nvim}
+        tar -cf - -C "$root" . | "$engine" exec -i "$container" sh -c '
+            set -eu
+            mkdir -p "$HOME/.local/opt" "$HOME/.local/bin"
+            stage=$(mktemp -d "$HOME/.local/opt/neovim-$1.XXXXXXXX")
+            trap '\''rm -rf "$stage"'\'' EXIT
+            tar -xf - -C "$stage"
+            "$stage/bin/nvim" --version >/dev/null
+            ln -sf "$stage/bin/nvim" "$HOME/.local/bin/nvim"
+            trap - EXIT
+        ' sh "$tag" || return 1
+    else
+        # Stage and execute as the configured user before replacing the destination.
+        "$engine" exec -i "$container" sh -c '
+            set -eu
+            mkdir -p "$HOME/.local/bin"
+            stage=$(mktemp "$HOME/.local/bin/.devtools.XXXXXXXX")
+            trap '\''rm -f "$stage"'\'' EXIT
+            cat > "$stage"
+            chmod 755 "$stage"
+            "$stage" --version >/dev/null
+            mv "$stage" "$HOME/.local/bin/$1"
+        ' sh "$binary" < "$source" || return 1
+    fi
+}
+
+results=() failed=0
+for tool in "${selected[@]}"; do
+    while IFS='|' read -r name repo tag amd arm binary _; do
+        [[ $name == "$tool" ]] || continue
+        if "$engine" exec "$container" sh -c 'command -v "$1" >/dev/null 2>&1 || test -x "$HOME/.local/bin/$1"' sh "$binary"; then
+            results+=("$tool: skipped (already present)")
+        else
+            asset=$amd; [[ $arch != aarch64 ]] || asset=$arm
+            printf 'Installing %s (%s)...\n' "$name" "$tag"
+            if install_tool "$name" "$repo" "$tag" "$asset" "$binary"; then
+                results+=("$tool: installed ($tag)")
+            else results+=("$tool: FAILED (see error above)"); failed=1; fi
+        fi
+        break
+    done <<< "$CATALOG"
+done
+printf '\nResults:\n'
+printf '  %s\n' "${results[@]}"
+"$engine" exec "$container" sh -c '
+    case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *)
+        printf '\''Add this in your container shell: export PATH="%s/.local/bin:$PATH"\n'\'' "$HOME" ;;
+    esac
+' || failed=1
+exit "$failed"
