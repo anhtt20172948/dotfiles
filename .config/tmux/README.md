@@ -184,6 +184,7 @@ the lot.
 | `C` | Firstmate fleet overview and worker picker (replaces customize-mode) |
 | `g` | Lazygit |
 | `G` | Lazydocker |
+| `B` | Install dev tools in a running container; Enter closes the result summary |
 | `b` | Btop / Htop |
 | `M` | Monitor Center |
 | `f` | File finder (fd) |
