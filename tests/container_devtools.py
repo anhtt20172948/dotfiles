@@ -306,7 +306,10 @@ with tarfile.open(args[args.index('-o') + 1], 'w:gz') as archive:
             return asset + "|" + hashes[key]
 
         source = re.sub(r"(clang[^|\n]+)\|[a-f0-9]{64}", fixture_hash, source)
-        self.script = self.base / "container-devtools"
+        self.script = self.base / "host/.local/bin/container-devtools"
+        self.script.parent.mkdir(parents=True)
+        shutil.copytree(ROOT / ".local/share/container-devtools",
+                        self.base / "host/.local/share/container-devtools")
         self.script.write_text(source)
         self.script.chmod(0o755)
         self.env = dict(self.env, CLANG_FIXTURES=str(fixtures))
@@ -346,6 +349,226 @@ shutil.copyfile(pathlib.Path(os.environ['CLANG_FIXTURES']) / name, args[args.ind
         self.assertIn("clangd: FAILED", output)
         self.assertIn("path: configured", output)
         self.assertFalse((self.home / ".local/bin/clangd").exists())
+
+    def openmp_compiler(self):
+        header = self.base / "compiler include/omp.h"
+        header.parent.mkdir()
+        header.write_text("/* container OpenMP runtime API */\n")
+        self.env = dict(self.env, OPENMP_HEADER=str(header))
+        self.write_bin("c++", '''#!/bin/sh
+test "$#" = 1 || exit 2
+case $1 in
+    -print-file-name=include/omp.h) printf '%s\\n' "$OPENMP_HEADER" ;;
+    -print-file-name=include) printf '%s\\n' "${OPENMP_HEADER%/omp.h}" ;;
+    *) exit 2 ;;
+esac
+''')
+        return header
+
+    def test_both_clang_tools_supply_available_runtime_header_families(self):
+        self.clang_fixtures()
+        header = self.openmp_compiler()
+        relatives = ("omp-tools.h", "ompt.h", "ompt-multiplex.h", "ompx.h", "openacc.h",
+                     "ISO_Fortran_binding.h", "sanitizer/asan_interface.h",
+                     "sanitizer/new_sdk_api.h", "xray/xray_interface.h",
+                     "profile/instr_prof_interface.h", "orc_rt/c_api.h",
+                     "fuzzer/FuzzedDataProvider.h")
+        for relative in relatives:
+            source = header.parent / relative
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text("/* SDK " + relative + " */\n")
+        self.run_setup("clangd,clang-tidy")
+        for name, major in (("clangd", "22"), ("clang-tidy", "23")):
+            executable = (self.home / ".local/bin" / name).resolve()
+            include = executable.parent.parent / ("lib/clang/" + major + "/include")
+            for relative in ("omp.h",) + relatives:
+                with self.subTest(tool=name, header=relative):
+                    self.assertTrue((include / relative).is_file(), relative)
+                    self.assertEqual((include / relative).read_bytes(),
+                                     (header.parent / relative).read_bytes())
+
+    def test_clang_results_list_remaining_gaps_for_the_pinned_version(self):
+        self.clang_fixtures()
+        output = self.run_setup("clangd,clang-tidy")
+        clangd = next(s for s in output.splitlines() if s.startswith("  clangd:"))
+        tidy = next(s for s in output.splitlines() if s.startswith("  clang-tidy:"))
+        self.assertIn("missing resource headers (LLVM 22.1.1)", clangd)
+        self.assertIn("missing resource headers (LLVM 23.1.5)", tidy)
+        for line in (clangd, tidy):
+            self.assertIn("omp-tools.h", line)
+            self.assertIn("fuzzer/FuzzedDataProvider.h", line)
+            self.assertIn("orc_rt/c_api.h", line)
+            self.assertNotIn("stddef.h", line)
+        self.assertNotIn("sanitizer/safestack_interface.h", clangd)
+        self.assertIn("sanitizer/safestack_interface.h", tidy)
+
+    def test_clang_audit_accepts_a_complete_resource_directory(self):
+        self.clang_fixtures()
+        self.run_setup("clangd,clang-tidy")
+        for name, version in (("clangd", "22.1.1"), ("clang-tidy", "23.1.5")):
+            executable = (self.home / ".local/bin" / name).resolve()
+            include = executable.parent.parent / ("lib/clang/" + version.split(".")[0] + "/include")
+            manifest = ROOT / (".local/share/container-devtools/llvm-" + version + "-headers.txt")
+            for relative in manifest.read_text().splitlines():
+                if relative and not relative.startswith("#"):
+                    header = include / relative
+                    header.parent.mkdir(parents=True, exist_ok=True)
+                    header.write_text("/* bundled runtime header */\n")
+        output = self.run_setup("clangd,clang-tidy")
+        self.assertIn("resource headers complete (LLVM 22.1.1 manifest)", output)
+        self.assertIn("resource headers complete (LLVM 23.1.5 manifest)", output)
+        self.assertNotIn("missing resource headers", output)
+
+    def test_clang_missing_manifest_is_reported_and_other_items_continue(self):
+        self.clang_fixtures()
+        (self.base / "host/.local/share/container-devtools/llvm-22.1.1-headers.txt").unlink()
+        output = self.run_setup("clangd,path", success=False)
+        self.assertIn("Missing container-devtools runtime-header data", output)
+        self.assertIn("clangd: FAILED", output)
+        self.assertIn("path: configured", output)
+
+    def test_clangd_supplies_container_openmp_header(self):
+        self.clang_fixtures()
+        header = self.openmp_compiler()
+        self.env = dict(self.env, CONTAINER_ARCH="aarch64")
+        self.run_setup("clangd")
+        executable = (self.home / ".local/bin/clangd").resolve()
+        supplied = executable.parent.parent / "lib/clang/22/include/omp.h"
+        self.assertTrue(supplied.is_file(), "clangd cannot find the container OpenMP header")
+        self.assertEqual(supplied.read_bytes(), header.read_bytes())
+        self.assertEqual(header.read_text(), "/* container OpenMP runtime API */\n")
+
+    def test_clangd_supplies_openmp_header_when_home_is_a_symlink(self):
+        self.clang_fixtures()
+        header = self.openmp_compiler()
+        linked_home = self.base / "linked home"
+        linked_home.symlink_to(self.home)
+        self.env = dict(self.env, HOME=str(linked_home), CONTAINER_ARCH="aarch64")
+        output = self.run_setup("clangd")
+        self.assertNotIn("audit skipped", output)
+        executable = (linked_home / ".local/bin/clangd").resolve()
+        supplied = executable.parent.parent / "lib/clang/22/include/omp.h"
+        self.assertTrue(supplied.is_file(), output)
+        self.assertEqual(supplied.read_bytes(), header.read_bytes())
+
+    def test_clangd_repairs_existing_managed_install_without_download(self):
+        self.clang_fixtures()
+        self.run_setup("clangd,clang-tidy")
+        executables = {name: (self.home / ".local/bin" / name).resolve()
+                       for name in ("clangd", "clang-tidy")}
+        (self.home / "fetch-log").unlink()
+        header = self.openmp_compiler()
+        self.run_setup("clangd,clang-tidy")
+        for name, major in (("clangd", "22"), ("clang-tidy", "23")):
+            executable = executables[name]
+            supplied = executable.parent.parent / ("lib/clang/" + major + "/include/omp.h")
+            self.assertTrue(supplied.is_file(), "rerunning setup must repair missing OpenMP headers")
+            self.assertEqual(supplied.read_bytes(), header.read_bytes())
+            self.assertEqual((self.home / ".local/bin" / name).resolve(), executable)
+        self.assertFalse((self.home / "fetch-log").exists())
+
+    def test_clang_headers_use_clang_resource_directory_when_available(self):
+        self.clang_fixtures()
+        resource = self.base / "clang SDK"
+        header = resource / "include/omp.h"
+        header.parent.mkdir(parents=True)
+        header.write_text("/* clang SDK OpenMP */\n")
+        self.env = dict(self.env, CLANG_RESOURCE_DIR=str(resource))
+        self.write_bin("clang++", '''#!/bin/sh
+case $1 in
+    -print-file-name=include) echo include ;;
+    -print-resource-dir) printf '%s\\n' "$CLANG_RESOURCE_DIR" ;;
+    *) exit 2 ;;
+esac
+''')
+        self.run_setup("clangd")
+        executable = (self.home / ".local/bin/clangd").resolve()
+        supplied = executable.parent.parent / "lib/clang/22/include/omp.h"
+        self.assertTrue(supplied.is_file())
+        self.assertEqual(supplied.read_bytes(), header.read_bytes())
+
+    def test_clang_headers_do_not_borrow_gcc_intrinsic_headers(self):
+        self.clang_fixtures()
+        header = self.openmp_compiler()
+        (header.parent / "stdint.h").write_text("/* GCC intrinsic header */\n")
+        output = self.run_setup("clangd")
+        executable = (self.home / ".local/bin/clangd").resolve()
+        include = executable.parent.parent / "lib/clang/22/include"
+        self.assertFalse((include / "stdint.h").exists())
+        result = next(s for s in output.splitlines() if s.startswith("  clangd:"))
+        self.assertIn("stdint.h", result)
+
+    def test_clangd_preserves_bundled_openmp_header(self):
+        self.clang_fixtures()
+        self.run_setup("clangd")
+        executable = (self.home / ".local/bin/clangd").resolve()
+        supplied = executable.parent.parent / "lib/clang/22/include/omp.h"
+        supplied.write_text("/* upstream OpenMP header */\n")
+        self.openmp_compiler()
+        self.run_setup("clangd")
+        self.assertEqual(supplied.read_text(), "/* upstream OpenMP header */\n")
+
+    def test_clangd_tries_next_compiler_when_openmp_header_is_unavailable(self):
+        self.clang_fixtures()
+        header = self.openmp_compiler()
+        (self.bin / "c++").rename(self.bin / "g++")
+        for reply in ("exit 1", "echo include", "echo /missing/include"):
+            with self.subTest(reply=reply):
+                self.write_bin("c++", "#!/bin/sh\n" + reply + "\n")
+                self.run_setup("clangd")
+                executable = (self.home / ".local/bin/clangd").resolve()
+                supplied = executable.parent.parent / "lib/clang/22/include/omp.h"
+                self.assertTrue(supplied.is_file())
+                self.assertEqual(supplied.read_bytes(), header.read_bytes())
+                shutil.rmtree(self.home / ".local")
+
+    def test_clangd_openmp_copy_failure_cleans_temporary_header_and_continues(self):
+        self.clang_fixtures()
+        self.openmp_compiler()
+        (self.bin / "cp").unlink()
+        self.write_bin("cp", "#!/bin/sh\nexit 1\n")
+        output = self.run_setup("clangd,path", success=False)
+        self.assertIn("clangd: FAILED", output)
+        self.assertIn("path: configured", output)
+        executable = (self.home / ".local/bin/clangd").resolve()
+        include = executable.parent.parent / "lib/clang/22/include"
+        self.assertEqual(sorted(p.name for p in include.iterdir()), ["stddef.h"])
+
+    def test_clangd_leaves_unmanaged_install_untouched(self):
+        self.clang_fixtures()
+        self.openmp_compiler()
+        external = self.base / "external/bin/clangd"
+        external.parent.mkdir(parents=True)
+        external.write_text("#!/bin/sh\nexit 0\n")
+        external.chmod(0o755)
+        local = self.home / ".local/bin/clangd"
+        local.parent.mkdir(parents=True)
+        local.symlink_to(external)
+        self.run_setup("clangd")
+        self.assertEqual(local.resolve(), external.resolve())
+        self.assertEqual(sorted(str(p.relative_to(external.parent.parent))
+                                for p in external.parent.parent.rglob("*")),
+                         ["bin", "bin/clangd"])
+        self.assertFalse((self.home / "fetch-log").exists())
+
+    def test_clangd_does_not_repair_link_escaping_managed_directory(self):
+        self.clang_fixtures()
+        self.openmp_compiler()
+        external = self.base / "external"
+        (external / "clangd/data/bin").mkdir(parents=True)
+        include = external / "clangd/data/lib/clang/22/include"
+        include.mkdir(parents=True)
+        executable = external / "clangd/data/bin/clangd"
+        executable.write_text("#!/bin/sh\nexit 0\n")
+        executable.chmod(0o755)
+        managed = self.home / ".local/opt/clangd-v22.1.1.0.external"
+        managed.parent.mkdir(parents=True)
+        managed.symlink_to(external, target_is_directory=True)
+        local = self.home / ".local/bin/clangd"
+        local.parent.mkdir(parents=True)
+        local.symlink_to(managed / "clangd/data/bin/clangd")
+        self.run_setup("clangd")
+        self.assertEqual(list(include.iterdir()), [])
 
     def test_clang_failed_probe_removes_stage_and_continues(self):
         self.clang_fixtures(headers_present=False)
