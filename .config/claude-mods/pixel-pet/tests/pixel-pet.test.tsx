@@ -129,7 +129,9 @@ test('six pixels make one sextant cell: its glyph lights them, in two colours at
   expect([0, 1, 21, 22, 42, 62, 63].map(sextant)).toEqual([' ', '\u{1FB00}', '▌', '\u{1FB14}', '▐', '\u{1FB3B}', '█'])
   expect(new Set(Array.from({ length: 64 }, (_, mask) => sextant(mask))).size).toBe(64)
 
-  const colors = { k: '#000000', o: '#ff7f00', s: '#ffd7af', e: '#1c1c1c', p: '#ff7f7f' }
+  // Base Goku's outline, gi, skin, eyes and blush.
+  const base = palette({ character: 'goku', form: 'base' }, STILL)
+  const colors = { k: base.k ?? '', o: base.T ?? '', s: base.s ?? '', e: base.e ?? '', p: base.p ?? '' }
   // One colour over the terminal: the lit pixels in that colour.
   expect(rows(['kk', 'k.', '..'], colors, 'sextant')).toEqual([[{ text: sextant(0b000111), color: colors.k }]])
   // Two colours: the fewer drawn over the other, runs merged.
