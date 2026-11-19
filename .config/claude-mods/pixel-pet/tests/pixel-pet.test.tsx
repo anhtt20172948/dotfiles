@@ -17,8 +17,10 @@ import {
 import type { Fighter, Level } from '../hooks/lib/fighter'
 import { INITIAL, REACT_MS, ROAM, SLEEP_MS, caption, look, shownMood, stats, step } from '../hooks/lib/mood'
 import type { PetEvent } from '../hooks/lib/mood'
-import { ALL_COLORS, TIERS, frame, mirror, palette, rows, tierFor } from '../hooks/lib/sprite'
-import type { Look, Tier } from '../hooks/lib/sprite'
+import { CELL, clashes, renderChoice, sextant } from '../hooks/lib/cells'
+import { EXPRESSION_NAMES } from '../hooks/lib/layers'
+import { ALL_COLORS, RENDERS, TIERS, frame, mirror, palette, pixelSize, rows, tierFor } from '../hooks/lib/sprite'
+import type { Look, Render, Tier } from '../hooks/lib/sprite'
 import type { Pet } from '../types'
 
 const run = (pet: Pet, events: PetEvent[]) => events.reduce(step, pet)
@@ -26,8 +28,13 @@ const run = (pet: Pet, events: PetEvent[]) => events.reduce(step, pet)
 const ticks = (from: number, count: number, every = 400): PetEvent[] =>
   Array.from({ length: count }, (_, i) => ({ type: 'tick', now: from + (i + 1) * every }))
 
-// The small fighter's width, which the pixel-level checks below draw at.
-const WIDTH = TIERS.medium.width
+// The small half-block fighter's width, which the pixel-level checks below draw at.
+const WIDTH = pixelSize('medium', 'halfblock').width
+
+// The half-block fighter at a tier (the small one unless named), as the
+// pixel-level checks below draw it.
+const halfBlock = (fighter: Fighter, seen: Look, tick: number, tier: Tier = 'medium') =>
+  frame(fighter, seen, tick, tier, 'halfblock')
 
 const STILL: Look = {
   pose: 'stand',
@@ -104,44 +111,181 @@ test('every colour lands on the 256-colour cube or the grey ramp, as tmux sessio
 
 test('two pixel rows make one text row of half blocks, runs merged', async () => {
   const colors = { k: 'black', o: 'orange' }
-  const lines = rows(['ko..', 'k.o.'].map(row => row.padEnd(WIDTH, '.')), colors)
+  const lines = rows(['ko..', 'k.o.'].map(row => row.padEnd(WIDTH, '.')), colors, 'halfblock')
 
   expect(lines).toHaveLength(1)
   expect(lines[0]?.[0]).toEqual({ text: '█', color: colors.k })
   expect(lines[0]?.[1]).toEqual({ text: '▀▄', color: colors.o })
   expect(lines[0]?.[2]).toEqual({ text: ' '.repeat(WIDTH - 3) })
-  expect(rows(['ko'.padEnd(WIDTH, '.'), 'ok'.padEnd(WIDTH, '.')], colors)[0]?.[0]).toEqual({
+  expect(rows(['ko'.padEnd(WIDTH, '.'), 'ok'.padEnd(WIDTH, '.')], colors, 'halfblock')[0]?.[0]).toEqual({
     text: '▀',
     color: colors.k,
     backgroundColor: colors.o,
   })
 })
 
-test('every fighter, form, pose and face is 24x20 large, 16x12 small, 16x8 head alone, and mirrors', async () => {
-  const faces = ['idle', 'blink', 'power', 'happy', 'hurt', 'calm'] as const
-  for (const fighter of FIGHTERS) {
-    for (const pose of Object.keys(BODIES) as Pose[]) {
-      for (const [tier, size] of Object.entries(TIERS) as [Tier, (typeof TIERS)[Tier]][]) {
-        const face = faces[(pose.length + fighter.form.length) % faces.length] ?? 'idle'
-        const grid = frame(fighter, { ...STILL, pose, face, aura: 'flare' }, 3, tier)
-        expect(grid).toHaveLength(size.height)
-        expect(grid.every(row => row.length === size.width)).toBe(true)
-        expect(rows(grid, palette(fighter, STILL))).toHaveLength(size.rows)
-        // Every pixel has a colour.
-        const colors = palette(fighter, STILL)
-        expect([...grid.join('')].every(pixel => pixel === '.' || colors[pixel] !== undefined)).toBe(true)
-        expect(mirror(grid).map(row => [...row].reverse().join(''))).toEqual(grid)
+test('six pixels make one sextant cell: its glyph lights them, in two colours at most', async () => {
+  // The 2x3 masks run through U+1FB00-1FB3B, skipping the two half blocks and the full block.
+  expect([0, 1, 21, 22, 42, 62, 63].map(sextant)).toEqual([' ', '\u{1FB00}', '▌', '\u{1FB14}', '▐', '\u{1FB3B}', '█'])
+  expect(new Set(Array.from({ length: 64 }, (_, mask) => sextant(mask))).size).toBe(64)
+
+  // Base Goku's outline, gi, skin, eyes and blush.
+  const base = palette({ character: 'goku', form: 'base' }, STILL)
+  const colors = { k: base.k ?? '', o: base.T ?? '', s: base.s ?? '', e: base.e ?? '', p: base.p ?? '' }
+  // One colour over the terminal: the lit pixels in that colour.
+  expect(rows(['kk', 'k.', '..'], colors, 'sextant')).toEqual([[{ text: sextant(0b000111), color: colors.k }]])
+  // Two colours: the fewer drawn over the other, runs merged.
+  expect(rows(['kooo', 'oooo', 'oooo'], colors, 'sextant')).toEqual([
+    [{ text: sextant(0b000001), color: colors.k, backgroundColor: colors.o }, { text: '█', color: colors.o }],
+  ])
+  // Three colours in a cell keep the two that matter most: the eye over the
+  // skin, losing the blush beside it.
+  const [cell] = rows(['se', 'sp', 'ss'], colors, 'sextant')[0] ?? []
+  expect(cell).toEqual({ text: sextant(0b000010), color: colors.e, backgroundColor: colors.s })
+  expect(clashes(['se', 'sp', 'ss'], colors, 'sextant')).toEqual([[0, 0]])
+})
+
+test('every fighter, form, pose and face fills its tier in either render, and mirrors', async () => {
+  for (const render of RENDERS) {
+    for (const fighter of FIGHTERS) {
+      for (const pose of Object.keys(BODIES) as Pose[]) {
+        for (const [tier, cells] of Object.entries(TIERS) as [Tier, (typeof TIERS)[Tier]][]) {
+          const face = EXPRESSION_NAMES[(pose.length + fighter.form.length) % EXPRESSION_NAMES.length] ?? 'idle'
+          const grid = frame(fighter, { ...STILL, pose, face, aura: 'flare' }, 3, tier, render)
+          const size = pixelSize(tier, render)
+          expect({ render, tier, height: grid.length }).toEqual({ render, tier, height: size.height })
+          expect(grid.every(row => row.length === size.width)).toBe(true)
+          // The cells it takes are the same whichever way it is drawn.
+          const lines = rows(grid, palette(fighter, STILL), render)
+          expect(lines).toHaveLength(cells.rows)
+          expect(lines.every(line => [...line.map(segment => segment.text).join('')].length === cells.columns)).toBe(true)
+          // Every pixel has a colour.
+          const colors = palette(fighter, STILL)
+          expect([...grid.join('')].every(pixel => pixel === '.' || colors[pixel] !== undefined)).toBe(true)
+          expect(mirror(grid).map(row => [...row].reverse().join(''))).toEqual(grid)
+        }
       }
     }
   }
+  expect(pixelSize('large', 'sextant')).toEqual({ width: 48, height: 30 })
+  expect(pixelSize('large', 'halfblock')).toEqual({ width: 24, height: 20 })
+  expect(CELL.sextant).toEqual({ width: 2, height: 3 })
+})
+
+test('/config Render picks sextants unless it asks for half blocks', async () => {
+  expect(renderChoice('halfblock')).toBe('halfblock')
+  expect(renderChoice('sextant')).toBe('sextant')
+  expect(renderChoice(undefined)).toBe('sextant')
+  expect(renderChoice('quadrant')).toBe('sextant')
+})
+
+// The sextant faces: the eyes, brows, mouth, blush and tears of every fighter in
+// every mood lie in cells of two colours, so no colour bleeds into the face.
+const FACE_CELLS: Record<Tier, { columns: [number, number]; rows: [number, number] }> = {
+  large: { columns: [8, 15], rows: [3, 7] },
+  medium: { columns: [5, 10], rows: [1, 4] },
+  head: { columns: [5, 10], rows: [1, 3] },
+}
+
+test('the sextant faces never mix three colours in a cell, whatever the mood', async () => {
+  for (const fighter of FIGHTERS) {
+    for (const mood of ['idle', 'working', 'happy', 'sad', 'sleep'] as const) {
+      for (const tick of [0, 1]) {
+        for (const tier of Object.keys(TIERS) as Tier[]) {
+          const seen = look(mood, tick)
+          const grid = frame(fighter, { ...seen, aura: 'none' }, tick, tier, 'sextant')
+          const { columns, rows: down } = FACE_CELLS[tier]
+          const onFace = clashes(grid, palette(fighter, seen), 'sextant').filter(
+            ([x, y]) => x >= columns[0] && x <= columns[1] && y >= down[0] && y <= down[1],
+          )
+          expect({ fighter, mood, tier, onFace }).toEqual({ fighter, mood, tier, onFace: [] })
+        }
+      }
+    }
+  }
+})
+
+test('the sextant aura glows and flickers without adding a third colour to any cell', async () => {
+  for (const fighter of FIGHTERS) {
+    for (const aura of ['calm', 'flare'] as const) {
+      for (const tier of Object.keys(TIERS) as Tier[]) {
+        for (let tick = 0; tick < 6; tick += 1) {
+          const seen = { ...STILL, pose: aura === 'flare' ? 'power' : 'stand', aura } as const
+          const colors = palette(fighter, seen)
+          const bare = clashes(frame(fighter, { ...seen, aura: 'none' }, tick, tier, 'sextant'), colors, 'sextant')
+          const lit = clashes(frame(fighter, seen, tick, tier, 'sextant'), colors, 'sextant')
+          expect({ fighter, aura, tier, tick, added: lit.filter(([x, y]) => !bare.some(([bx, by]) => bx === x && by === y)) }).toEqual(
+            { fighter, aura, tier, tick, added: [] },
+          )
+        }
+      }
+    }
+  }
+  const ssj2 = { character: 'goku', form: 'ssj2' } as const
+  const flare = { ...STILL, pose: 'power', aura: 'flare' } as const
+  const lit = (tick: number) => frame(ssj2, flare, tick, 'large', 'sextant')
+  expect(pixels(lit(0), 'i') + pixels(lit(0), 'o')).toBeGreaterThan(0)
+  expect(lit(0)).not.toEqual(lit(1))
+  expect(Array.from({ length: 23 }, (_, tick) => pixels(lit(tick), 'z')).reduce((a, b) => a + b)).toBeGreaterThan(0)
+  expect(pixels(frame({ character: 'goku', form: 'base' }, flare, 0, 'large', 'sextant'), 'o')).toBe(0)
+})
+
+// Where each render's large fighter wears its expressions: [left, top, right, bottom].
+const EXPRESSION_AREA: Record<Render, [number, number, number, number]> = {
+  halfblock: [8, 8, 15, 12],
+  sextant: [16, 9, 31, 20],
+}
+
+test('Super Saiyan 3 has no brows in any face, either render', async () => {
+  const ssj3 = { character: 'goku', form: 'ssj3' } as const
+  for (const render of RENDERS) {
+    const [left, top, right, bottom] = EXPRESSION_AREA[render]
+    for (const face of EXPRESSION_NAMES) {
+      const area = frame(ssj3, { ...STILL, face }, 0, 'large', render)
+        .slice(top, bottom + 1)
+        .map(row => row.slice(left, right + 1))
+      expect({ render, face, brows: pixels(area, 'd') }).toEqual({ render, face, brows: 0 })
+    }
+  }
+  // Goku's own brows are there to remove.
+  const [left, top, right, bottom] = EXPRESSION_AREA.sextant
+  const goku = frame({ character: 'goku', form: 'ssj2' }, { ...STILL, face: 'power' }, 0, 'large', 'sextant')
+  expect(pixels(goku.slice(top, bottom + 1).map(row => row.slice(left, right + 1)), 'd')).toBeGreaterThan(0)
+})
+
+test('the sextant fighters keep each character and mood', async () => {
+  const at = (fighter: Fighter, mood: 'idle' | 'working' | 'happy' | 'sad' | 'sleep', tier: Tier = 'large') =>
+    frame(fighter, look(mood, 1), 1, tier, 'sextant')
+  const goku = { character: 'goku', form: 'ssj2' } as const
+  // Open eyes glint; working bares the teeth; a failure cries; meditating shuts them.
+  expect(pixels(at(goku, 'idle'), 'w')).toBe(2)
+  expect(pixels(at(goku, 'working'), 't')).toBeGreaterThan(0)
+  expect(pixels(at(goku, 'happy'), 'p')).toBeGreaterThan(0)
+  expect(pixels(at(goku, 'sad'), 'b')).toBeGreaterThan(0)
+  expect(pixels(at(goku, 'sleep'), 'e')).toBe(0)
+  // Super Saiyan 3's mane falls to the heels and it has no brows; Majin Vegeta wears the M.
+  expect(at({ character: 'goku', form: 'ssj3' }, 'idle')[27]).toMatch(/h/)
+  expect(at(goku, 'idle')[27]).not.toMatch(/h/)
+  expect(at({ character: 'goku', form: 'ssj3' }, 'idle').slice(9, 12).join('').slice(0)).not.toMatch(/d/)
+  expect(pixels(at({ character: 'vegeta', form: 'majin' }, 'idle'), 'M')).toBeGreaterThan(0)
+  expect(pixels(at({ character: 'vegeta', form: 'majin' }, 'idle', 'head'), 'M')).toBeGreaterThan(0)
+  // Vegeta's brows slant down to the middle even at rest, where Goku's are level.
+  const brows = (fighter: Fighter) => at(fighter, 'idle').slice(9, 12).map(row => row.slice(16, 32))
+  expect(brows({ character: 'vegeta', form: 'base' })).not.toEqual(brows({ character: 'goku', form: 'base' }))
+  // The thumbs up rises beside the face.
+  expect(at({ character: 'gohan', form: 'base' }, 'happy')[13]?.[42]).toBe('S')
+  // Without colour the eyes are cut out of the silhouette.
+  const seen = look('idle', 1)
+  const text = rows(at(goku, 'idle'), palette(goku, seen), 'sextant', true).map(line => line.map(segment => segment.text).join(''))
+  expect([...(text[5] ?? '')].slice(8, 16).some(glyph => glyph !== '█')).toBe(true)
 })
 
 test('base form has black hair and no aura; Super Saiyan turns it gold and glows', async () => {
   const base = { character: 'goku', form: 'base' } as const
   const ssj1 = { character: 'goku', form: 'ssj1' } as const
   expect(palette(base, STILL).h).not.toBe(palette(ssj1, STILL).h)
-  expect(pixels(frame(base, { ...STILL, aura: 'flare' }, 0), 'o')).toBe(0)
-  expect(pixels(frame(ssj1, { ...STILL, aura: 'calm' }, 0), 'o')).toBeGreaterThan(0)
+  expect(pixels(halfBlock(base, { ...STILL, aura: 'flare' }, 0), 'o')).toBe(0)
+  expect(pixels(halfBlock(ssj1, { ...STILL, aura: 'calm' }, 0), 'o')).toBeGreaterThan(0)
   // Ultra Instinct is silver, Ultra Ego purple, Beast silver with red eyes.
   const rgb = (color: string | undefined) => (color?.slice(1).match(/../g) ?? []).map(c => parseInt(c, 16))
   const [uiR, uiG, uiB] = rgb(palette({ character: 'goku', form: 'ui' }, STILL).h)
@@ -156,29 +300,29 @@ test('working flares the aura two deep; Super Saiyan 2 crackles with sparks', as
   const ssj1 = { character: 'goku', form: 'ssj1' } as const
   const ssj2 = { character: 'goku', form: 'ssj2' } as const
   const flare = { ...STILL, pose: 'power', aura: 'flare' } as const
-  expect(pixels(frame(ssj1, flare, 0), 'i')).toBeGreaterThan(0)
-  expect(pixels(frame(ssj1, flare, 0), 'o')).toBeGreaterThan(0)
+  expect(pixels(halfBlock(ssj1, flare, 0), 'i')).toBeGreaterThan(0)
+  expect(pixels(halfBlock(ssj1, flare, 0), 'o')).toBeGreaterThan(0)
   const sparks = (fighter: Fighter) =>
-    Array.from({ length: 23 }, (_, tick) => pixels(frame(fighter, flare, tick), 'z')).reduce((a, b) => a + b)
+    Array.from({ length: 23 }, (_, tick) => pixels(halfBlock(fighter, flare, tick), 'z')).reduce((a, b) => a + b)
   expect(sparks(ssj1)).toBe(0)
   expect(sparks(ssj2)).toBeGreaterThan(0)
   // The flames rise: the pattern moves between ticks.
-  expect(frame(ssj2, flare, 0)).not.toEqual(frame(ssj2, flare, 1))
+  expect(halfBlock(ssj2, flare, 0)).not.toEqual(halfBlock(ssj2, flare, 1))
 })
 
 test('Super Saiyan 3 grows long hair and Majin Vegeta wears the M', async () => {
-  const ssj3 = frame({ character: 'goku', form: 'ssj3' }, STILL, 0)
-  const ssj2 = frame({ character: 'goku', form: 'ssj2' }, STILL, 0)
+  const ssj3 = halfBlock({ character: 'goku', form: 'ssj3' }, STILL, 0)
+  const ssj2 = halfBlock({ character: 'goku', form: 'ssj2' }, STILL, 0)
   expect(ssj3[10]).toMatch(/h/)
   expect(ssj2[10]).not.toMatch(/h/)
-  expect(pixels(frame({ character: 'vegeta', form: 'majin' }, STILL, 0), 'M')).toBeGreaterThan(0)
-  expect(pixels(frame({ character: 'vegeta', form: 'ssj2' }, STILL, 0), 'M')).toBe(0)
+  expect(pixels(halfBlock({ character: 'vegeta', form: 'majin' }, STILL, 0), 'M')).toBeGreaterThan(0)
+  expect(pixels(halfBlock({ character: 'vegeta', form: 'ssj2' }, STILL, 0), 'M')).toBe(0)
 })
 
 test('a failure knocks it out of its form: base hair, no aura, a tear', async () => {
   const fighter = { character: 'goku', form: 'ssj3' } as const
   const knocked = look('sad', 0)
-  const grid = frame(fighter, knocked, 0)
+  const grid = halfBlock(fighter, knocked, 0)
   expect(knocked).toMatchObject({ pose: 'knocked', isPoweredDown: true, aura: 'none' })
   expect(palette(fighter, knocked).h).toBe(palette({ character: 'goku', form: 'base' }, STILL).h)
   expect(grid[10]).not.toMatch(/h/)
@@ -192,15 +336,15 @@ test('moods take their poses: power up, thumbs up, meditate', async () => {
   expect(look('sleep', 0)).toMatchObject({ pose: 'meditate', isEyesClosed: true, aura: 'none' })
   // Meditating sits a row lower; closed eyes are drawn, open ones are gone.
   const goku = { character: 'goku', form: 'base' } as const
-  expect(frame(goku, look('sleep', 0), 0)[0]).toBe('.'.repeat(WIDTH))
-  expect(frame(goku, look('sleep', 0), 0, 'large').slice(0, 2).join('')).not.toMatch(/[^.]/)
-  expect(pixels(frame(goku, look('sleep', 0), 0), 'e')).toBe(0)
-  expect(pixels(frame(goku, look('sleep', 0), 0), 'c')).toBe(2)
+  expect(halfBlock(goku, look('sleep', 0), 0)[0]).toBe('.'.repeat(WIDTH))
+  expect(halfBlock(goku, look('sleep', 0), 0, 'large').slice(0, 2).join('')).not.toMatch(/[^.]/)
+  expect(pixels(halfBlock(goku, look('sleep', 0), 0), 'e')).toBe(0)
+  expect(pixels(halfBlock(goku, look('sleep', 0), 0), 'c')).toBe(2)
 })
 
 test('the large fighter wears each mood on its face', async () => {
   const goku = { character: 'goku', form: 'ssj2' } as const
-  const face = (mood: 'idle' | 'working' | 'happy' | 'sad' | 'sleep') => frame(goku, look(mood, 1), 1, 'large')
+  const face = (mood: 'idle' | 'working' | 'happy' | 'sad' | 'sleep') => halfBlock(goku, look(mood, 1), 1, 'large')
   // Idle eyes are open with a glint; working, narrowed with the teeth bared.
   expect(pixels(face('idle'), 'w')).toBe(2)
   expect(pixels(face('idle'), 'e')).toBe(4)
@@ -223,26 +367,26 @@ test('the large fighter keeps the details of each character', async () => {
   const blink = look('idle', 0)
   for (const seen of [idle, blink]) {
     // Goku's brows are level; Vegeta's slant down to the middle even at rest.
-    const gokuBrows = frame({ character: 'goku', form: 'base' }, seen, 1, 'large')[8] ?? ''
+    const gokuBrows = halfBlock({ character: 'goku', form: 'base' }, seen, 1, 'large')[8] ?? ''
     expect(`${gokuBrows.slice(9, 11)} ${gokuBrows.slice(13, 15)}`).toBe('dd dd')
-    expect(inner(frame({ character: 'vegeta', form: 'base' }, seen, 1, 'large'))).toBe('dd')
-    expect(inner(frame({ character: 'goku', form: 'base' }, seen, 1, 'large'))).not.toContain('d')
+    expect(inner(halfBlock({ character: 'vegeta', form: 'base' }, seen, 1, 'large'))).toBe('dd')
+    expect(inner(halfBlock({ character: 'goku', form: 'base' }, seen, 1, 'large'))).not.toContain('d')
   }
   // Super Saiyan 3 has no brows at all.
-  expect(frame({ character: 'goku', form: 'ssj3' }, idle, 1, 'large')[8]?.slice(8, 16)).not.toMatch(/d/)
+  expect(halfBlock({ character: 'goku', form: 'ssj3' }, idle, 1, 'large')[8]?.slice(8, 16)).not.toMatch(/d/)
   // Super Saiyan 3's mane falls to the heels; Majin Vegeta wears the M.
-  expect(frame({ character: 'goku', form: 'ssj3' }, idle, 1, 'large')[17]).toMatch(/h/)
-  expect(frame({ character: 'goku', form: 'ssj2' }, idle, 1, 'large')[17]).not.toMatch(/h/)
-  expect(pixels(frame({ character: 'vegeta', form: 'majin' }, idle, 1, 'large'), 'M')).toBe(4)
+  expect(halfBlock({ character: 'goku', form: 'ssj3' }, idle, 1, 'large')[17]).toMatch(/h/)
+  expect(halfBlock({ character: 'goku', form: 'ssj2' }, idle, 1, 'large')[17]).not.toMatch(/h/)
+  expect(pixels(halfBlock({ character: 'vegeta', form: 'majin' }, idle, 1, 'large'), 'M')).toBe(4)
   // The thumbs up rises beside the face.
-  expect(frame({ character: 'gohan', form: 'base' }, look('happy', 0), 0, 'large')[9]?.[20]).toBe('S')
+  expect(halfBlock({ character: 'gohan', form: 'base' }, look('happy', 0), 0, 'large')[9]?.[20]).toBe('S')
 })
 
 test('without colour the fighter is a silhouette, eyes cut out and aura left off', async () => {
   const fighter = { character: 'goku', form: 'ssj2' } as const
   const lit = { ...STILL, aura: 'flare' } as const
-  const grid = frame(fighter, lit, 0)
-  const lines = rows(grid, palette(fighter, lit), true)
+  const grid = halfBlock(fighter, lit, 0)
+  const lines = rows(grid, palette(fighter, lit), 'halfblock', true)
   const text = lines.map(line => line.map(segment => segment.text).join(''))
 
   expect(lines.flat().every(segment => segment.color === undefined && segment.backgroundColor === undefined)).toBe(true)
@@ -254,7 +398,7 @@ test('without colour the fighter is a silhouette, eyes cut out and aura left off
   // Every large face keeps its eyes or lashes cut out (text rows 4-6; meditating sits lower).
   for (const mood of ['idle', 'working', 'happy', 'sad', 'sleep'] as const) {
     const seen = look(mood, 1)
-    const eyes = rows(frame(fighter, seen, 1, 'large'), palette(fighter, seen), true)
+    const eyes = rows(halfBlock(fighter, seen, 1, 'large'), palette(fighter, seen), 'halfblock', true)
       .slice(4, 7)
       .map(line => line.map(segment => segment.text).join('').slice(8, 16))
     expect({ mood, isCutOut: eyes.some(line => /[ ▀▄]/.test(line)) }).toEqual({ mood, isCutOut: true })
@@ -371,19 +515,27 @@ const command = ($: Engine, name: string, args = '') =>
     presentation: { isFullscreen: false, columns: 100 },
   })
 
-// The band's text beside the sprite, and how many sprite rows it drew.
+// A sprite row's glyphs: half blocks and sextants.
+const SPRITE_ROW = /^[ ▀▄█▌▐\u{1FB00}-\u{1FB3B}]+$/u
+const HALF_BLOCK_ROW = /^[ ▀▄█]+$/
+
+// The band's text beside the sprite, and the sprite rows it drew.
 const band = async ($: Engine, props: Partial<typeof PROPS> = {}, surface: 'terminal' | 'desktop' = 'terminal') => {
   const mounted = await $.ui.mount({ ...BAND, surface, props: { ...BAND.props, ...props } })
   const title = (await mounted.find({ type: 'Text', text: / · (waiting|done|power|running)/ }))?.text
   const form = (await mounted.find({ type: 'Text', text: / · power / }))?.text
   const sprite = (await mounted.findAll({ type: 'Text' })).filter(
-    text => /^[ ▀▄█]+$/.test(text.text) && [16, 24].includes(text.text.length) && text.children.length > 1,
+    text => SPRITE_ROW.test(text.text) && [16, 24].includes([...text.text].length) && text.children.length > 1,
   )
   const engineText = (await mounted.find({ type: 'Text', text: /engine/ }))?.text
   await mounted.unmount()
 
-  return { title, form, spriteRows: sprite.length, engineText }
+  return { title, form, spriteRows: sprite.length, sprite: sprite.map(text => text.text), engineText }
 }
+
+// Whether a band's sprite is drawn in sextants or half blocks alone.
+const renderOf = (sprite: readonly string[]): Render =>
+  sprite.every(row => HALF_BLOCK_ROW.test(row)) ? 'halfblock' : 'sextant'
 
 test('the band draws Goku over what lies beneath, and /pet hides him', async ($, on) => {
   engine(on, { model: 'claude-opus-5-5', effortLevel: 'high' })
@@ -394,6 +546,7 @@ test('the band draws Goku over what lies beneath, and /pet hides him', async ($,
     expect(drawn.title).toMatch(/^Goku · waiting for you/)
     expect(drawn.form).toBe('Super Saiyan 2 · power 10,000!')
     expect(drawn.spriteRows).toBe(TIERS.large.rows)
+    expect(renderOf(drawn.sprite)).toBe('sextant')
     expect(drawn.engineText).toBe('engine')
   }
 
@@ -504,11 +657,27 @@ test('the character option picks the fighter whatever the model', { options: { c
   expect((await band($)).form).toMatch(/^Majin · /)
 })
 
+test('the render option draws half blocks for a font without sextants', { options: { render: 'halfblock' } }, async (
+  $,
+  on,
+) => {
+  engine(on, { model: 'claude-opus-5-5', effortLevel: 'high' })
+  await start($)
+  for (const maxRows of [14, 6, 4]) {
+    const drawn = await band($, { maxRows })
+    expect({ maxRows, render: renderOf(drawn.sprite), rows: drawn.spriteRows > 0 }).toEqual({
+      maxRows,
+      render: 'halfblock',
+      rows: true,
+    })
+  }
+})
+
 test('NO_COLOR draws the pet without colour', async ($, on) => {
   engine(on, { model: 'claude-opus-5-5', effortLevel: 'max' }, { NO_COLOR: '1' })
   await start($)
   const mounted = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  const blocks = (await mounted.findAll({ type: 'Text' })).filter(text => /^[ ▀▄█]+$/.test(text.text))
+  const blocks = (await mounted.findAll({ type: 'Text' })).filter(text => SPRITE_ROW.test(text.text))
   expect(blocks.length).toBeGreaterThan(0)
   expect(blocks.every(block => block.props.color === undefined && block.props.backgroundColor === undefined)).toBe(true)
   await mounted.unmount()

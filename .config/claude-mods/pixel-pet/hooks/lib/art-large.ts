@@ -1,4 +1,4 @@
-// The large tier: hand-drawn 24x20 grids for a band of ten rows or more.
+// The large half-block fighter: hand-drawn 24x20 grids for a band of ten rows or more.
 //
 // Hair: d h H (shade, fill, highlight). Rows up to HAIR_FRONT_ROW lie over
 // the face (bangs, a widow's peak); rows below it lie behind the face and body
@@ -8,19 +8,20 @@
 // L arm, C wristband or glove cuff, S hand, P trousers, F boots.
 
 import type { Head, Pose } from './art'
+import type { Expression, LayeredArt, Pixel } from './layers'
 
-export const LARGE = { width: 24, height: 20 } as const
+const LARGE = { width: 24, height: 20 } as const
 
 // The head fills rows 0-13; the body the rows below.
-export const LARGE_HEAD_ROWS = 14
-export const HAIR_FRONT_ROW = 8
+const LARGE_HEAD_ROWS = 14
+const HAIR_FRONT_ROW = 8
 
 const EMPTY = '.'.repeat(LARGE.width)
 
 const pad = (rows: readonly string[]) => [...rows, ...Array.from({ length: LARGE.height - rows.length }, () => EMPTY)]
 
 // Every character shares one face, so the expressions fit all of them.
-export const FACE: readonly string[] = pad([
+const FACE: readonly string[] = pad([
   ...Array.from({ length: 7 }, () => EMPTY),
   '......kssssssssssk......',
   '......kssssssssssk......',
@@ -31,7 +32,7 @@ export const FACE: readonly string[] = pad([
   '........kkqsqskk........',
 ])
 
-export const LARGE_HAIR: Record<Head, readonly string[]> = {
+const LARGE_HAIR: Record<Head, readonly string[]> = {
   goku: pad([
     '........d.......d.......',
     '.......dHd.....dHd...d..',
@@ -129,15 +130,13 @@ export const LARGE_HAIR: Record<Head, readonly string[]> = {
   ]),
 }
 
-export type Expression = 'idle' | 'blink' | 'power' | 'happy' | 'hurt' | 'calm'
-
 // Vegeta scowls even at rest: his brows always slant down to the middle.
-export const SCOWL: readonly string[] = ['.d....d.', '..d..d..']
+const SCOWL: readonly string[] = ['.d....d.', '..d..d..']
 
 // What each mood does to the face, over cols 8-15 of rows 8-12; '.' keeps the face.
-export const EXPRESSION_ORIGIN = { x: 8, y: 8 } as const
+const EXPRESSION_ORIGIN = { x: 8, y: 8 } as const
 
-export const EXPRESSIONS: Record<Expression, readonly string[]> = {
+const EXPRESSIONS: Record<Expression, readonly string[]> = {
   idle: ['.dd..dd.', '.wl..wl.', '.ee..ee.', '...q....', '...nn...'],
   blink: ['.dd..dd.', '........', '.ll..ll.', '...q....', '...nn...'],
   // Brows down in a V, eyes narrowed, shouting.
@@ -150,7 +149,7 @@ export const EXPRESSIONS: Record<Expression, readonly string[]> = {
 }
 
 // Bodies over the rows below the head, with two steps of a walk where it moves.
-export const LARGE_BODIES: Record<Pose, readonly (readonly string[])[]> = {
+const LARGE_BODIES: Record<Pose, readonly (readonly string[])[]> = {
   stand: [
     [
       '......kTTTAssATTTk......',
@@ -213,8 +212,8 @@ export const LARGE_BODIES: Record<Pose, readonly (readonly string[])[]> = {
   ],
 }
 
-// The thumbs-up arm beside the chin: [x, y, pixel].
-export const LARGE_THUMB: readonly (readonly [number, number, string])[] = [
+// The thumbs-up arm beside the chin.
+const LARGE_THUMB: readonly Pixel[] = [
   [18, 13, 'L'],
   [19, 12, 'C'],
   [19, 11, 'S'],
@@ -223,3 +222,28 @@ export const LARGE_THUMB: readonly (readonly [number, number, string])[] = [
   [20, 10, 'S'],
   [20, 9, 'S'],
 ]
+
+// The Majin mark: a red M hanging from the widow's peak, above the brows.
+const MAJIN_MARK: readonly Pixel[] = [
+  [10, 7, 'M'],
+  [13, 7, 'M'],
+  [11, 8, 'M'],
+  [12, 8, 'M'],
+]
+
+export const HALFBLOCK_LARGE: LayeredArt = {
+  ...LARGE,
+  headRows: LARGE_HEAD_ROWS,
+  hairFrontRow: HAIR_FRONT_ROW,
+  calmFrom: LARGE_HEAD_ROWS - 4,
+  meditateDrop: 2,
+  face: FACE,
+  hair: LARGE_HAIR,
+  expressionOrigin: EXPRESSION_ORIGIN,
+  expressions: EXPRESSIONS,
+  browRows: 1,
+  scowl: SCOWL,
+  bodies: LARGE_BODIES,
+  thumb: LARGE_THUMB,
+  majinMark: MAJIN_MARK,
+}

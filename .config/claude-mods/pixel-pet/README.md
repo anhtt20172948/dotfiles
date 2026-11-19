@@ -7,18 +7,31 @@ reload and test steps shared by every mod are in the
 
 pixel-pet draws a chibi Saiyan above the prompt, with its name, what it is
 doing, its form and power level, and the session's turn, tool and error counts
-beside it. Two pixel rows share one text row (`▀`/`▄` with a foreground and a
-background colour). The sprites are hand-drawn originals for personal use.
+beside it. The sprites are hand-drawn originals for personal use.
+
+Each text cell holds six pixels, two across and three down, drawn with one
+sextant glyph (`🬀`-`🬻`, Unicode 13's Symbols for Legacy Computing) in a
+foreground and a background colour: three times the pixels half blocks
+(`▀`/`▄`, two a cell) fit in the same cells. A cell shows two colours at
+most, so the faces are drawn to the cell grid: eyes, brows, mouths, blush and
+tears never share a cell with a third colour, and the aura fills a cell beside
+the fighter in one colour or not at all. Elsewhere a cell that mixes more keeps
+the two colours that lose the least, an eye before the skin around it.
 
 It draws the largest fighter the band has room for, and the band grows with
 the terminal (a 40-row terminal gives it 14 rows):
 
-| Band rows | The fighter |
+| Band rows | The fighter (sextants; half blocks) |
 | --- | --- |
-| 10 or more, with 60 columns for it and its text | 24x20 pixels: shaded hair, a two-tone outfit, and a face for each mood (brows, eyes with a glint, mouth, blush, tears) |
-| 6 or more | 16x12 pixels |
-| 4 or 5 | its 16x8 head alone |
+| 10 or more, with 60 columns for it and its text | 24x10 cells, 48x30 pixels; 24x20: shaded hair, a two-tone outfit, and a face for each mood (brows, eyes with a glint, mouth, blush, tears) |
+| 6 or more | 16x6 cells, 32x18 pixels; 16x12 |
+| 4 or 5 | its head alone in 16x4 cells, 32x12 pixels; 16x8 |
 | fewer than 4 | none: it gives way |
+
+kitty draws the sextants itself, whatever its font, as it does box drawing and
+blocks; another terminal needs a font that has them (`fc-list ':charset=1fb00'
+family` lists the installed ones). Where they show as boxes or blanks, set
+Render to `halfblock` in `/config` for the half-block fighter.
 
 The model in use picks the fighter and its effort level picks the form:
 
@@ -51,8 +64,9 @@ The power level grows with every finished turn and tool call, drops with every
 error, and is multiplied by the form.
 
 `/pet` hides or shows it. In `/config` (type `pet`), Pet name sets the name
-shown (empty, the default, shows the fighter's own) and Character picks Goku,
-Vegeta or Gohan whatever the model (`auto`, the default, follows the model).
+shown (empty, the default, shows the fighter's own), Character picks Goku,
+Vegeta or Gohan whatever the model (`auto`, the default, follows the model),
+and Render draws it in sextants (the default) or half blocks.
 Prompts and tools never wait on its updates. It gives way while a survey holds
 the band, and under `NO_COLOR` it is drawn as a silhouette with its eyes cut out
 and no aura. Its colours are picked to land near the 256-colour cube, so a
