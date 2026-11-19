@@ -1,6 +1,6 @@
 {
   "name": "pixel-pet",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A pixel-art Saiyan above the prompt: the model picks the fighter, the effort its Super Saiyan form, and it reacts to prompts, tool calls, errors and finished turns",
   "author": { "name": "thanh.nguyen" },
   "types":"./types/index.d.ts",
@@ -17,6 +17,13 @@
       "description": "auto follows the model: Opus is Goku, Sonnet Vegeta, any other kid Gohan",
       "default": "auto",
       "options": ["auto", "goku", "vegeta", "gohan"]
+    },
+    "render": {
+      "type": "string",
+      "title": "Render",
+      "description": "sextant draws a finer fighter (2x3 pixels a cell); halfblock (1x2) is for a font without sextant glyphs",
+      "default": "sextant",
+      "options": ["sextant", "halfblock"]
     }
   }
 }

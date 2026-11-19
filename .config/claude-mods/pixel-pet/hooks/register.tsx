@@ -5,7 +5,7 @@ import type { Power } from '../types'
 import { FORM_NAMES, NAMES, characterChoice, fighterFor, formatPower, levelOf, powerLevel } from './lib/fighter'
 import { INITIAL, ROAM, TICK_MS, caption, look, shownMood, stats, step } from './lib/mood'
 import type { PetEvent, Tone } from './lib/mood'
-import { NAME_COLORS, TIERS, formColor, frame, mirror, palette, rows, tierFor } from './lib/sprite'
+import { NAME_COLORS, TIERS, formColor, frame, mirror, palette, renderChoice, rows, tierFor } from './lib/sprite'
 import type { Tier } from './lib/sprite'
 
 const UNKNOWN: Power = { model: null, effort: null }
@@ -14,7 +14,7 @@ const petAtom = atom({ plugin: 'pixel-pet', key: 'pet' } as const, INITIAL)
 const isHiddenAtom = atom({ plugin: 'pixel-pet', key: 'isHidden' } as const, false)
 const powerAtom = atom({ plugin: 'pixel-pet', key: 'power' } as const, UNKNOWN)
 
-type Options = { name?: unknown; character?: unknown }
+type Options = { name?: unknown; character?: unknown; render?: unknown }
 type Dollar = EngineInterface
 
 // Room kept for the name, caption, form and counts beside the sprite
@@ -62,6 +62,8 @@ const sessionModel = ($: Dollar) => $.session.model().catch(() => null)
 export const register: Register = (on, options: Options) => {
   const named = typeof options.name === 'string' && options.name.trim() !== '' ? options.name.trim() : null
   const choice = characterChoice(options.character)
+  // Sextants unless /config asks for half blocks, for a font without them.
+  const render = renderChoice(options.render)
 
   on('session.start', async ($, e, next) => {
     noColor = ((await $.env.get('NO_COLOR')) ?? '') !== ''
@@ -155,9 +157,9 @@ export const register: Register = (on, options: Options) => {
     const fighter = fighterFor(power.model, power.effort, choice)
     const mood = shownMood(pet, e.props.isWorking)
     const seen = look(mood, pet.tick)
-    const room = Math.max(0, Math.min(ROAM, e.props.bodyColumns - TIERS[tier].width - TEXT_COLUMNS))
-    const grid = frame(fighter, seen, pet.tick, tier)
-    const lines = rows(pet.dir === -1 ? mirror(grid) : grid, palette(fighter, seen), noColor)
+    const room = Math.max(0, Math.min(ROAM, e.props.bodyColumns - TIERS[tier].columns - TEXT_COLUMNS))
+    const grid = frame(fighter, seen, pet.tick, tier, render)
+    const lines = rows(pet.dir === -1 ? mirror(grid) : grid, palette(fighter, seen), render, noColor)
     const said = caption(mood, pet)
     const name = named ?? NAMES[fighter.character]
     const shade = formColor(fighter.form)
