@@ -1,15 +1,22 @@
 {
   "name": "pixel-pet",
-  "version": "0.1.0",
-  "description": "A pixel-art cat above the prompt that reacts to prompts, tool calls, errors and finished turns",
+  "version": "0.2.0",
+  "description": "A pixel-art Saiyan above the prompt: the model picks the fighter, the effort its Super Saiyan form, and it reacts to prompts, tool calls, errors and finished turns",
   "author": { "name": "thanh.nguyen" },
   "types":"./types/index.d.ts",
   "userConfig": {
     "name": {
       "type": "string",
       "title": "Pet name",
-      "description": "The name shown beside the pet",
-      "default": "Mochi"
+      "description": "The name shown beside the pet; empty shows the fighter's own name",
+      "default": ""
+    },
+    "character": {
+      "type": "string",
+      "title": "Character",
+      "description": "auto follows the model: Opus is Goku, Sonnet Vegeta, any other kid Gohan",
+      "default": "auto",
+      "options": ["auto", "goku", "vegeta", "gohan"]
     }
   }
 }

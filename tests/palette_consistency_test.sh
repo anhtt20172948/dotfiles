@@ -18,7 +18,7 @@ files = {
     '.config/kitty/custom-tabs-colors.conf',  # Kitty tab palette.
     '.config/claude-mods/crew-watch/tests/theme.test.ts',  # Named-palette regression assertions.
     '.config/claude-mods/crew-watch/hooks/theme.ts',  # Explicitly selectable named palettes.
-    '.config/claude-mods/pixel-pet/hooks/lib/sprite.ts',  # Sprite artwork pixels, not UI theme colours.
+    '.config/claude-mods/pixel-pet/hooks/lib/palette.ts',  # Sprite artwork pixels, not UI theme colours.
 }
 pattern = re.compile(r'(?<![\w#])#(?:[a-fA-F0-9]{6}|[a-fA-F0-9]{3})(?![\w])')
 violations = []

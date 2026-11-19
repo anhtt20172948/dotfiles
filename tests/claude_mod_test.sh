@@ -80,6 +80,17 @@ offered=$(sed '/^default$/d; /^claude-code$/d' <<<"$options" | sort)
 defined=$(sed -n "s/^  '\{0,1\}\([a-z-]*\)'\{0,1\}: {\$/\1/p" "$crew/hooks/theme.ts" | sort)
 [[ -n $offered && $offered == "$defined" ]] || fail "crew-watch Theme options '$offered' differ from theme.ts palettes '$defined'"
 
+# pixel-pet's Character option offers auto (follow the model) and exactly the
+# characters fighter.ts draws; its Pet name defaults to empty, the fighter's own name.
+pet=$ROOT/$MODS/pixel-pet
+[[ $(jq -r '.userConfig.character | "\(.default) \(.options[0])"' "$pet/.claude-plugin/plugin.json") == "auto auto" ]] ||
+	fail "pixel-pet Character must default to and start with auto"
+offered=$(jq -r '.userConfig.character.options[1:][]' "$pet/.claude-plugin/plugin.json" | sort)
+drawn=$(sed -n "s/^export const CHARACTERS: readonly Character\[\] = \[\(.*\)\]\$/\1/p" "$pet/hooks/lib/fighter.ts" | tr -d "' " | tr ',' '\n' | sort)
+[[ -n $offered && $offered == "$drawn" ]] || fail "pixel-pet Character options '$offered' differ from fighter.ts characters '$drawn'"
+[[ $(jq -r '.userConfig.name.default' "$pet/.claude-plugin/plugin.json") == "" ]] ||
+	fail "pixel-pet Pet name must default to empty (the fighter's own name)"
+
 if ! command -v claude >/dev/null; then
 	echo "skip: claude not installed, mod validate/test not run"
 	exit 0

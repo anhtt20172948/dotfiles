@@ -90,23 +90,41 @@ export const shownMood = (pet: Pet, isWorking: boolean): Mood => {
   return pet.mood
 }
 
+// Idle it walks and blinks with a calm aura; working it powers up, the aura
+// flaring; a finished turn gets a thumbs up; a failure knocks it back out of
+// its form; a long idle sends it to meditate.
 export const look = (mood: Mood, tick: number): Look => {
   const step = (tick % 2) as 0 | 1
+  const calm = { hasMouth: false, hasTear: false, isPoweredDown: false }
   switch (mood) {
-    case 'idle':
-      return { isBlinking: tick % 12 === 0, hasBlush: false, hasTear: false, step: tick % 16 < 10 ? step : 0 }
+    case 'idle': {
+      const isBlinking = tick % 12 === 0
+      const walking = tick % 16 < 10 ? step : 0
+      const face = isBlinking ? 'blink' : 'idle'
+
+      return { ...calm, pose: 'stand', step: walking, face, isEyesClosed: isBlinking, aura: 'calm' }
+    }
     case 'working':
-      return { isBlinking: false, hasBlush: false, hasTear: false, step }
+      return { ...calm, pose: 'power', step, face: 'power', isEyesClosed: false, hasMouth: true, aura: 'flare' }
     case 'happy':
-      return { isBlinking: true, hasBlush: true, hasTear: false, step }
+      return { ...calm, pose: 'thumbs', step: 0, face: 'happy', isEyesClosed: true, hasMouth: true, aura: 'calm' }
     case 'sad':
-      return { isBlinking: false, hasBlush: false, hasTear: true, step: 0 }
+      return {
+        ...calm,
+        pose: 'knocked',
+        step: 0,
+        face: 'hurt',
+        isEyesClosed: true,
+        hasTear: true,
+        isPoweredDown: true,
+        aura: 'none',
+      }
     case 'sleep':
-      return { isBlinking: true, hasBlush: false, hasTear: false, step: 0 }
+      return { ...calm, pose: 'meditate', step: 0, face: 'calm', isEyesClosed: true, aura: 'none' }
   }
 }
 
-export type Tone = 'dim' | 'love' | 'warn'
+export type Tone = 'dim' | 'cheer' | 'warn'
 
 export const caption = (mood: Mood, pet: Pet): { text: string; tone: Tone } => {
   const dots = '.'.repeat((pet.tick % 3) + 1)
@@ -114,9 +132,9 @@ export const caption = (mood: Mood, pet: Pet): { text: string; tone: Tone } => {
     case 'idle':
       return { text: 'waiting for you', tone: 'dim' }
     case 'working':
-      return { text: pet.tool === null ? `thinking${dots}` : `running ${pet.tool}${dots}`, tone: 'dim' }
+      return { text: pet.tool === null ? `powering up${dots}` : `running ${pet.tool}${dots}`, tone: 'dim' }
     case 'happy':
-      return { text: `done! ${pet.tick % 2 === 0 ? '♥' : '♥ ♥'}`, tone: 'love' }
+      return { text: 'done!', tone: 'cheer' }
     case 'sad':
       return { text: pet.tool === null ? 'interrupted…' : `${pet.tool} failed…`, tone: 'warn' }
     case 'sleep':
