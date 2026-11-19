@@ -8,6 +8,7 @@
 // L arm, C wristband or glove cuff, S hand, P trousers, F boots.
 
 import type { Head, Pose } from './art'
+import type { Palms } from './beam'
 import type { Expression, LayeredArt, Pixel } from './layers'
 
 const LARGE = { width: 24, height: 20 } as const
@@ -210,6 +211,24 @@ const LARGE_BODIES: Record<Pose, readonly (readonly string[])[]> = {
       '..FFPPPPPPPPPPPPPPPPFF..',
     ],
   ],
+  // Both arms pushed forward, feet planted wide: the palms are drawn in front.
+  beam: [
+    [
+      '......kTTTAssATTTk......',
+      '......UTTTTAATTTTU......',
+      '......UTTTTTTTTTTU......',
+      '......AAAAAAAAAAAA......',
+      '.....PPPPP....PPPPP.....',
+      '....FFFF........FFFF....',
+    ],
+  ],
+}
+
+// Cupped palms at the chest, fingertips apart where the ball glows; the beam
+// leaves them across text rows 7-8.
+const LARGE_PALMS: Palms = {
+  pixels: [[18, 15, 'L'], [19, 15, 'L'], [18, 16, 'L'], [19, 16, 'L'], [20, 14, 'C'], [20, 15, 'C'], [20, 16, 'C'], [20, 17, 'C'], [21, 14, 'S'], [22, 14, 'S'], [21, 15, 'S'], [22, 15, 'S'], [21, 16, 'S'], [22, 16, 'S'], [21, 17, 'S'], [22, 17, 'S'], [23, 14, 'S'], [23, 17, 'S']],
+  spot: { x: 23, top: 7, cells: 2 },
 }
 
 // The thumbs-up arm beside the chin.
@@ -245,5 +264,6 @@ export const HALFBLOCK_LARGE: LayeredArt = {
   scowl: SCOWL,
   bodies: LARGE_BODIES,
   thumb: LARGE_THUMB,
+  palms: LARGE_PALMS,
   majinMark: MAJIN_MARK,
 }

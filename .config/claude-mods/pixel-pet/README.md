@@ -54,11 +54,35 @@ setting, so a `--effort` flag shows once the first prompt is sent.
 | --- | --- |
 | idle | walks back and forth and blinks, a calm aura around the body |
 | a turn or a tool runs | powers up, fists clenched, brows down and shouting, aura flaring, `running Bash...` |
-| a turn ends | a thumbs up with a grin and a blush, `done!`, for 4 seconds |
+| a turn ends | fires its signature beam (below), then a thumbs up with a grin and a blush, `done!`, for 4 seconds |
 | a tool fails or a turn is interrupted | knocked back with eyes squeezed shut and a tear, hair back to base for a moment, `Bash failed…` |
 | idle for 3 minutes | meditates, eyes closed, `zZz` |
 
 Vegeta scowls even at rest, and Super Saiyan 3 has no brows.
+
+When a turn ends the fighter pushes both palms forward and fires its
+signature beam, shouting it a syllable at a time:
+
+| Fighter | Beam | Shout |
+| --- | --- | --- |
+| Goku | Kamehameha, blue | `Ka... me... ha... me... HA!!` |
+| Vegeta | Final Flash, yellow | `Final... FLASH!!` |
+| Gohan | Masenko, gold | `Ma... sen... KO!!` |
+
+A ball of energy grows in its palms for a second, then the beam shoots right
+and pushes the name, the shout and the counts along with it; after a moment
+it cools, draws back and the text slides home, about 2.7 seconds in all (3.4 for a milestone). A
+turn that lifts the power level past a milestone it had not reached (9,000,
+then 100,000, 1,000,000 and every power of ten on) fires a thicker, longer
+beam with a bigger ball, and `It's over 9000!!!` (or the milestone it
+crossed) in place of the counts. A prompt or a tool call ends the beam at
+once, and nothing waits on it.
+
+The beam never takes the 36 columns kept for the text: it reaches at most 40
+columns beside the large fighter and 24 beside the small one, shorter as the
+band narrows. In a band with no room to spare only the ball glows in the
+palms, and the head alone shouts without a beam. It is drawn as the fighter is, in sextants
+or half blocks, and under `NO_COLOR` as plain glyphs.
 
 The power level grows with every finished turn and tool call, drops with every
 error, and is multiplied by the form.
@@ -66,7 +90,8 @@ error, and is multiplied by the form.
 `/pet` hides or shows it. In `/config` (type `pet`), Pet name sets the name
 shown (empty, the default, shows the fighter's own), Character picks Goku,
 Vegeta or Gohan whatever the model (`auto`, the default, follows the model),
-and Render draws it in sextants (the default) or half blocks.
+Render draws it in sextants (the default) or half blocks, and Attacks
+turns the beam off (on by default) for the plain thumbs up.
 Prompts and tools never wait on its updates. It gives way while a survey holds
 the band, and under `NO_COLOR` it is drawn as a silhouette with its eyes cut out
 and no aura. Its colours are picked to land near the 256-colour cube, so a

@@ -4,6 +4,7 @@
 // nearest the 256-colour cube level it quantizes to, so Claude Code inside tmux,
 // which drops to 256 colours, draws nearly the same fighter as a truecolor terminal.
 
+import type { Technique } from './beam'
 import type { Character, Fighter, Form } from './fighter'
 
 export type Palette = Record<string, string>
@@ -63,6 +64,24 @@ const OUTFITS: Record<Character, Palette> = {
 // The name beside the pet, in each character's colour.
 export const NAME_COLORS: Record<Character, string> = { goku: '#ff7f00', vegeta: '#4c7fff', gohan: '#af7fd7' }
 
+// Each signature beam: its rippling edge (u), the glow inside a thick beam
+// (v) and its white-hot core (V). A cooling beam's core turns to its glow.
+// Kamehameha is blue, Final Flash yellow, Masenko a deeper gold.
+const BEAMS: Record<Technique, Palette> = {
+  kamehameha: { u: '#4cafff', v: '#afd7ff', V: WHITE },
+  finalFlash: { u: '#ffd700', v: '#ffffaf', V: WHITE },
+  masenko: { u: '#ffaf00', v: '#ffd74c', V: '#ffffaf' },
+}
+
+// The shout beside a beam, in its colour.
+export const BEAM_TEXT_COLORS: Record<Technique, string> = {
+  kamehameha: '#4cafff',
+  finalFlash: '#ffd700',
+  masenko: '#ffaf00',
+}
+
+export const beamPalette = (technique: Technique): Palette => BEAMS[technique]
+
 // Every colour the pet draws with, for checks.
 export const ALL_COLORS: readonly string[] = [
   ...Object.values(COMMON),
@@ -73,6 +92,8 @@ export const ALL_COLORS: readonly string[] = [
   ]),
   ...Object.values(OUTFITS).flatMap(outfit => Object.values(outfit)),
   ...Object.values(NAME_COLORS),
+  ...Object.values(BEAMS).flatMap(beam => Object.values(beam)),
+  ...Object.values(BEAM_TEXT_COLORS),
 ]
 
 // The form's name in its aura's colour; the base form has none.

@@ -2,11 +2,12 @@
 // Sextants draw a finer fighter (2x3 pixels a cell) than half blocks (1x2) in
 // the same cells.
 
-import { BODIES, HEADS, HEAD_ROWS, MOUTH, SIZE, TEAR, THUMB } from './art'
+import { BODIES, HEADS, HEAD_ROWS, MOUTH, PALMS, SIZE, TEAR, THUMB } from './art'
 import type { Head, Pose } from './art'
 import { HALFBLOCK_LARGE } from './art-large'
 import { SEXTANT_LARGE } from './art-sextant-large'
 import { SEXTANT_SMALL } from './art-sextant'
+import type { Palms } from './beam'
 import { CELL } from './cells'
 import type { Render } from './cells'
 import type { Character, Fighter, Form } from './fighter'
@@ -225,6 +226,7 @@ const smallFrame = (fighter: Fighter, form: Form, look: Look, isHeadOnly: boolea
     ...(look.hasMouth ? MOUTH.map(point => at(point, 'm')) : []),
     ...(look.hasTear ? [at(TEAR, 'b')] : []),
     ...(look.pose === 'thumbs' ? THUMB.map(([x, y]): Pixel => [x, y, 'S']) : []),
+    ...(look.pose === 'beam' ? PALMS.pixels : []),
   ]
   const drawn = put(eyed, details)
 
@@ -237,6 +239,9 @@ const LAYERED: Record<Render, Partial<Record<Tier, LayeredArt>>> = {
   halfblock: { large: HALFBLOCK_LARGE },
   sextant: { large: SEXTANT_LARGE, medium: SEXTANT_SMALL, head: SEXTANT_SMALL },
 }
+
+// Where a tier's fighter pushes its palms out for a beam.
+export const palmsOf = (tier: Tier, render: Render): Palms => LAYERED[render][tier]?.palms ?? PALMS
 
 // The fighter in one pose at one tier, as palette keys, with its aura.
 export const frame = (fighter: Fighter, look: Look, tick: number, tier: Tier, render: Render): string[] => {

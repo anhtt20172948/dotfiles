@@ -3,6 +3,7 @@ import type { TestBody } from 'claude-code/testing'
 
 import { BODIES } from '../hooks/lib/art'
 import type { Pose } from '../hooks/lib/art'
+import { FRAME_MS, TECHNIQUES, attackMs, chant, milestoneOf, milestoneShout, phaseOf, withAttack } from '../hooks/lib/beam'
 import {
   CHARACTERS,
   FORMS,
@@ -19,9 +20,10 @@ import { INITIAL, REACT_MS, ROAM, SLEEP_MS, caption, look, shownMood, stats, ste
 import type { PetEvent } from '../hooks/lib/mood'
 import { CELL, clashes, renderChoice, sextant } from '../hooks/lib/cells'
 import { EXPRESSION_NAMES } from '../hooks/lib/layers'
-import { ALL_COLORS, RENDERS, TIERS, frame, mirror, palette, pixelSize, rows, tierFor } from '../hooks/lib/sprite'
+import { beamPalette } from '../hooks/lib/palette'
+import { ALL_COLORS, RENDERS, TIERS, frame, mirror, palette, palmsOf, pixelSize, rows, tierFor } from '../hooks/lib/sprite'
 import type { Look, Render, Tier } from '../hooks/lib/sprite'
-import type { Pet } from '../types'
+import type { Attack, Pet } from '../types'
 
 const run = (pet: Pet, events: PetEvent[]) => events.reduce(step, pet)
 
@@ -412,15 +414,15 @@ test('a turn works, celebrates, then settles back to idle', async () => {
     { type: 'tool', now: 20, tool: 'Bash' },
   ])
   expect(working).toMatchObject({ mood: 'working', tool: 'Bash', tools: 1 })
-  expect(caption('working', working).text).toMatch(/^running Bash\.+$/)
-  expect(caption('working', { ...working, tool: null }).text).toMatch(/^powering up\.+$/)
+  expect(caption('working', working, 'goku').text).toMatch(/^running Bash\.+$/)
+  expect(caption('working', { ...working, tool: null }, 'goku').text).toMatch(/^powering up\.+$/)
 
   const happy = run(working, [
     { type: 'toolDone', now: 30, tool: 'Bash', isError: false },
-    { type: 'turn', now: 40, isAborted: false },
+    { type: 'turn', now: 40, isAborted: false, form: 'base', attacks: false },
   ])
   expect(happy).toMatchObject({ mood: 'happy', tool: null, turns: 1 })
-  expect(caption('happy', happy)).toEqual({ text: 'done!', tone: 'cheer' })
+  expect(caption('happy', happy, 'goku')).toEqual({ text: 'done!', tone: 'cheer' })
 
   const settled = run(happy, ticks(40, Math.ceil(REACT_MS / 400)))
   expect(settled.mood).toBe('idle')
@@ -433,11 +435,11 @@ test('a failed tool and an interrupted turn knock it back', async () => {
     { type: 'toolDone', now: 5, tool: 'Bash', isError: true },
   ])
   expect(failed).toMatchObject({ mood: 'sad', errors: 1 })
-  expect(caption('sad', failed).text).toBe('Bash failed…')
+  expect(caption('sad', failed, 'goku').text).toBe('Bash failed…')
   expect(stats(failed)).toBe('0 turns · 1 tool · 1 error')
 
-  const aborted = run(INITIAL, [{ type: 'turn', now: 0, isAborted: true }])
-  expect(caption(aborted.mood, aborted).text).toBe('interrupted…')
+  const aborted = run(INITIAL, [{ type: 'turn', now: 0, isAborted: true, form: 'base', attacks: true }])
+  expect(caption(aborted.mood, aborted, 'goku').text).toBe('interrupted…')
 })
 
 test('idle it walks within its room and meditates, a prompt wakes it', async () => {
@@ -447,7 +449,7 @@ test('idle it walks within its room and meditates, a prompt wakes it', async () 
 
   const asleep = run(walked, [{ type: 'tick', now: SLEEP_MS + 1 }])
   expect(asleep.mood).toBe('sleep')
-  expect(caption('sleep', asleep).text).toMatch(/^z/)
+  expect(caption('sleep', asleep, 'goku').text).toMatch(/^z/)
   expect(run(asleep, [{ type: 'prompt', now: SLEEP_MS + 2 }]).mood).toBe('working')
 })
 
@@ -476,8 +478,10 @@ type On = Parameters<TestBody>[1]
 
 // The engine beneath the pet: a session on `model` with `effortLevel` in its settings.
 const engine = (on: On, session: { model: string; effortLevel?: string }, env: Record<string, string> = {}) => {
-  mock.clock(on)
+  const clock = mock.clock(on)
   mock.env(on, env)
+  on('turn.complete', () => ({ text: '' }))
+  on('prompt.submit', (_, e) => ({ text: e.text }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.model', () => ({ value: session.model }))
   on('settings.read', () => ({ value: session.effortLevel === undefined ? {} : { effortLevel: session.effortLevel } }))
@@ -493,6 +497,8 @@ const engine = (on: On, session: { model: string; effortLevel?: string }, env: R
 
     return <Text>engine</Text>
   })
+
+  return clock
 }
 
 const start = ($: Engine) => $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
@@ -680,5 +686,238 @@ test('NO_COLOR draws the pet without colour', async ($, on) => {
   const blocks = (await mounted.findAll({ type: 'Text' })).filter(text => SPRITE_ROW.test(text.text))
   expect(blocks.length).toBeGreaterThan(0)
   expect(blocks.every(block => block.props.color === undefined && block.props.backgroundColor === undefined)).toBe(true)
+  await mounted.unmount()
+})
+
+// A finished turn of the main conversation, as the engine reports it.
+const TURN_DONE = { answer: 'ok', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' } as const
+
+const FINISH = { isAborted: false, form: 'base', attacks: true } as const
+
+const at = (elapsed: number, milestone: number | null = null): Attack => ({ elapsed, milestone })
+
+test('a finished turn fires a beam, then gives a thumbs up, then settles', async () => {
+  const started = run(INITIAL, [{ type: 'start', now: 0 }])
+  const fired = run(started, [{ type: 'turn', now: 1_000, ...FINISH }])
+  expect(fired).toMatchObject({ mood: 'attack', turns: 1, attack: at(0) })
+  expect(look('attack', 0)).toMatchObject({ pose: 'beam', face: 'power', aura: 'flare' })
+  expect(caption('attack', fired, 'goku')).toEqual({ text: 'Ka...', tone: 'beam' })
+
+  // Each frame moves it on; once it has fired, the whole shout shows.
+  const firing = run(fired, [{ type: 'frame', now: 2_700 }])
+  expect(firing.attack).toEqual(at(1_700))
+  expect(phaseOf(at(1_700)).phase).toBe('hold')
+  expect(caption('attack', firing, 'goku').text).toBe('Ka... me... ha... me... HA!!')
+
+  // It lasts about two and a half seconds, then the thumbs up; ticks end it too.
+  expect(attackMs(at(0))).toBeLessThanOrEqual(3_000)
+  const done = run(fired, [{ type: 'frame', now: 1_000 + attackMs(at(0)) }])
+  expect(done).toMatchObject({ mood: 'happy', attack: null })
+  expect(run(fired, ticks(1_000, Math.ceil(attackMs(at(0)) / 400))).mood).toBe('happy')
+  expect(run(done, ticks(done.since, Math.ceil(REACT_MS / 400))).mood).toBe('idle')
+
+  // With Attacks off, or on an interrupted turn, there is no beam.
+  expect(run(started, [{ type: 'turn', now: 1_000, ...FINISH, attacks: false }])).toMatchObject({ mood: 'happy', attack: null })
+  expect(run(started, [{ type: 'turn', now: 1_000, ...FINISH, isAborted: true }])).toMatchObject({ mood: 'sad', attack: null })
+  // A frame or a tick outside a beam changes nothing it should not.
+  expect(run(started, [{ type: 'frame', now: 5 }])).toEqual(started)
+})
+
+test('a prompt or a tool cancels a beam at once', async () => {
+  const fired = run(INITIAL, [{ type: 'turn', now: 0, ...FINISH }])
+  for (const event of [{ type: 'prompt', now: 300 }, { type: 'tool', now: 300, tool: 'Bash' }] as const) {
+    const cut = run(fired, [event])
+    expect({ event: event.type, mood: cut.mood, attack: cut.attack }).toEqual({ event: event.type, mood: 'working', attack: null })
+    // A late frame does not bring it back.
+    expect(run(cut, [{ type: 'frame', now: 400 }]).mood).toBe('working')
+  }
+})
+
+test('crossing a power milestone fires a bigger, longer beam that shouts it', async () => {
+  expect([0, 8_999, 9_000, 99_999, 100_000, 2_500_000].map(milestoneOf)).toEqual([0, 0, 9_000, 9_000, 100_000, 1_000_000])
+  expect(milestoneShout(9_000)).toBe("It's over 9000!!!")
+  expect(milestoneShout(1_000_000)).toBe("It's over 1,000,000!!!")
+
+  // Super Saiyan multiplies by 50: 5,000 at the start, 7,500 after a turn,
+  // 10,000 after two, which crosses 9,000.
+  const ssj1 = { ...FINISH, form: 'ssj1' } as const
+  const first = run(INITIAL, [{ type: 'turn', now: 0, ...ssj1 }])
+  expect(first.attack).toEqual(at(0))
+  const second = run(first, [{ type: 'turn', now: 10_000, ...ssj1 }])
+  expect(second.attack).toEqual(at(0, 9_000))
+  expect(attackMs(at(0, 9_000))).toBeGreaterThan(attackMs(at(0)))
+  // The milestone is reached once: the next turn fires a normal beam.
+  expect(run(second, [{ type: 'turn', now: 20_000, ...ssj1 }]).attack).toEqual(at(0))
+  // A session that starts past a milestone does not celebrate it on its first turn.
+  expect(run(INITIAL, [{ type: 'turn', now: 0, ...FINISH, form: 'ssj2' }]).attack).toEqual(at(0))
+  // Raising the effort jumps the power level: Ultra Instinct's 100,000s.
+  expect(run(second, [{ type: 'turn', now: 20_000, ...FINISH, form: 'ui' }]).attack).toEqual(at(0, 100_000))
+  // With Attacks off the milestone is still marked, so turning them on later
+  // does not celebrate an old one.
+  const quiet = run(first, [{ type: 'turn', now: 10_000, ...ssj1, attacks: false }])
+  expect(quiet.milestone).toBe(9_000)
+})
+
+test('each character fires its own technique', async () => {
+  expect(TECHNIQUES).toEqual({ goku: 'kamehameha', vegeta: 'finalFlash', gohan: 'masenko' })
+  const shouts = (technique: (typeof TECHNIQUES)[keyof typeof TECHNIQUES]) =>
+    [...new Set(Array.from({ length: 28 }, (_, i) => chant(technique, at(i * FRAME_MS))))]
+  expect(shouts('kamehameha')).toEqual(['Ka...', 'Ka... me...', 'Ka... me... ha...', 'Ka... me... ha... me...', 'Ka... me... ha... me... HA!!'])
+  expect(shouts('finalFlash')).toEqual(['Final...', 'Final... FLASH!!'])
+  expect(shouts('masenko')).toEqual(['Ma...', 'Ma... sen...', 'Ma... sen... KO!!'])
+  // Kamehameha is blue, Final Flash yellow, Masenko gold; each a colour of its own.
+  const edge = (technique: (typeof TECHNIQUES)[keyof typeof TECHNIQUES]) => beamPalette(technique).u ?? ''
+  const [r, g, b] = (edge('kamehameha').slice(1).match(/../g) ?? []).map(c => parseInt(c, 16))
+  expect((b ?? 0) > (r ?? 0) && (b ?? 0) > (g ?? 0)).toBe(true)
+  expect(new Set(Object.values(TECHNIQUES).map(edge)).size).toBe(3)
+})
+
+test('the beam stays within the columns it is given, two colours a cell, either render', async () => {
+  const fighter = { character: 'goku', form: 'ssj2' } as const
+  const seen = look('attack', 0)
+  const colors = { ...palette(fighter, seen), ...beamPalette('kamehameha') }
+  for (const render of RENDERS) {
+    for (const tier of ['large', 'medium'] as const) {
+      const { width, height } = pixelSize(tier, render)
+      const cell = CELL[render]
+      const grid = frame(fighter, seen, 0, tier, render)
+      for (const milestone of [null, 9_000]) {
+        for (const maxColumns of [0, 7, 30]) {
+          // Every frame, and the last moment before it gives way.
+          const length = attackMs(at(0, milestone))
+          const times = [...Array.from({ length: Math.ceil(length / FRAME_MS) }, (_, i) => i * FRAME_MS), length - 1]
+          const widths = times.map(time => {
+            const drawn = withAttack(grid, { attack: at(time, milestone), spot: palmsOf(tier, render).spot, cell, maxColumns })
+            const key = { render, tier, milestone, maxColumns, at: time }
+            expect({ ...key, height: drawn.length, isEven: drawn.every(row => row.length === drawn[0]?.length) }).toEqual({
+              ...key,
+              height,
+              isEven: true,
+            })
+            // The beam out past the fighter and its ball never mixes three colours in a cell.
+            const ball = Math.ceil(10 / cell.width)
+            const beyond = clashes(drawn, colors, render).filter(([x]) => x >= TIERS[tier].columns + ball)
+            expect({ ...key, beyond }).toEqual({ ...key, beyond: [] })
+
+            return (drawn[0]?.length ?? 0) / cell.width
+          })
+          const key = { render, tier, milestone, maxColumns }
+          // It charges in the palms, reaches the limit and no further, and is gone at the end.
+          expect({ ...key, first: widths[0], widest: Math.max(...widths), last: widths.at(-1) }).toEqual({
+            ...key,
+            first: width / cell.width,
+            widest: width / cell.width + maxColumns,
+            last: width / cell.width,
+          })
+        }
+      }
+    }
+  }
+})
+
+// The band while a beam may be firing: its title, the widest sprite row, and
+// the line under the form.
+const beamBand = async ($: Engine, props: Partial<typeof PROPS> = {}) => {
+  const mounted = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, ...props } })
+  const texts = await mounted.findAll({ type: 'Text' })
+  const title = texts.find(text => /^(Goku|Vegeta|Gohan) · /.test(text.text))?.text
+  const sprite = texts.filter(text => SPRITE_ROW.test(text.text))
+  const width = Math.max(0, ...sprite.map(text => [...text.text].length))
+  const shout = texts.find(text => /^It's over/.test(text.text))?.text
+  const isColored = sprite.some(text => text.props.color !== undefined || text.props.backgroundColor !== undefined)
+  await mounted.unmount()
+
+  return { title, width, shout, isColored }
+}
+
+test('a finished turn fires across the band, pushing the text right, until a prompt', async ($, on) => {
+  const clock = engine(on, { model: 'claude-opus-5-5', effortLevel: 'high' })
+  await start($)
+  await $.turn.complete(TURN_DONE)
+  const charging = await beamBand($)
+  expect(charging.title).toBe('Goku · Ka...')
+  expect(charging.width).toBeLessThanOrEqual(TIERS.large.columns + 2)
+
+  // The frames run on their own: the beam is fired and the text pushed right,
+  // as far as the band leaves room for the text (100 - 24 - 2 - 36 columns).
+  await clock.advance(1_800)
+  const fired = await beamBand($)
+  expect(fired.title).toBe('Goku · Ka... me... ha... me... HA!!')
+  expect(fired.width).toBe(TIERS.large.columns + 38)
+  // A wider band fires it no further than the large tier's 40 columns.
+  expect((await beamBand($, { bodyColumns: 200 })).width).toBe(TIERS.large.columns + 40)
+  // A band with no room beside the text fires no beam; the head alone none either.
+  expect((await beamBand($, { bodyColumns: 62 })).width).toBe(TIERS.large.columns)
+  const head = await beamBand($, { maxRows: 4 })
+  expect({ title: head.title, width: head.width }).toEqual({ title: 'Goku · Ka... me... ha... me... HA!!', width: TIERS.head.columns })
+
+  // A prompt cuts it short, and the text is back at once.
+  await $.prompt.submit({ text: 'next', wait: false, origin: { kind: 'composer' } })
+  await clock.settle()
+  const cut = await beamBand($, { isWorking: true })
+  expect(cut.title).toMatch(/^Goku · powering up/)
+  expect(cut.width).toBe(TIERS.large.columns)
+
+  // Left alone it ends in a thumbs up.
+  await $.turn.complete(TURN_DONE)
+  await clock.advance(3_000)
+  expect((await beamBand($)).title).toBe('Goku · done!')
+})
+
+test('crossing 9000 shouts it beside the bigger beam', async ($, on) => {
+  const clock = engine(on, { model: 'claude-opus-5-5', effortLevel: 'medium' })
+  await start($)
+  // Super Saiyan: 5,000, then 7,500, then 10,000.
+  await $.turn.complete(TURN_DONE)
+  await clock.advance(4_000)
+  expect((await beamBand($)).shout).toBeUndefined()
+  await $.turn.complete(TURN_DONE)
+  await clock.advance(2_000)
+  const big = await beamBand($)
+  expect(big.shout).toBe("It's over 9000!!!")
+  expect(big.title).toBe('Goku · Ka... me... ha... me... HA!!')
+})
+
+test('Vegeta fires Final Flash and Gohan Masenko', { options: { character: 'vegeta' } }, async ($, on) => {
+  const clock = engine(on, { model: 'claude-haiku-5-5' })
+  await start($)
+  await $.turn.complete(TURN_DONE)
+  await clock.advance(1_800)
+  expect((await beamBand($)).title).toBe('Vegeta · Final... FLASH!!')
+})
+
+test('Gohan fires Masenko', async ($, on) => {
+  const clock = engine(on, { model: 'claude-haiku-5-5' })
+  await start($)
+  await $.turn.complete(TURN_DONE)
+  await clock.advance(1_800)
+  expect((await beamBand($)).title).toBe('Gohan · Ma... sen... KO!!')
+})
+
+test('the Attacks option off keeps the plain thumbs up', { options: { attacks: false } }, async ($, on) => {
+  const clock = engine(on, { model: 'claude-opus-5-5' })
+  await start($)
+  await $.turn.complete(TURN_DONE)
+  const drawn = await beamBand($)
+  expect(drawn.title).toBe('Goku · done!')
+  expect(drawn.width).toBe(TIERS.large.columns)
+  await clock.advance(1_800)
+  expect((await beamBand($)).width).toBe(TIERS.large.columns)
+})
+
+test('the beam is drawn in half blocks, and without colour under NO_COLOR', { options: { render: 'halfblock' } }, async (
+  $,
+  on,
+) => {
+  const clock = engine(on, { model: 'claude-opus-5-5', effortLevel: 'high' }, { NO_COLOR: '1' })
+  await start($)
+  await $.turn.complete(TURN_DONE)
+  await clock.advance(1_800)
+  const fired = await beamBand($)
+  expect(fired.width).toBe(TIERS.large.columns + 38)
+  expect(fired.isColored).toBe(false)
+  const mounted = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const sprite = (await mounted.findAll({ type: 'Text' })).filter(text => SPRITE_ROW.test(text.text))
+  expect(sprite.every(text => HALF_BLOCK_ROW.test(text.text))).toBe(true)
   await mounted.unmount()
 })

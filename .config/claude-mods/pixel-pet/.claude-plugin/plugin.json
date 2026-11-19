@@ -1,7 +1,7 @@
 {
   "name": "pixel-pet",
-  "version": "0.3.0",
-  "description": "A pixel-art Saiyan above the prompt: the model picks the fighter, the effort its Super Saiyan form, and it reacts to prompts, tool calls, errors and finished turns",
+  "version": "0.4.0",
+  "description": "A pixel-art Saiyan above the prompt: the model picks the fighter, the effort its Super Saiyan form, and it reacts to prompts, tool calls, errors and finished turns, firing its signature beam when a turn ends",
   "author": { "name": "thanh.nguyen" },
   "types":"./types/index.d.ts",
   "userConfig": {
@@ -24,6 +24,12 @@
       "description": "sextant draws a finer fighter (2x3 pixels a cell); halfblock (1x2) is for a font without sextant glyphs",
       "default": "sextant",
       "options": ["sextant", "halfblock"]
+    },
+    "attacks": {
+      "type": "boolean",
+      "title": "Attacks",
+      "description": "A finished turn fires the fighter's signature beam (Kamehameha, Final Flash, Masenko) before the thumbs up",
+      "default": true
     }
   }
 }

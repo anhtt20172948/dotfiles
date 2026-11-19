@@ -1,4 +1,7 @@
-import type { Mood, Pet } from '../../types'
+import type { Attack, Mood, Pet } from '../../types'
+import { TECHNIQUES, attackMs, chant, milestoneOf } from './beam'
+import { powerLevel } from './fighter'
+import type { Character, Form } from './fighter'
 import type { Look } from './sprite'
 
 export const TICK_MS = 400
@@ -13,7 +16,11 @@ export type PetEvent =
   | { type: 'prompt'; now: number }
   | { type: 'tool'; now: number; tool: string }
   | { type: 'toolDone'; now: number; tool: string; isError: boolean }
-  | { type: 'turn'; now: number; isAborted: boolean }
+  // Each frame of a beam, faster than ticks while one is fired.
+  | { type: 'frame'; now: number }
+  // A finished turn: the form the power level is reckoned in, and whether it
+  // fires a beam (the Attacks option).
+  | { type: 'turn'; now: number; isAborted: boolean; form: Form; attacks: boolean }
 
 export const INITIAL: Pet = {
   mood: 'idle',
@@ -25,14 +32,46 @@ export const INITIAL: Pet = {
   turns: 0,
   tools: 0,
   errors: 0,
+  attack: null,
+  milestone: null,
 }
 
+// A new mood ends any beam: a prompt or a tool cancels one at once.
 const become = (pet: Pet, mood: Mood, now: number, tool: string | null = null): Pet => ({
   ...pet,
   mood,
   tool,
   since: now,
+  attack: null,
 })
+
+// A beam runs on with the clock, then gives way to a thumbs up.
+const advance = (pet: Pet, now: number): Pet => {
+  if (pet.mood !== 'attack' || pet.attack === null) {
+    return pet
+  }
+  const attack = { ...pet.attack, elapsed: Math.max(0, now - pet.since) }
+
+  return attack.elapsed >= attackMs(attack) ? become(pet, 'happy', now) : { ...pet, attack }
+}
+
+// A finished turn fires a beam, a bigger one when it lifts the power level past
+// a milestone it had not reached; an interrupted one knocks the fighter back.
+const finish = (pet: Pet, event: Extract<PetEvent, { type: 'turn' }>): Pet => {
+  const counted = { ...pet, turns: pet.turns + 1 }
+  if (event.isAborted) {
+    return become(counted, 'sad', event.now)
+  }
+  const best = pet.milestone ?? milestoneOf(powerLevel(event.form, pet))
+  const reached = milestoneOf(powerLevel(event.form, counted))
+  const marked = { ...counted, milestone: Math.max(best, reached) }
+  if (!event.attacks) {
+    return become(marked, 'happy', event.now)
+  }
+  const attack: Attack = { elapsed: 0, milestone: reached > best ? reached : null }
+
+  return { ...become(marked, 'attack', event.now), attack }
+}
 
 // Idle time is spent walking ten ticks out of every sixteen, then sitting.
 const walk = (pet: Pet): Pet => {
@@ -47,6 +86,9 @@ const walk = (pet: Pet): Pet => {
 
 const tick = (pet: Pet, now: number): Pet => {
   const next = { ...pet, tick: pet.tick + 1 }
+  if (pet.mood === 'attack') {
+    return advance(next, now)
+  }
   const age = now - pet.since
   if ((pet.mood === 'happy' || pet.mood === 'sad') && age >= REACT_MS) {
     return become(next, 'idle', now)
@@ -72,8 +114,10 @@ export const step = (pet: Pet, event: PetEvent): Pet => {
       return event.isError
         ? { ...become(pet, 'sad', event.now, event.tool), errors: pet.errors + 1 }
         : { ...pet, tool: null }
+    case 'frame':
+      return advance(pet, event.now)
     case 'turn':
-      return { ...become(pet, event.isAborted ? 'sad' : 'happy', event.now), turns: pet.turns + 1 }
+      return finish(pet, event)
   }
 }
 
@@ -91,7 +135,8 @@ export const shownMood = (pet: Pet, isWorking: boolean): Mood => {
 }
 
 // Idle it walks and blinks with a calm aura; working it powers up, the aura
-// flaring; a finished turn gets a thumbs up; a failure knocks it back out of
+// flaring; a finished turn fires a beam, palms forward and shouting, then
+// gets a thumbs up; a failure knocks it back out of
 // its form; a long idle sends it to meditate.
 export const look = (mood: Mood, tick: number): Look => {
   const step = (tick % 2) as 0 | 1
@@ -106,6 +151,8 @@ export const look = (mood: Mood, tick: number): Look => {
     }
     case 'working':
       return { ...calm, pose: 'power', step, face: 'power', isEyesClosed: false, hasMouth: true, aura: 'flare' }
+    case 'attack':
+      return { ...calm, pose: 'beam', step: 0, face: 'power', isEyesClosed: false, hasMouth: true, aura: 'flare' }
     case 'happy':
       return { ...calm, pose: 'thumbs', step: 0, face: 'happy', isEyesClosed: true, hasMouth: true, aura: 'calm' }
     case 'sad':
@@ -124,15 +171,18 @@ export const look = (mood: Mood, tick: number): Look => {
   }
 }
 
-export type Tone = 'dim' | 'cheer' | 'warn'
+export type Tone = 'dim' | 'cheer' | 'warn' | 'beam'
 
-export const caption = (mood: Mood, pet: Pet): { text: string; tone: Tone } => {
+// What the fighter says beside it; a beam shouts the character's own technique.
+export const caption = (mood: Mood, pet: Pet, character: Character): { text: string; tone: Tone } => {
   const dots = '.'.repeat((pet.tick % 3) + 1)
   switch (mood) {
     case 'idle':
       return { text: 'waiting for you', tone: 'dim' }
     case 'working':
       return { text: pet.tool === null ? `powering up${dots}` : `running ${pet.tool}${dots}`, tone: 'dim' }
+    case 'attack':
+      return { text: chant(TECHNIQUES[character], pet.attack ?? { elapsed: 0, milestone: null }), tone: 'beam' }
     case 'happy':
       return { text: 'done!', tone: 'cheer' }
     case 'sad':
