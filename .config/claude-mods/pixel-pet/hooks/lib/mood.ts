@@ -97,16 +97,30 @@ export const look = (mood: Mood, tick: number): Look => {
   const step = (tick % 2) as 0 | 1
   const calm = { hasMouth: false, hasTear: false, isPoweredDown: false }
   switch (mood) {
-    case 'idle':
-      return { ...calm, pose: 'stand', step: tick % 16 < 10 ? step : 0, isEyesClosed: tick % 12 === 0, aura: 'calm' }
+    case 'idle': {
+      const isBlinking = tick % 12 === 0
+      const walking = tick % 16 < 10 ? step : 0
+      const face = isBlinking ? 'blink' : 'idle'
+
+      return { ...calm, pose: 'stand', step: walking, face, isEyesClosed: isBlinking, aura: 'calm' }
+    }
     case 'working':
-      return { ...calm, pose: 'power', step, isEyesClosed: false, hasMouth: true, aura: 'flare' }
+      return { ...calm, pose: 'power', step, face: 'power', isEyesClosed: false, hasMouth: true, aura: 'flare' }
     case 'happy':
-      return { ...calm, pose: 'thumbs', step: 0, isEyesClosed: true, hasMouth: true, aura: 'calm' }
+      return { ...calm, pose: 'thumbs', step: 0, face: 'happy', isEyesClosed: true, hasMouth: true, aura: 'calm' }
     case 'sad':
-      return { ...calm, pose: 'knocked', step: 0, isEyesClosed: true, hasTear: true, isPoweredDown: true, aura: 'none' }
+      return {
+        ...calm,
+        pose: 'knocked',
+        step: 0,
+        face: 'hurt',
+        isEyesClosed: true,
+        hasTear: true,
+        isPoweredDown: true,
+        aura: 'none',
+      }
     case 'sleep':
-      return { ...calm, pose: 'meditate', step: 0, isEyesClosed: true, aura: 'none' }
+      return { ...calm, pose: 'meditate', step: 0, face: 'calm', isEyesClosed: true, aura: 'none' }
   }
 }
 

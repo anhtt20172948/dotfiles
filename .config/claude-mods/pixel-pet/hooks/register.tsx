@@ -5,7 +5,8 @@ import type { Power } from '../types'
 import { FORM_NAMES, NAMES, characterChoice, fighterFor, formatPower, levelOf, powerLevel } from './lib/fighter'
 import { INITIAL, ROAM, TICK_MS, caption, look, shownMood, stats, step } from './lib/mood'
 import type { PetEvent, Tone } from './lib/mood'
-import { FULL_ROWS, HEAD_ONLY_ROWS, NAME_COLORS, WIDTH, formColor, frame, mirror, palette, rows } from './lib/sprite'
+import { NAME_COLORS, TIERS, formColor, frame, mirror, palette, rows, tierFor } from './lib/sprite'
+import type { Tier } from './lib/sprite'
 
 const UNKNOWN: Power = { model: null, effort: null }
 
@@ -19,6 +20,9 @@ type Dollar = EngineInterface
 // Room kept for the name, caption, form and counts beside the sprite
 // (`Ultra Instinct · power 1,000,000!` fits).
 const TEXT_COLUMNS = 36
+
+// Where the name and captions start beside each tier's sprite: level with the face.
+const TEXT_TOP: Record<Tier, number> = { large: 4, medium: 2, head: 1 }
 
 // Set from NO_COLOR when the session starts: the sprite becomes a silhouette
 // and the captions lose their colour, keeping weight.
@@ -139,7 +143,9 @@ export const register: Register = (on, options: Options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
-    if (e.props.hasSurvey || e.props.maxRows < HEAD_ONLY_ROWS || (await read($, isHiddenAtom))) {
+    // The largest fighter the band has room for; below the head alone it gives way.
+    const tier = tierFor(e.props.maxRows, e.props.bodyColumns, TEXT_COLUMNS)
+    if (e.props.hasSurvey || tier === null || (await read($, isHiddenAtom))) {
       return below
     }
 
@@ -147,12 +153,10 @@ export const register: Register = (on, options: Options) => {
     const pet = await read($, petAtom)
     const power = await read($, powerAtom)
     const fighter = fighterFor(power.model, power.effort, choice)
-    // A band too short for the whole fighter shows the head alone.
-    const isCompact = e.props.maxRows < FULL_ROWS
     const mood = shownMood(pet, e.props.isWorking)
     const seen = look(mood, pet.tick)
-    const room = Math.max(0, Math.min(ROAM, e.props.bodyColumns - WIDTH - TEXT_COLUMNS))
-    const grid = frame(fighter, seen, pet.tick, isCompact)
+    const room = Math.max(0, Math.min(ROAM, e.props.bodyColumns - TIERS[tier].width - TEXT_COLUMNS))
+    const grid = frame(fighter, seen, pet.tick, tier)
     const lines = rows(pet.dir === -1 ? mirror(grid) : grid, palette(fighter, seen), noColor)
     const said = caption(mood, pet)
     const name = named ?? NAMES[fighter.character]
@@ -161,7 +165,8 @@ export const register: Register = (on, options: Options) => {
     return (
       <Box flexDirection="column">
         <Box flexDirection="row">
-          <Box flexDirection="column" marginLeft={Math.min(pet.x, room)}>
+          {/* The sprite keeps its width; the text beside it truncates instead. */}
+          <Box flexDirection="column" flexShrink={0} marginLeft={Math.min(pet.x, room)}>
             {lines.map(line => (
               <Text>
                 {line.map(segment => (
@@ -172,7 +177,7 @@ export const register: Register = (on, options: Options) => {
               </Text>
             ))}
           </Box>
-          <Box flexDirection="column" marginLeft={2} marginTop={isCompact ? 1 : 2}>
+          <Box flexDirection="column" marginLeft={2} marginTop={TEXT_TOP[tier]}>
             <Text wrap="truncate-end">
               <Text bold color={noColor ? undefined : NAME_COLORS[fighter.character]}>
                 {name}

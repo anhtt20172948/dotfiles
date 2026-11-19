@@ -3,7 +3,25 @@
 
 import { BODIES, HEADS, HEAD_ROWS, MOUTH, SIZE, TEAR, THUMB } from './art'
 import type { Head, Pose } from './art'
+import {
+  EXPRESSIONS,
+  EXPRESSION_ORIGIN,
+  FACE,
+  HAIR_FRONT_ROW,
+  LARGE,
+  LARGE_BODIES,
+  LARGE_HAIR,
+  LARGE_HEAD_ROWS,
+  LARGE_THUMB,
+  SCOWL,
+} from './art-large'
+import type { Expression } from './art-large'
 import type { Character, Fighter, Form } from './fighter'
+import { hasAura, hasSparks, paletteOf } from './palette'
+import type { Palette } from './palette'
+
+export type { Palette } from './palette'
+export { ALL_COLORS, NAME_COLORS, formColor } from './palette'
 
 export type Segment = { text: string; color?: string; backgroundColor?: string }
 
@@ -12,6 +30,8 @@ export type Aura = 'none' | 'calm' | 'flare'
 export type Look = {
   pose: Pose
   step: 0 | 1
+  // The large tier's face for the mood; the smaller tiers read the flags below.
+  face: Expression
   isEyesClosed: boolean
   hasMouth: boolean
   hasTear: boolean
@@ -20,84 +40,31 @@ export type Look = {
   aura: Aura
 }
 
-export const WIDTH = SIZE.width
+// How much of the fighter a band has room for: the large, detailed fighter, the
+// small one, or the small one's head alone.
+export type Tier = 'large' | 'medium' | 'head'
 
-// Text rows the whole fighter takes, and the head alone.
-export const FULL_ROWS = SIZE.height / 2
-export const HEAD_ONLY_ROWS = HEAD_ROWS / 2
-
-export type Palette = Record<string, string>
-
-// Every channel is 00, 4c, 7f, af, d7 or ff (or the colour is a grey): each sits
-// nearest the 256-colour cube level it quantizes to, so Claude Code inside tmux,
-// which drops to 256 colours, draws nearly the same fighter as a truecolor terminal.
-const SKIN = '#ffd7af'
-const BLUE = '#004caf'
-const WHITE = '#ffffff'
-
-const COMMON: Palette = {
-  k: '#3a3a3a', // outline
-  c: '#af7f4c', // closed eyes, lighter than open ones
-  s: SKIN,
-  m: '#7f0000', // mouth
-  b: '#4cafff', // tear
-  M: '#d70000', // Majin mark
+// Each tier's size in pixels and the band rows it takes (two pixel rows a row).
+export const TIERS: Record<Tier, { width: number; height: number; rows: number }> = {
+  large: { ...LARGE, rows: LARGE.height / 2 },
+  medium: { ...SIZE, rows: SIZE.height / 2 },
+  head: { width: SIZE.width, height: HEAD_ROWS, rows: HEAD_ROWS / 2 },
 }
 
-const BLACK_HAIR = { d: '#00004c', h: '#4c4c7f', H: '#7f7faf' }
-const GOLD_HAIR = { d: '#d77f00', h: '#ffd700', H: '#ffffaf' }
-const DARK_EYES = '#1c1c1c'
-const TEAL_EYES = '#007f7f'
-const SPARK = '#7fd7ff'
+// The largest tier a band of `rows` fits, or none. The large fighter also needs
+// `columns` wide enough to keep `textColumns` beside it; a narrow band draws the
+// small one, whose text has always had to squeeze.
+export const tierFor = (rows: number, columns = Infinity, textColumns = 0): Tier | null => {
+  if (rows >= TIERS.large.rows && columns >= TIERS.large.width + textColumns) {
+    return 'large'
+  }
 
-type FormLook = { hair: { d: string; h: string; H: string }; eyes: string; aura?: { o: string; i: string; z?: string } }
-
-const FORM_LOOKS: Record<Form, FormLook> = {
-  base: { hair: BLACK_HAIR, eyes: DARK_EYES },
-  ssj1: { hair: GOLD_HAIR, eyes: TEAL_EYES, aura: { o: '#ffffaf', i: '#ffd74c' } },
-  ssj2: { hair: GOLD_HAIR, eyes: TEAL_EYES, aura: { o: '#ffffaf', i: '#ffd74c', z: SPARK } },
-  ssj3: { hair: GOLD_HAIR, eyes: TEAL_EYES, aura: { o: '#ffd74c', i: '#ffaf00', z: SPARK } },
-  majin: { hair: GOLD_HAIR, eyes: TEAL_EYES, aura: { o: '#ffd74c', i: '#ffaf00', z: SPARK } },
-  ui: { hair: { d: '#7f7faf', h: '#d0d0d0', H: WHITE }, eyes: '#4c4c7f', aura: { o: '#afd7ff', i: '#7fafff' } },
-  ego: { hair: { d: '#4c007f', h: '#7f4cd7', H: '#d7afff' }, eyes: '#7f00af', aura: { o: '#d7afff', i: '#af4cd7' } },
-  ultimate: { hair: BLACK_HAIR, eyes: DARK_EYES, aura: { o: '#d0d0d0', i: WHITE } },
-  beast: { hair: { d: '#808080', h: '#dadada', H: WHITE }, eyes: '#d70000', aura: { o: '#ff7faf', i: '#d7004c' } },
+  return rows >= TIERS.medium.rows ? 'medium' : rows >= TIERS.head.rows ? 'head' : null
 }
-
-const OUTFITS: Record<Character, Palette> = {
-  // Orange gi over a blue undershirt, belt, wristbands and boots.
-  goku: { T: '#ff7f00', A: BLUE, R: BLUE, S: SKIN, P: '#ff7f00', F: BLUE },
-  // White armour over a blue suit, white gloves and boots.
-  vegeta: { T: WHITE, A: BLUE, R: BLUE, S: WHITE, P: BLUE, F: WHITE },
-  // A purple gi with a red sash.
-  gohan: { T: '#7f4caf', A: '#af0000', R: '#af0000', S: SKIN, P: '#7f4caf', F: BLUE },
-}
-
-// The name beside the pet, in each character's colour.
-export const NAME_COLORS: Record<Character, string> = { goku: '#ff7f00', vegeta: '#4c7fff', gohan: '#af7fd7' }
-
-// Every colour the pet draws with, for checks.
-export const ALL_COLORS: readonly string[] = [
-  ...Object.values(COMMON),
-  ...Object.values(FORM_LOOKS).flatMap(look => [
-    ...Object.values(look.hair),
-    look.eyes,
-    ...Object.values(look.aura ?? {}),
-  ]),
-  ...Object.values(OUTFITS).flatMap(outfit => Object.values(outfit)),
-  ...Object.values(NAME_COLORS),
-]
-
-// The form's name in its aura's colour; the base form has none.
-export const formColor = (form: Form): string | undefined => FORM_LOOKS[form].aura?.i
 
 const shownForm = (fighter: Fighter, look: Look): Form => (look.isPoweredDown ? 'base' : fighter.form)
 
-export const palette = (fighter: Fighter, look: Look): Palette => {
-  const form = FORM_LOOKS[shownForm(fighter, look)]
-
-  return { ...COMMON, ...OUTFITS[fighter.character], ...form.hair, e: form.eyes, ...form.aura }
-}
+export const palette = (fighter: Fighter, look: Look): Palette => paletteOf(fighter, shownForm(fighter, look))
 
 const HEAD_OF: Record<Character, (form: Form) => Head> = {
   goku: form => (form === 'ssj1' || form === 'ssj2' ? 'gokuSuper' : form === 'ssj3' ? 'gokuSsj3' : 'goku'),
@@ -105,16 +72,28 @@ const HEAD_OF: Record<Character, (form: Form) => Head> = {
   gohan: form => (form === 'ssj1' || form === 'ssj2' || form === 'beast' ? 'gohanSuper' : 'gohan'),
 }
 
-const EMPTY = '.'.repeat(WIDTH)
+type Pixel = readonly [number, number, string]
 
-const put = (grid: readonly string[], pixels: readonly (readonly [number, number])[], pixel: string) =>
-  grid.map((row, y) =>
-    [...row].map((value, x) => (pixels.some(([px, py]) => px === x && py === y) ? pixel : value)).join(''),
-  )
+const blank = (width: number, height: number) => Array.from({ length: height }, () => '.'.repeat(width))
 
 // The upper drawing wins wherever it is not transparent.
-const over = (under: string, upper: string) =>
-  [...under].map((value, x) => (upper[x] === undefined || upper[x] === '.' ? value : upper[x])).join('')
+const over = (under: readonly string[], upper: readonly string[]) =>
+  under.map((row, y) =>
+    [...row].map((value, x) => (upper[y]?.[x] === undefined || upper[y]?.[x] === '.' ? value : upper[y]?.[x])).join(''),
+  )
+
+const put = (grid: readonly string[], pixels: readonly Pixel[]) =>
+  grid.map((row, y) =>
+    [...row].map((value, x) => pixels.find(([px, py]) => px === x && py === y)?.[2] ?? value).join(''),
+  )
+
+// Rows moved down by `by`, the top filled with nothing.
+const lowered = (grid: readonly string[], by: number) =>
+  by === 0 ? [...grid] : [...blank(grid[0]?.length ?? 0, by), ...grid.slice(0, grid.length - by)]
+
+// A drawing placed at row `top` of a blank grid of `height` rows.
+const placed = (rows: readonly string[], top: number, width: number, height: number) =>
+  blank(width, height).map((row, y) => rows[y - top] ?? row)
 
 const isSolid = (grid: readonly string[], x: number, y: number) => {
   const value = grid[y]?.[x]
@@ -137,13 +116,10 @@ const nearness = (grid: readonly string[], x: number, y: number, reach: number) 
   return 0
 }
 
-// A calm aura glows around the body alone, from this pixel row down.
-const CALM_FROM_ROW = 6
-
-// The aura hugs the fighter. Calm, it glows a pixel deep around the body;
-// flaring, it wraps the whole fighter two deep and its gaps rise with every
-// tick, like flames. Sparks crackle where the form has them.
-const withAura = (grid: readonly string[], aura: Aura, tick: number, hasSparks: boolean): string[] => {
+// The aura hugs the fighter. Calm, it glows a pixel deep around the body, from
+// row `calmFrom` down; flaring, it wraps the whole fighter two deep and its gaps
+// rise with every tick, like flames. Sparks crackle where the form has them.
+const withAura = (grid: readonly string[], aura: Aura, tick: number, sparks: boolean, calmFrom: number): string[] => {
   if (aura === 'none') {
     return [...grid]
   }
@@ -152,14 +128,14 @@ const withAura = (grid: readonly string[], aura: Aura, tick: number, hasSparks: 
   return grid.map((row, y) =>
     [...row]
       .map((value, x) => {
-        if (value !== '.' || (aura === 'calm' && y < CALM_FROM_ROW)) {
+        if (value !== '.' || (aura === 'calm' && y < calmFrom)) {
           return value
         }
         const d = nearness(grid, x, y, reach)
         if (d === 0) {
           return value
         }
-        if (hasSparks && (x * 7 + y * 13 + tick * 11) % 23 === 0) {
+        if (sparks && (x * 7 + y * 13 + tick * 11) % 23 === 0) {
           return 'z'
         }
         const isGap =
@@ -174,32 +150,77 @@ const withAura = (grid: readonly string[], aura: Aura, tick: number, hasSparks: 
   )
 }
 
-// The fighter in one pose: head, body, face details and aura, as palette keys.
-// Compact keeps the head alone, for a band too short for the whole fighter.
-export const frame = (fighter: Fighter, look: Look, tick: number, isCompact = false): string[] => {
-  const form = shownForm(fighter, look)
+// The small fighter: 16x12, or its head alone (16x8).
+const smallFrame = (fighter: Fighter, form: Form, look: Look, isHeadOnly: boolean): string[] => {
   const head = HEADS[HEAD_OF[fighter.character](form)]
-  const shift = look.pose === 'meditate' && !isCompact ? 1 : 0
-  const lowered = shift === 0 ? [...head] : [EMPTY, ...head.slice(0, SIZE.height - 1)]
+  const shift = look.pose === 'meditate' && !isHeadOnly ? 1 : 0
   const body = BODIES[look.pose][look.step % BODIES[look.pose].length] ?? []
-  const top = SIZE.height - body.length
-  const dressed = lowered.map((row, y) => (y >= top ? over(row, body[y - top] ?? EMPTY) : row))
+  const dressed = over(lowered(head, shift), placed(body, SIZE.height - body.length, SIZE.width, SIZE.height))
   const eyed = look.isEyesClosed ? dressed.map(row => row.replaceAll('e', 'c')) : dressed
-  const at = (pixels: readonly (readonly [number, number])[]) => pixels.map(([x, y]) => [x, y + shift] as const)
-  const mouthed = look.hasMouth ? put(eyed, at(MOUTH), 'm') : eyed
-  const teared = look.hasTear ? put(mouthed, at([TEAR]), 'b') : mouthed
-  const thumbed = look.pose === 'thumbs' ? put(teared, THUMB, 'S') : teared
-  const cropped = isCompact ? thumbed.slice(0, HEAD_ROWS) : thumbed
-  const aura = FORM_LOOKS[form].aura
+  const at = ([x, y]: readonly [number, number], pixel: string): Pixel => [x, y + shift, pixel]
+  const details: Pixel[] = [
+    ...(look.hasMouth ? MOUTH.map(point => at(point, 'm')) : []),
+    ...(look.hasTear ? [at(TEAR, 'b')] : []),
+    ...(look.pose === 'thumbs' ? THUMB.map(([x, y]): Pixel => [x, y, 'S']) : []),
+  ]
+  const drawn = put(eyed, details)
 
-  return withAura(cropped, aura === undefined ? 'none' : look.aura, tick, aura?.z !== undefined)
+  return isHeadOnly ? drawn.slice(0, HEAD_ROWS) : drawn
+}
+
+// The Majin mark: a red M hanging from the widow's peak, above the brows.
+const MAJIN_MARK: readonly Pixel[] = [
+  [10, 7, 'M'],
+  [13, 7, 'M'],
+  [11, 8, 'M'],
+  [12, 8, 'M'],
+]
+
+// The mood's face for a character: Super Saiyan 3 has no brows, and Vegeta's
+// brows scowl unless the mood draws its own.
+const expressionOf = (head: Head, face: Expression): string[] => {
+  const drawn = EXPRESSIONS[face]
+  const scowling = head.startsWith('vegeta') && (face === 'idle' || face === 'blink' || face === 'calm')
+  // The scowl replaces the brow row and slants into the row below it.
+  const scowl = (row: string, y: number) => (y === 0 ? (SCOWL[0] ?? row) : (over([row], [SCOWL[y] ?? ''])[0] ?? row))
+  const browed = scowling ? drawn.map(scowl) : [...drawn]
+
+  return head === 'gokuSsj3' ? browed.map(row => row.replaceAll('d', '.')) : browed
+}
+
+// The large fighter, 24x20: hair behind, face, body, bangs and the mood's face
+// over them.
+const largeFrame = (fighter: Fighter, form: Form, look: Look): string[] => {
+  const { width, height } = LARGE
+  const head = HEAD_OF[fighter.character](form)
+  const hair = LARGE_HAIR[head]
+  const back = hair.map((row, y) => (y > HAIR_FRONT_ROW ? row : '.'.repeat(width)))
+  const front = hair.map((row, y) => (y <= HAIR_FRONT_ROW ? row : '.'.repeat(width)))
+  const expression = expressionOf(head, look.face).map(row => '.'.repeat(EXPRESSION_ORIGIN.x) + row)
+  const faced = over(over(FACE, front), placed(expression, EXPRESSION_ORIGIN.y, width, height))
+  const marked = head === 'vegetaMajin' ? put(faced, MAJIN_MARK) : faced
+  const shift = look.pose === 'meditate' ? 2 : 0
+  const body = LARGE_BODIES[look.pose][look.step % LARGE_BODIES[look.pose].length] ?? []
+  const bodyTop = look.pose === 'meditate' ? height - body.length : LARGE_HEAD_ROWS
+  const drawn = over(over(lowered(back, shift), placed(body, bodyTop, width, height)), lowered(marked, shift))
+
+  return look.pose === 'thumbs' ? put(drawn, LARGE_THUMB) : drawn
+}
+
+// The fighter in one pose at one tier, as palette keys, with its aura.
+export const frame = (fighter: Fighter, look: Look, tick: number, tier: Tier = 'medium'): string[] => {
+  const form = shownForm(fighter, look)
+  const grid = tier === 'large' ? largeFrame(fighter, form, look) : smallFrame(fighter, form, look, tier === 'head')
+  const calmFrom = tier === 'large' ? LARGE_HEAD_ROWS - 4 : HEAD_ROWS - 2
+
+  return withAura(grid, hasAura(form) ? look.aura : 'none', tick, hasSparks(form), calmFrom)
 }
 
 export const mirror = (grid: readonly string[]) => grid.map(row => [...row].reverse().join(''))
 
-// Without colour the fighter is a silhouette: its eyes, mouth and tear are cut
+// Without colour the fighter is a silhouette: its eyes, mouth and tears are cut
 // out of it and the aura is left off.
-const MONOCHROME_HOLES = new Set(['e', 'm', 'b', 'o', 'i', 'z'])
+const MONOCHROME_HOLES = new Set(['e', 'c', 'l', 'w', 'm', 'n', 't', 'b', 'o', 'i', 'z'])
 
 const cell = (top: string, bottom: string, colors: Palette, isMonochrome: boolean): Segment => {
   const paint = (pixel: string) => (isMonochrome ? {} : { color: colors[pixel] })

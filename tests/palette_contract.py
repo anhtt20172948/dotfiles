@@ -47,7 +47,7 @@ SKIP_FILES = {
     ".config/kitty/custom-tabs-colors.conf",
     ".config/claude-mods/crew-watch/tests/theme.test.ts",
     ".config/claude-mods/crew-watch/hooks/theme.ts",
-    ".config/claude-mods/pixel-pet/hooks/lib/sprite.ts",
+    ".config/claude-mods/pixel-pet/hooks/lib/palette.ts",
 }
 SKIP_NAMES = ("README.md", "lazy-lock.json", "package-lock.json", "bun.lock")
 

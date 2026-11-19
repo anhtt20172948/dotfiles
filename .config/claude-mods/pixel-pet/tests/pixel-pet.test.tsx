@@ -17,8 +17,8 @@ import {
 import type { Fighter, Level } from '../hooks/lib/fighter'
 import { INITIAL, REACT_MS, ROAM, SLEEP_MS, caption, look, shownMood, stats, step } from '../hooks/lib/mood'
 import type { PetEvent } from '../hooks/lib/mood'
-import { ALL_COLORS, FULL_ROWS, HEAD_ONLY_ROWS, WIDTH, frame, mirror, palette, rows } from '../hooks/lib/sprite'
-import type { Look } from '../hooks/lib/sprite'
+import { ALL_COLORS, TIERS, frame, mirror, palette, rows, tierFor } from '../hooks/lib/sprite'
+import type { Look, Tier } from '../hooks/lib/sprite'
 import type { Pet } from '../types'
 
 const run = (pet: Pet, events: PetEvent[]) => events.reduce(step, pet)
@@ -26,9 +26,13 @@ const run = (pet: Pet, events: PetEvent[]) => events.reduce(step, pet)
 const ticks = (from: number, count: number, every = 400): PetEvent[] =>
   Array.from({ length: count }, (_, i) => ({ type: 'tick', now: from + (i + 1) * every }))
 
+// The small fighter's width, which the pixel-level checks below draw at.
+const WIDTH = TIERS.medium.width
+
 const STILL: Look = {
   pose: 'stand',
   step: 0,
+  face: 'idle',
   isEyesClosed: false,
   hasMouth: false,
   hasTear: false,
@@ -113,14 +117,16 @@ test('two pixel rows make one text row of half blocks, runs merged', async () =>
   })
 })
 
-test('every fighter, form and pose is 16x12, the head alone 16x8, and mirrors', async () => {
+test('every fighter, form, pose and face is 24x20 large, 16x12 small, 16x8 head alone, and mirrors', async () => {
+  const faces = ['idle', 'blink', 'power', 'happy', 'hurt', 'calm'] as const
   for (const fighter of FIGHTERS) {
     for (const pose of Object.keys(BODIES) as Pose[]) {
-      for (const isCompact of [false, true]) {
-        const grid = frame(fighter, { ...STILL, pose, aura: 'flare' }, 3, isCompact)
-        expect(grid).toHaveLength(isCompact ? 8 : 12)
-        expect(grid.every(row => row.length === WIDTH)).toBe(true)
-        expect(rows(grid, palette(fighter, STILL))).toHaveLength(isCompact ? HEAD_ONLY_ROWS : FULL_ROWS)
+      for (const [tier, size] of Object.entries(TIERS) as [Tier, (typeof TIERS)[Tier]][]) {
+        const face = faces[(pose.length + fighter.form.length) % faces.length] ?? 'idle'
+        const grid = frame(fighter, { ...STILL, pose, face, aura: 'flare' }, 3, tier)
+        expect(grid).toHaveLength(size.height)
+        expect(grid.every(row => row.length === size.width)).toBe(true)
+        expect(rows(grid, palette(fighter, STILL))).toHaveLength(size.rows)
         // Every pixel has a colour.
         const colors = palette(fighter, STILL)
         expect([...grid.join('')].every(pixel => pixel === '.' || colors[pixel] !== undefined)).toBe(true)
@@ -187,8 +193,49 @@ test('moods take their poses: power up, thumbs up, meditate', async () => {
   // Meditating sits a row lower; closed eyes are drawn, open ones are gone.
   const goku = { character: 'goku', form: 'base' } as const
   expect(frame(goku, look('sleep', 0), 0)[0]).toBe('.'.repeat(WIDTH))
+  expect(frame(goku, look('sleep', 0), 0, 'large').slice(0, 2).join('')).not.toMatch(/[^.]/)
   expect(pixels(frame(goku, look('sleep', 0), 0), 'e')).toBe(0)
   expect(pixels(frame(goku, look('sleep', 0), 0), 'c')).toBe(2)
+})
+
+test('the large fighter wears each mood on its face', async () => {
+  const goku = { character: 'goku', form: 'ssj2' } as const
+  const face = (mood: 'idle' | 'working' | 'happy' | 'sad' | 'sleep') => frame(goku, look(mood, 1), 1, 'large')
+  // Idle eyes are open with a glint; working, narrowed with the teeth bared.
+  expect(pixels(face('idle'), 'w')).toBe(2)
+  expect(pixels(face('idle'), 'e')).toBe(4)
+  expect(pixels(face('working'), 't')).toBe(2)
+  expect(pixels(face('working'), 'w')).toBe(0)
+  // A finished turn grins and blushes; a failure squeezes the eyes and cries.
+  expect(pixels(face('happy'), 'p')).toBe(2)
+  expect(pixels(face('happy'), 'e')).toBe(0)
+  expect(pixels(face('sad'), 'b')).toBe(1)
+  expect(pixels(face('sad'), 'e')).toBe(0)
+  // Meditating, the eyes are shut and the mouth closed.
+  expect(pixels(face('sleep'), 'e') + pixels(face('sleep'), 'm')).toBe(0)
+})
+
+test('the large fighter keeps the details of each character', async () => {
+  const idle = look('idle', 1)
+  // Brows sit over cols 9-10 and 13-14 of row 8; a scowl's inner ends drop to
+  // cols 10 and 13 of row 9, where level brows leave the lashes.
+  const inner = (grid: readonly string[]) => `${grid[9]?.[10]}${grid[9]?.[13]}`
+  const blink = look('idle', 0)
+  for (const seen of [idle, blink]) {
+    // Goku's brows are level; Vegeta's slant down to the middle even at rest.
+    const gokuBrows = frame({ character: 'goku', form: 'base' }, seen, 1, 'large')[8] ?? ''
+    expect(`${gokuBrows.slice(9, 11)} ${gokuBrows.slice(13, 15)}`).toBe('dd dd')
+    expect(inner(frame({ character: 'vegeta', form: 'base' }, seen, 1, 'large'))).toBe('dd')
+    expect(inner(frame({ character: 'goku', form: 'base' }, seen, 1, 'large'))).not.toContain('d')
+  }
+  // Super Saiyan 3 has no brows at all.
+  expect(frame({ character: 'goku', form: 'ssj3' }, idle, 1, 'large')[8]?.slice(8, 16)).not.toMatch(/d/)
+  // Super Saiyan 3's mane falls to the heels; Majin Vegeta wears the M.
+  expect(frame({ character: 'goku', form: 'ssj3' }, idle, 1, 'large')[17]).toMatch(/h/)
+  expect(frame({ character: 'goku', form: 'ssj2' }, idle, 1, 'large')[17]).not.toMatch(/h/)
+  expect(pixels(frame({ character: 'vegeta', form: 'majin' }, idle, 1, 'large'), 'M')).toBe(4)
+  // The thumbs up rises beside the face.
+  expect(frame({ character: 'gohan', form: 'base' }, look('happy', 0), 0, 'large')[9]?.[20]).toBe('S')
 })
 
 test('without colour the fighter is a silhouette, eyes cut out and aura left off', async () => {
@@ -204,6 +251,14 @@ test('without colour the fighter is a silhouette, eyes cut out and aura left off
   expect(text[2]?.[9]).toBe('▀')
   // The aura's columns at the edge are blank.
   expect(text.every(line => line[0] === ' ')).toBe(true)
+  // Every large face keeps its eyes or lashes cut out (text rows 4-6; meditating sits lower).
+  for (const mood of ['idle', 'working', 'happy', 'sad', 'sleep'] as const) {
+    const seen = look(mood, 1)
+    const eyes = rows(frame(fighter, seen, 1, 'large'), palette(fighter, seen), true)
+      .slice(4, 7)
+      .map(line => line.map(segment => segment.text).join('').slice(8, 16))
+    expect({ mood, isCutOut: eyes.some(line => /[ ▀▄]/.test(line)) }).toEqual({ mood, isCutOut: true })
+  }
 })
 
 test('a turn works, celebrates, then settles back to idle', async () => {
@@ -258,14 +313,14 @@ test('a running turn shows as work, a stale working mood as idle', async () => {
   expect(shownMood({ ...INITIAL, mood: 'happy' }, false)).toBe('happy')
 })
 
-// What the engine hands the band: a six-row band on a 100-column terminal.
+// What the engine hands the band: a 14-row band (a 40-row terminal), 100 columns wide.
 const PROPS = {
   hasSurvey: false,
   isCollapsed: false,
   isWorking: false,
-  maxRows: 6,
+  maxRows: 14,
   bodyColumns: 100,
-  scroll: { offset: 0, bodyRows: 6 },
+  scroll: { offset: 0, bodyRows: 13 },
   view: {},
 }
 
@@ -322,7 +377,7 @@ const band = async ($: Engine, props: Partial<typeof PROPS> = {}, surface: 'term
   const title = (await mounted.find({ type: 'Text', text: / · (waiting|done|power|running)/ }))?.text
   const form = (await mounted.find({ type: 'Text', text: / · power / }))?.text
   const sprite = (await mounted.findAll({ type: 'Text' })).filter(
-    text => /^[ ▀▄█]+$/.test(text.text) && text.text.length === WIDTH && text.children.length > 1,
+    text => /^[ ▀▄█]+$/.test(text.text) && [16, 24].includes(text.text.length) && text.children.length > 1,
   )
   const engineText = (await mounted.find({ type: 'Text', text: /engine/ }))?.text
   await mounted.unmount()
@@ -338,7 +393,7 @@ test('the band draws Goku over what lies beneath, and /pet hides him', async ($,
     const drawn = await band($, {}, surface)
     expect(drawn.title).toMatch(/^Goku · waiting for you/)
     expect(drawn.form).toBe('Super Saiyan 2 · power 10,000!')
-    expect(drawn.spriteRows).toBe(FULL_ROWS)
+    expect(drawn.spriteRows).toBe(TIERS.large.rows)
     expect(drawn.engineText).toBe('engine')
   }
 
@@ -404,14 +459,26 @@ test('/model and /effort change it at once, before the next request', async ($, 
   expect((await band($)).form).toMatch(/^Super Saiyan 2 · /)
 })
 
-test('a short band shows the head alone, and a band too short or surveyed gives way', async ($, on) => {
+test('the band draws the largest fighter it has rows for, and gives way below the head', async ($, on) => {
   engine(on, { model: 'claude-opus-5-5', effortLevel: 'xhigh' })
   await start($)
 
-  const compact = await band($, { maxRows: 4 })
-  expect(compact.spriteRows).toBe(HEAD_ONLY_ROWS)
-  expect(compact.form).toMatch(/^Super Saiyan 3 · /)
-  expect((await band($, { maxRows: 5 })).spriteRows).toBe(HEAD_ONLY_ROWS)
+  expect(tierFor(37)).toBe('large')
+  // A tall but narrow band keeps room for the text with the small fighter.
+  expect(tierFor(37, 100, 36)).toBe('large')
+  expect(tierFor(37, 50, 36)).toBe('medium')
+  const narrow = await band($, { maxRows: 14, bodyColumns: 50 })
+  expect(narrow.spriteRows).toBe(TIERS.medium.rows)
+  // The sprite keeps its width in a narrow band, so its rows never wrap.
+  const mounted = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...PROPS, bodyColumns: 50 } })
+  expect((await mounted.findAll({ type: 'Box' })).some(box => box.props.flexShrink === 0)).toBe(true)
+  await mounted.unmount()
+  for (const [maxRows, tier] of [[10, 'large'], [9, 'medium'], [6, 'medium'], [5, 'head'], [4, 'head']] as const) {
+    const drawn = await band($, { maxRows })
+    expect({ maxRows, rows: drawn.spriteRows }).toEqual({ maxRows, rows: TIERS[tier].rows })
+    expect(drawn.form).toMatch(/^Super Saiyan 3 · /)
+  }
+  expect(tierFor(3)).toBeNull()
 
   const giveWay: Partial<typeof PROPS>[] = [{ maxRows: 3 }, { hasSurvey: true }]
   for (const props of giveWay) {

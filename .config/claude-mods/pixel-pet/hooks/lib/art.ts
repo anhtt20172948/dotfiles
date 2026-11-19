@@ -1,5 +1,5 @@
 // Hand-drawn 16x12 pixel grids. '.' is transparent; every other letter is a
-// palette key (sprite.ts), so one drawing serves every form and character.
+// palette key (palette.ts), so one drawing serves every form and character.
 //
 // Heads: d h H hair (shade, fill, highlight), k outline, s skin, e eyes,
 // M the Majin mark. Bodies: T torso, A accent (collar, belt), R wristband or
