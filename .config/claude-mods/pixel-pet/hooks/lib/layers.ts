@@ -3,6 +3,7 @@
 // The large half-block fighter and both sextant fighters are drawn this way.
 
 import type { Head, Pose } from './art'
+import type { Palms } from './beam'
 
 export type Expression = 'idle' | 'blink' | 'power' | 'happy' | 'hurt' | 'calm'
 
@@ -38,6 +39,8 @@ export type LayeredArt = {
   bodies: Record<Pose, readonly (readonly string[])[]>
   // The thumbs-up arm beside the chin.
   thumb: readonly Pixel[]
+  // Both palms pushed forward for a beam, and where the beam leaves them.
+  palms: Palms
   // The Majin mark hanging from the widow's peak, above the brows.
   majinMark: readonly Pixel[]
 }
@@ -101,5 +104,9 @@ export const layered = (art: LayeredArt, { head, pose, step, face, isHeadOnly = 
   const bodyTop = isSitting ? height - body.length : art.headRows
   const drawn = over(over(lowered(placed(back, 0, width, height), shift), placed(body, bodyTop, width, height)), lowered(marked, shift))
 
-  return pose === 'thumbs' ? put(drawn, art.thumb) : drawn
+  if (pose === 'thumbs') {
+    return put(drawn, art.thumb)
+  }
+
+  return pose === 'beam' && !isHeadOnly ? put(drawn, art.palms.pixels) : drawn
 }

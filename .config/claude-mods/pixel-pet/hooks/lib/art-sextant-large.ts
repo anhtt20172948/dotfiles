@@ -434,6 +434,20 @@ const BODIES: Record<Pose, readonly (readonly string[])[]> = {
       '......FFFFFPPPPPPPPPPPPPPPPPPPPPPPPPPPFFFFF.....',
     ],
   ],
+  // Both arms pushed forward, feet planted wide: the palms are drawn in front.
+  beam: [
+    [
+      '..............TTTTTTAAssssAATTTTTT..............',
+      '............UUTTTTTTTAAssAATTTTTTTUU............',
+      '............UUTTTTTTTTAAAATTTTTTTTUU............',
+      '............UUTTTTTTTTTTTTTTTTTTTTUU............',
+      '............UUTTTTTTTTTTTTTTTTTTTTUU............',
+      '............AAAAAAAAAAAAAAAAAAAAAAAA............',
+      '...........PPPPPPPPP........PPPPPPPPP...........',
+      '..........PPPPPPPPP..........PPPPPPPPP..........',
+      '........FFFFFFFF................FFFFFFFF........',
+    ],
+  ],
 }
 
 export const SEXTANT_LARGE: LayeredArt = {
@@ -455,5 +469,8 @@ export const SEXTANT_LARGE: LayeredArt = {
   ],
   bodies: BODIES,
   thumb: [[42, 12, 'S'], [42, 13, 'S'], [40, 14, 'S'], [41, 14, 'S'], [42, 14, 'S'], [43, 14, 'S'], [40, 15, 'S'], [41, 15, 'S'], [42, 15, 'S'], [43, 15, 'S'], [40, 16, 'S'], [41, 16, 'S'], [42, 16, 'S'], [43, 16, 'S'], [40, 17, 'C'], [41, 17, 'C'], [42, 17, 'C'], [43, 17, 'C'], [39, 18, 'L'], [40, 18, 'L'], [41, 18, 'L'], [42, 18, 'L'], [37, 19, 'L'], [38, 19, 'L'], [39, 19, 'L'], [40, 19, 'L'], [36, 20, 'L'], [37, 20, 'L'], [38, 20, 'L'], [39, 20, 'L'], [34, 21, 'L'], [35, 21, 'L'], [36, 21, 'L'], [37, 21, 'L']],
+  // Cupped palms at the chest, fingertips apart where the ball glows; the beam
+  // leaves them across text rows 7-8.
+  palms: { pixels: [[36, 23, 'L'], [37, 23, 'L'], [38, 23, 'L'], [39, 23, 'L'], [40, 23, 'L'], [41, 23, 'L'], [36, 24, 'L'], [37, 24, 'L'], [38, 24, 'L'], [39, 24, 'L'], [40, 24, 'L'], [41, 24, 'L'], [42, 22, 'C'], [43, 22, 'C'], [42, 23, 'C'], [43, 23, 'C'], [42, 24, 'C'], [43, 24, 'C'], [42, 25, 'C'], [43, 25, 'C'], [44, 21, 'S'], [45, 21, 'S'], [46, 21, 'S'], [44, 22, 'S'], [45, 22, 'S'], [46, 22, 'S'], [44, 23, 'S'], [45, 23, 'S'], [46, 23, 'S'], [44, 24, 'S'], [45, 24, 'S'], [46, 24, 'S'], [44, 25, 'S'], [45, 25, 'S'], [46, 25, 'S'], [44, 26, 'S'], [45, 26, 'S'], [46, 26, 'S'], [47, 21, 'S'], [47, 22, 'S'], [47, 25, 'S'], [47, 26, 'S']], spot: { x: 47, top: 7, cells: 2 } },
   majinMark: [[22, 9, 'M'], [25, 9, 'M'], [22, 10, 'M'], [23, 10, 'M'], [24, 10, 'M'], [25, 10, 'M'], [23, 11, 'M'], [24, 11, 'M']],
 }

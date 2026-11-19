@@ -288,6 +288,17 @@ const BODIES: Record<Pose, readonly (readonly string[])[]> = {
       '.....FFFPPPPPPPPPPPPPPPPFFF.....',
     ],
   ],
+  // Both arms pushed forward, feet planted wide: the palms are drawn in front.
+  beam: [
+    [
+      '.......TTTTTTTAAAATTTTTT........',
+      '......TTTTTTTTTAATTTTTTT........',
+      '........TTTTTTTTTTTTTTTT........',
+      '........PPAAAAAAAAAAAAPP........',
+      '........PPAAAAAAAAAAAAPP........',
+      '......FFFF............FFFF......',
+    ],
+  ],
 }
 
 export const SEXTANT_SMALL: LayeredArt = {
@@ -308,5 +319,7 @@ export const SEXTANT_SMALL: LayeredArt = {
   ],
   bodies: BODIES,
   thumb: [[26, 6, 'S'], [26, 7, 'S'], [26, 8, 'S'], [24, 9, 'S'], [25, 9, 'S'], [26, 9, 'S'], [27, 9, 'S'], [24, 10, 'S'], [25, 10, 'S'], [26, 10, 'S'], [27, 10, 'S'], [24, 11, 'C'], [25, 11, 'C'], [26, 11, 'C'], [27, 11, 'C'], [22, 12, 'L'], [23, 12, 'L'], [24, 12, 'L'], [25, 12, 'L']],
+  // Cupped palms at the chest; the beam leaves them across text row 4.
+  palms: { pixels: [[24, 13, 'L'], [25, 13, 'L'], [26, 12, 'C'], [27, 12, 'C'], [26, 13, 'C'], [27, 13, 'C'], [26, 14, 'C'], [27, 14, 'C'], [28, 12, 'S'], [29, 12, 'S'], [30, 12, 'S'], [28, 13, 'S'], [29, 13, 'S'], [30, 13, 'S'], [28, 14, 'S'], [29, 14, 'S'], [30, 14, 'S'], [31, 12, 'S'], [31, 14, 'S']], spot: { x: 31, top: 4, cells: 1 } },
   majinMark: [[14, 6, 'M'], [15, 6, 'M'], [16, 6, 'M'], [17, 6, 'M'], [15, 7, 'M'], [16, 7, 'M']],
 }

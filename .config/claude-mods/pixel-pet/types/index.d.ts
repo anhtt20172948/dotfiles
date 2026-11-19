@@ -1,4 +1,11 @@
-export type Mood = 'idle' | 'working' | 'happy' | 'sad' | 'sleep'
+export type Mood = 'idle' | 'working' | 'attack' | 'happy' | 'sad' | 'sleep'
+
+// A signature beam fired when a turn ends: how long it has run, and the power
+// milestone it celebrates (a bigger beam), or null.
+export type Attack = {
+  elapsed: number
+  milestone: number | null
+}
 
 export type Pet = {
   mood: Mood
@@ -13,6 +20,10 @@ export type Pet = {
   turns: number
   tools: number
   errors: number
+  // The beam being fired while the mood is 'attack'; null otherwise.
+  attack: Attack | null
+  // The highest power milestone a finished turn has reached; null before the first.
+  milestone: number | null
 }
 
 // What the main conversation runs on: the model picks the character and the

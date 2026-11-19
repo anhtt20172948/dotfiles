@@ -90,6 +90,9 @@ drawn=$(sed -n "s/^export const CHARACTERS: readonly Character\[\] = \[\(.*\)\]\
 [[ -n $offered && $offered == "$drawn" ]] || fail "pixel-pet Character options '$offered' differ from fighter.ts characters '$drawn'"
 [[ $(jq -r '.userConfig.name.default' "$pet/.claude-plugin/plugin.json") == "" ]] ||
 	fail "pixel-pet Pet name must default to empty (the fighter's own name)"
+# Its Attacks option is a /config toggle that fires the beam unless turned off.
+[[ $(jq -r '.userConfig.attacks | "\(.type) \(.default)"' "$pet/.claude-plugin/plugin.json") == "boolean true" ]] ||
+	fail "pixel-pet Attacks must be a boolean that defaults to on"
 
 if ! command -v claude >/dev/null; then
 	echo "skip: claude not installed, mod validate/test not run"
