@@ -136,7 +136,7 @@ const radiusOf = (phase: Phase, progress: number, full: number, elapsed: number)
       return 1 + progress * (full - 1)
     case 'fire':
     case 'hold':
-      return full + (Math.floor(elapsed / 100) % 2)
+      return full + (Math.floor(elapsed / FRAME_MS) % 2)
     case 'fade':
       return full * (1 - progress)
   }
@@ -161,71 +161,105 @@ const beamKey = (y: number, top: number, cells: number, down: number, fade: numb
   return cells >= 3 && isEdgeCell ? 'v' : core
 }
 
+// Where everything of one frame of an attack lies, in pixels of the widened grid.
+type Layout = {
+  spot: BeamSpot
+  cell: Scene['cell']
+  // The fighter's width, and the widest the grid may grow.
+  width: number
+  limit: number
+  // Where the beam ends (`width` while it has not left the palms).
+  end: number
+  firstRow: number
+  lastRow: number
+  middle: number
+  radius: number
+  // The ball may glow past the fighter only where the beam has room.
+  ballLimit: number
+  // The rounded head, or null where the band has no row above and below for it.
+  head: { x: number; radius: number } | null
+  fade: number
+  frame: number
+}
+
+const layoutOf = (grid: readonly string[], { attack, spot: palms, cell, maxColumns }: Scene): Layout => {
+  const isBig = attack.milestone !== null
+  // A milestone's beam is a row of cells thicker above and below.
+  const spot = isBig ? { ...palms, top: palms.top - 1, cells: palms.cells + 2 } : palms
+  const room = Math.max(0, maxColumns)
+  const width = grid[0]?.length ?? 0
+  const limit = width + room * cell.width
+  const { phase, progress } = phaseOf(attack)
+  // Whole cells at a time, so the beam's tip never shares a cell with nothing.
+  const reachColumns = room === 0 ? 0 : Math.round(reachOf(phase, progress, limit - width) / cell.width)
+  const end = width + reachColumns * cell.width
+  const firstRow = spot.top * cell.height
+  const lastRow = (spot.top + spot.cells) * cell.height - 1
+  const half = (spot.cells * cell.height) / 2
+  const fade = phase === 'fade' ? progress : 0
+  // The head glows a cell deeper than the beam above and below, out where the
+  // beam has left the fighter, until the beam cools.
+  const headRadius = half + cell.height
+  const hasHead =
+    end > width && fade < 0.6 && firstRow - cell.height >= 0 && lastRow + cell.height < grid.length
+
+  return {
+    spot,
+    cell,
+    width,
+    limit,
+    end,
+    firstRow,
+    lastRow,
+    middle: (firstRow + lastRow + 1) / 2,
+    radius: radiusOf(phase, progress, half + 1 + (isBig ? 1 : 0), attack.elapsed),
+    ballLimit: room > 0 ? limit : width,
+    head: hasHead ? { x: end - headRadius, radius: headRadius } : null,
+    fade,
+    frame: Math.floor(attack.elapsed / FRAME_MS),
+  }
+}
+
+// The pixel at `x`, `y` with the attack over `value`, what the fighter has there.
+const pixelAt = (layout: Layout, x: number, y: number, value: string): string => {
+  const { spot, cell, width, end, firstRow, lastRow, middle, radius, ballLimit, head, fade, frame } = layout
+  const distance = Math.hypot(x + 0.5 - spot.x, y + 0.5 - middle)
+  if (radius > 0.5 && distance <= radius && x < ballLimit) {
+    // A white-hot middle and a glowing rim that flickers.
+    return distance <= radius - 1.5 ? 'V' : (x + y + frame) % 4 === 0 ? 'v' : 'u'
+  }
+  // The beam runs only once it has left the palms.
+  const isInBeam = end > width && y >= firstRow && y <= lastRow && x >= spot.x && x < end
+  if (!isInBeam) {
+    const isInHead = head !== null && x >= width && x < end && Math.hypot(x + 0.5 - head.x, y + 0.5 - middle) <= head.radius
+
+    return isInHead ? 'u' : value
+  }
+  const key = beamKey(y, spot.top, spot.cells, cell.height, fade)
+  // The edges ripple as the beam runs, a whole cell at a time so no cell takes
+  // a third colour; the top and bottom rows of cells out of step.
+  const column = Math.floor(x / cell.width)
+  const isLowerCell = Math.floor(y / cell.height) > spot.top
+
+  return key === 'u' && (column + frame * 3 + (isLowerCell ? 3 : 0)) % 7 === 0 ? '.' : key
+}
+
+// The rows cut to what they draw, in whole cells, never narrower than the fighter.
+const trimmed = (rows: readonly string[], width: number, cellWidth: number) => {
+  const lastDrawn = Math.max(...rows.map(row => Math.max(-1, ...[...row].map((value, x) => (value === '.' ? -1 : x)))))
+  const columns = Math.max(width, Math.ceil((lastDrawn + 1) / cellWidth) * cellWidth)
+
+  return rows.map(row => row.slice(0, columns))
+}
+
 // The fighter's grid widened with the attack: a ball in its palms and the beam
 // running right. The grid comes back as wide as what it draws, at most
 // `maxColumns` text columns wider.
 export const withAttack = (grid: readonly string[], scene: Scene): string[] => {
-  const { attack, cell, maxColumns } = scene
-  const isBig = attack.milestone !== null
-  const spot = isBig ? { ...scene.spot, top: scene.spot.top - 1, cells: scene.spot.cells + 2 } : scene.spot
-  const width = grid[0]?.length ?? 0
-  const limit = width + Math.max(0, maxColumns) * cell.width
-  const { phase, progress } = phaseOf(attack)
-  // Whole cells at a time, so the beam's tip never shares a cell with nothing.
-  const cells = Math.max(0, maxColumns) === 0 ? 0 : reachOf(phase, progress, limit - width) / cell.width
-  const reach = Math.round(cells) * cell.width
-  const end = width + reach
-  const firstRow = spot.top * cell.height
-  const lastRow = (spot.top + spot.cells) * cell.height - 1
-  const middle = (firstRow + lastRow + 1) / 2
-  const half = (spot.cells * cell.height) / 2
-  const radius = radiusOf(phase, progress, half + 1 + (isBig ? 1 : 0), attack.elapsed)
-  // The beam's head: a glow a cell deeper than the beam above and below,
-  // rounded to its tip, out where the beam has left the fighter.
-  const headRadius = half + cell.height
-  const headX = end - headRadius
-  // Only where the band has a row above and below the beam for it.
-  const hasHeadRoom = firstRow - cell.height >= 0 && lastRow + cell.height < grid.length
-  const fade = phase === 'fade' ? progress : 0
-  const frame = Math.floor(attack.elapsed / 100)
-  const canvas = grid.map(row => row.padEnd(limit, '.'))
-
-  const drawn = canvas.map((row, y) =>
-    [...row]
-      .map((value, x) => {
-        const isInBeam = y >= firstRow && y <= lastRow && x >= spot.x && x < end && reach > 0
-        const distance = Math.hypot(x + 0.5 - spot.x, y + 0.5 - middle)
-        const isInBall = radius > 0.5 && distance <= radius && x < (maxColumns > 0 ? limit : width)
-        if (isInBall) {
-          // A white-hot middle and a glowing rim that flickers.
-          return distance <= radius - 1.5 ? 'V' : (x + y + frame) % 4 === 0 ? 'v' : 'u'
-        }
-        const isInHead =
-          hasHeadRoom &&
-          reach > 0 &&
-          fade < 0.6 && x >= width && x < end && Math.hypot(x + 0.5 - headX, y + 0.5 - middle) <= headRadius
-        if (!isInBeam) {
-          return isInHead ? 'u' : value
-        }
-        const key = beamKey(y, spot.top, spot.cells, cell.height, fade)
-        // The edges ripple as the beam runs, a whole cell at a time so no cell
-        // takes a third colour; the top and bottom rows of cells out of step.
-        const column = Math.floor(x / cell.width)
-        const isLowerCell = Math.floor(y / cell.height) > spot.top
-
-        return key === 'u' && (column + frame * 3 + (isLowerCell ? 3 : 0)) % 7 === 0 ? '.' : key
-      })
-      .join(''),
+  const layout = layoutOf(grid, scene)
+  const drawn = grid.map((row, y) =>
+    [...row.padEnd(layout.limit, '.')].map((value, x) => pixelAt(layout, x, y, value)).join(''),
   )
-  const used = Math.max(
-    width,
-    ...drawn.map(row => {
-      const last = Math.max(...[...row].map((value, x) => (value === '.' ? -1 : x)))
 
-      return last + 1
-    }),
-  )
-  const columns = Math.ceil(used / cell.width) * cell.width
-
-  return drawn.map(row => row.slice(0, Math.max(width, columns)))
+  return trimmed(drawn, layout.width, scene.cell.width)
 }

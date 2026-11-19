@@ -68,11 +68,12 @@ const feed = ($: Dollar, event: (now: number) => PetEvent): Promise<Pet | undefi
 // The timer that draws a beam's frames while one is fired; null between beams.
 let frames: Timer | null = null
 
-// Redraws the beam every frame until it has given way, then stops.
+// Redraws a new beam every frame until it has given way (or an update fails),
+// then stops; the slower tick still ends a beam whose frames stopped. Each beam
+// starts a timer of its own, so a frame still settling from the last one can
+// only stop its own timer.
 const animate = ($: Dollar) => {
-  if (frames !== null) {
-    return
-  }
+  frames?.cancel()
   const timer = $.clock.every(FRAME_MS, () => {
     void feed($, now => ({ type: 'frame', now })).then(pet => {
       if (pet?.mood !== 'attack') {
@@ -215,11 +216,16 @@ export const register: Register = (on, options: Options) => {
 
   on('turn.complete', async ($, e, next) => {
     // Subagents end turns too; only the main conversation's count.
+    // The update is waited on, as it always was, so a prompt sent right after
+    // cannot be overtaken by it; the beam's frames run beside the session.
     if (e.agentId === undefined) {
       const form = await formOf($, choice)
       const pet = await feed($, now => ({ type: 'turn', now, isAborted: e.isAborted, form, attacks }))
+      // A hidden pet draws nothing, so its beam needs no frames.
       if (pet?.mood === 'attack') {
-        animate($)
+        void read($, isHiddenAtom)
+          .then(isHidden => (isHidden ? undefined : animate($)))
+          .catch(() => undefined)
       }
     }
 
