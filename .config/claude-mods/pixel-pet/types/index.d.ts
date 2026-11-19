@@ -15,8 +15,15 @@ export type Pet = {
   errors: number
 }
 
+// What the main conversation runs on: the model picks the character and the
+// effort level its form. Null until known; a model without effort has none.
+export type Power = {
+  model: string | null
+  effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'pixel-pet': { pet: Pet; isHidden: boolean }
+    'pixel-pet': { pet: Pet; isHidden: boolean; power: Power }
   }
 }

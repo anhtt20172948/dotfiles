@@ -608,7 +608,7 @@ local plugin marketplace, `dotfiles-mods`, listed in
 | Mod | What it draws | Docs |
 | --- | --- | --- |
 | crew-watch | The Crew Monitor: a Firstmate crew's agents, context, quota, activity and events, as a docked pane (`/crew`) and a status-line summary. | [crew-watch README](.config/claude-mods/crew-watch/README.md) |
-| pixel-pet | A pixel-art cat above the prompt that reacts to turns, tools and errors (`/pet`). | [pixel-pet README](.config/claude-mods/pixel-pet/README.md) |
+| pixel-pet | A pixel-art Saiyan above the prompt: the model picks Goku, Vegeta or Gohan, the effort its Super Saiyan form, and it reacts to turns, tools and errors (`/pet`). | [pixel-pet README](.config/claude-mods/pixel-pet/README.md) |
 
 `install.sh` leaves the
 folder in the checkout and calls `install-agent-statusline`, which declares its

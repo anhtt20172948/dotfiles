@@ -1,20 +1,24 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
+import type { Power } from '../types'
+import { FORM_NAMES, NAMES, characterChoice, fighterFor, formatPower, levelOf, powerLevel } from './lib/fighter'
 import { INITIAL, ROAM, TICK_MS, caption, look, shownMood, stats, step } from './lib/mood'
 import type { PetEvent, Tone } from './lib/mood'
-import { PALETTE, WIDTH, frame, mirror, rows } from './lib/sprite'
+import { FULL_ROWS, HEAD_ONLY_ROWS, NAME_COLORS, WIDTH, formColor, frame, mirror, palette, rows } from './lib/sprite'
+
+const UNKNOWN: Power = { model: null, effort: null }
 
 const petAtom = atom({ plugin: 'pixel-pet', key: 'pet' } as const, INITIAL)
 const isHiddenAtom = atom({ plugin: 'pixel-pet', key: 'isHidden' } as const, false)
+const powerAtom = atom({ plugin: 'pixel-pet', key: 'power' } as const, UNKNOWN)
 
-type Options = { name?: unknown }
+type Options = { name?: unknown; character?: unknown }
 type Dollar = EngineInterface
 
-// The band is four rows tall; below that it yields to whatever else draws there.
-const ROWS = 4
-// Room kept for the name, caption and stats beside the sprite.
-const TEXT_COLUMNS = 26
+// Room kept for the name, caption, form and counts beside the sprite
+// (`Ultra Instinct · power 1,000,000!` fits).
+const TEXT_COLUMNS = 36
 
 // Set from NO_COLOR when the session starts: the sprite becomes a silhouette
 // and the captions lose their colour, keeping weight.
@@ -22,7 +26,7 @@ let noColor = false
 
 const TONES: Record<Tone, { color?: string; dimColor?: boolean; bold?: boolean }> = {
   dim: { dimColor: true },
-  love: { color: PALETTE.p },
+  cheer: { color: 'success', bold: true },
   warn: { color: 'warning' },
 }
 
@@ -35,13 +39,31 @@ const feed = ($: Dollar, event: (now: number) => PetEvent) =>
     .then(now => update($, petAtom, pet => step(pet, event(now))))
     .catch(() => undefined)
 
+// What the main conversation runs on. An unchanged value is kept as it is, so
+// nothing redraws for it.
+const setPower = ($: Dollar, next: Partial<Power>) =>
+  update($, powerAtom, power => {
+    const merged = { ...power, ...next }
+
+    return merged.model === power.model && merged.effort === power.effort ? power : merged
+  }).catch(() => undefined)
+
+// The effort the settings ask for, until a model request says what it runs at.
+const settingsEffort = async ($: Dollar) =>
+  levelOf(await $.settings.read({ key: 'effortLevel' }).catch(() => undefined)) ??
+  levelOf(await $.env.get('CLAUDE_CODE_EFFORT_LEVEL').catch(() => undefined))
+
+const sessionModel = ($: Dollar) => $.session.model().catch(() => null)
+
 export const register: Register = (on, options: Options) => {
-  const name = typeof options.name === 'string' && options.name.trim() !== '' ? options.name.trim() : 'Mochi'
+  const named = typeof options.name === 'string' && options.name.trim() !== '' ? options.name.trim() : null
+  const choice = characterChoice(options.character)
 
   on('session.start', async ($, e, next) => {
     noColor = ((await $.env.get('NO_COLOR')) ?? '') !== ''
     await feed($, now => ({ type: 'start', now }))
-    await $.command.register({ name: 'pet', description: `Show or hide ${name} above the prompt` })
+    await setPower($, { model: await sessionModel($), effort: await settingsEffort($) })
+    await $.command.register({ name: 'pet', description: 'Show or hide the pet above the prompt' })
     $.clock.every(TICK_MS, () => {
       void (async () => {
         if (!(await read($, isHiddenAtom))) {
@@ -56,9 +78,39 @@ export const register: Register = (on, options: Options) => {
   on('command.run', { command: 'pet' }, async $ => {
     const isHidden = !(await read($, isHiddenAtom))
     await update($, isHiddenAtom, () => isHidden)
+    const power = await read($, powerAtom)
+    const name = named ?? NAMES[fighterFor(power.model, power.effort, choice).character]
 
-    return { text: isHidden ? `${name} is asleep. Type /pet to call it back.` : `${name} is back!` }
+    return { text: isHidden ? `${name} is resting. Type /pet to call them back.` : `${name} is back!` }
   })
+
+  // Every request of the main conversation names its model and effort: the
+  // truest reading, and it follows /model, /effort and /config as they change.
+  on('turn.step', async function* ($, e, next) {
+    if (e.agentId === undefined) {
+      void setPower($, { model: e.model, effort: levelOf(e.effort) })
+    }
+
+    return yield* next(e)
+  })
+
+  // Between requests, `/model <name>` and `/effort <level>` show at once; the
+  // session's effort carries across a model switch. A picker's choice shows by
+  // the next request. The pet never stands in a command's way: a failure
+  // replays what the command settled to.
+  on('command.run', { command: 'model' }, async ($, e, next) => {
+    const ran = await next(e)
+    await setPower($, { model: await sessionModel($) })
+
+    return ran
+  }).catch(($, e, next) => next(e))
+
+  on('command.run', { command: 'effort' }, async ($, e, next) => {
+    const ran = await next(e)
+    await setPower($, { effort: levelOf(e.args) ?? (await settingsEffort($)) })
+
+    return ran
+  }).catch(($, e, next) => next(e))
 
   // Prompts and tools are never waited on for the pet: its updates run beside them.
   on('prompt.submit', ($, e, next) => {
@@ -87,17 +139,24 @@ export const register: Register = (on, options: Options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
-    if (e.props.hasSurvey || e.props.maxRows < ROWS || (await read($, isHiddenAtom))) {
+    if (e.props.hasSurvey || e.props.maxRows < HEAD_ONLY_ROWS || (await read($, isHiddenAtom))) {
       return below
     }
 
     const { Box, Text } = $.ui.resolve(e)
     const pet = await read($, petAtom)
+    const power = await read($, powerAtom)
+    const fighter = fighterFor(power.model, power.effort, choice)
+    // A band too short for the whole fighter shows the head alone.
+    const isCompact = e.props.maxRows < FULL_ROWS
     const mood = shownMood(pet, e.props.isWorking)
+    const seen = look(mood, pet.tick)
     const room = Math.max(0, Math.min(ROAM, e.props.bodyColumns - WIDTH - TEXT_COLUMNS))
-    const grid = frame(look(mood, pet.tick))
-    const lines = rows(pet.dir === -1 ? mirror(grid) : grid, noColor)
+    const grid = frame(fighter, seen, pet.tick, isCompact)
+    const lines = rows(pet.dir === -1 ? mirror(grid) : grid, palette(fighter, seen), noColor)
     const said = caption(mood, pet)
+    const name = named ?? NAMES[fighter.character]
+    const shade = formColor(fighter.form)
 
     return (
       <Box flexDirection="column">
@@ -113,14 +172,23 @@ export const register: Register = (on, options: Options) => {
               </Text>
             ))}
           </Box>
-          <Box flexDirection="column" marginLeft={2}>
-            <Text> </Text>
+          <Box flexDirection="column" marginLeft={2} marginTop={isCompact ? 1 : 2}>
             <Text wrap="truncate-end">
-              <Text bold color={noColor ? undefined : PALETTE.o}>{name}</Text>
+              <Text bold color={noColor ? undefined : NAME_COLORS[fighter.character]}>
+                {name}
+              </Text>
               <Text dimColor> · </Text>
               <Text {...tone(said.tone)}>{said.text}</Text>
             </Text>
-            <Text dimColor wrap="truncate-end">{stats(pet)}</Text>
+            <Text wrap="truncate-end">
+              <Text bold={shade !== undefined} color={noColor ? undefined : shade}>
+                {FORM_NAMES[fighter.form]}
+              </Text>
+              <Text dimColor> · {formatPower(powerLevel(fighter.form, pet))}</Text>
+            </Text>
+            <Text dimColor wrap="truncate-end">
+              {stats(pet)}
+            </Text>
           </Box>
         </Box>
         {below}
