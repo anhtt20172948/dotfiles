@@ -9,6 +9,8 @@
   Run long commands (builds, test gates, CI, anything likely over ~2 minutes) in the background with output to a log file, then end the turn.
   Do not poll with repeated tail/sleep/ps/log reads: every check resends the full context and burns quota.
   The supervisor or user will report when it finishes; one short wait is fine when the result is needed right away.
+  When working under a supervisor (e.g. as a firstmate worker), declare the wait before ending the turn the way its instructions require
+  (firstmate: a `paused:` status line naming the job, its log, and `until <UTC time>`), and follow the supervisor's own wait mechanics where they differ from this rule.
 - When doing bug fixes, always start with reproducing the bug in an E2E setting as closely aligned with how an end user would experience it as possible.
   This makes sure you find the real problem so your fix will actually solve it.
 - When end-to-end testing a product, be picky about the UI you see and be obsessed with pixel perfection.
