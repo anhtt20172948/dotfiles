@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# drf (docker-root-fs) - create/delete files & dirs with custom owner/perms via
+# a root docker container, for hosts where you can run docker but have no sudo.
+#
+# Every operation runs inside an ephemeral alpine container with the host
+# parent directory bind-mounted at /work. Nothing is installed on the host.
+# Every mutating operation asks for confirmation first (see --yes).
+#
+# Usage:
+#   drf mkdir   <host-dir>  [--owner UID[:GID]] [--mode 0755]
+#   drf mkfile  <host-file> [--owner UID[:GID]] [--mode 0644] [--content "text"]
+#   drf chown   <host-path> --owner UID[:GID] [--recursive]
+#   drf chmod   <host-path> --mode 0755        [--recursive]
+#   drf rm      <host-path> [--recursive]
+#
+# Options:
+#   -y, --yes   skip the confirmation prompt (for scripting)
+#
+# Notes:
+#   - --owner takes NUMERIC ids (e.g. 1000:1000). Names inside the container
+#     do not map to the host, so numbers are the reliable choice.
+#   - Paths are resolved to an absolute host path before mounting.
+#   - The confirmation is read from /dev/tty, so piped stdin never confirms.
+#     Without a terminal, drf aborts unless --yes is given.
+#   - Set DRF_IMAGE to use a different image (default: alpine:3.20).
+set -euo pipefail
+
+IMAGE="${DRF_IMAGE:-alpine:3.20}"
+
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+
+usage() { sed -n '2,/^set -euo/{/^set -euo/d;s/^# \{0,1\}//;p;}' "$0"; }
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+esac
+
+[ $# -ge 2 ] || die "usage: drf <mkdir|mkfile|chown|chmod|rm> <host-path> [options] (see drf --help)"
+op=$1; target=$2; shift 2
+
+owner="" mode="" content="" recursive=0 yes=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --owner)   [ $# -ge 2 ] || die "--owner needs a value"; owner=$2; shift 2 ;;
+    --mode)    [ $# -ge 2 ] || die "--mode needs a value"; mode=$2; shift 2 ;;
+    --content) [ $# -ge 2 ] || die "--content needs a value"; content=$2; shift 2 ;;
+    --recursive|-r) recursive=1; shift ;;
+    --yes|-y) yes=1; shift ;;
+    *) die "unknown option: $1" ;;
+  esac
+done
+
+[[ -z "$owner" || "$owner" =~ ^[0-9]+(:[0-9]+)?$ ]] || die "--owner must be numeric UID[:GID], got: $owner"
+[[ -z "$mode" || "$mode" =~ ^[0-7]{3,4}$ ]] || die "--mode must be octal like 0755, got: $mode"
+
+# Resolve to an absolute host path LEXICALLY (no cd/stat), so a root-owned,
+# unreadable parent does not block us. Strip trailing slashes first.
+while [ "${#target}" -gt 1 ] && [ "${target%/}" != "$target" ]; do target=${target%/}; done
+case "$target" in
+  /*) abs=$target ;;
+  *)  abs="$PWD/$target" ;;
+esac
+[ "$abs" != "/" ] || die "refusing to operate on /"
+parent=$(dirname "$abs")
+leaf=$(basename "$abs")
+
+case "$op" in
+  mkdir|mkfile|rm) ;;
+  chown) [ -n "$owner" ] || die "chown needs --owner" ;;
+  chmod) [ -n "$mode" ] || die "chmod needs --mode" ;;
+  *) die "unknown op: $op" ;;
+esac
+
+describe() {
+  case "$op" in
+    mkdir)  echo "Create directory (parents included)" ;;
+    mkfile) echo "Create (or overwrite) file" ;;
+    chown)  echo "Change owner" ;;
+    chmod)  echo "Change mode" ;;
+    rm)     echo "Delete" ;;
+  esac
+}
+
+confirm() {
+  printf 'Operation : %s\n' "$(describe)"
+  printf 'Path      : %s\n' "$abs"
+  [ -z "$owner" ] || printf 'Owner     : %s\n' "$owner"
+  [ -z "$mode" ]  || printf 'Mode      : %s\n' "$mode"
+  case "$op" in
+    chown|chmod|rm) printf 'Recursive : %s\n' "$([ "$recursive" = 1 ] && echo yes || echo no)" ;;
+  esac
+  printf 'WARNING   : runs as root inside docker (image %s); whoever can run docker effectively has host root.\n' "$IMAGE"
+  [ "$yes" = 1 ] && return 0
+  # Probe that a controlling terminal can really be opened (the node may exist without one).
+  { : </dev/tty; } 2>/dev/null || die "no controlling terminal (/dev/tty) to confirm on; re-run with --yes to proceed non-interactively"
+  local reply=""
+  printf 'Proceed? [y/N] ' >/dev/tty
+  read -r reply </dev/tty || reply=""
+  case "$reply" in
+    y|Y) ;;
+    *) echo "aborted" >&2; exit 1 ;;
+  esac
+}
+
+# Mount the parent read-write; root in the container validates it exists.
+# Values are passed through the environment, never spliced into the script.
+run() {
+  docker run --rm -v "$parent:/work" \
+    -e DRF_LEAF="$leaf" -e DRF_OWNER="$owner" -e DRF_MODE="$mode" \
+    -e DRF_CONTENT="$content" -e DRF_R="$([ "$recursive" = 1 ] && echo -R)" \
+    "$IMAGE" sh -euc '
+      [ -d /work ] || { echo "error: parent directory does not exist on the host" >&2; exit 1; }
+      p="/work/$DRF_LEAF"
+      '"$1"
+}
+
+confirm
+
+case "$op" in
+  mkdir)
+    run 'mkdir -p "$p"
+         [ -z "$DRF_MODE" ]  || chmod "$DRF_MODE" "$p"
+         [ -z "$DRF_OWNER" ] || chown "$DRF_OWNER" "$p"' ;;
+  mkfile)
+    run 'printf "%s" "$DRF_CONTENT" > "$p"
+         [ -z "$DRF_MODE" ]  || chmod "$DRF_MODE" "$p"
+         [ -z "$DRF_OWNER" ] || chown "$DRF_OWNER" "$p"' ;;
+  chown) run 'chown $DRF_R "$DRF_OWNER" "$p"' ;;
+  chmod) run 'chmod $DRF_R "$DRF_MODE" "$p"' ;;
+  rm)
+    if [ "$recursive" = 1 ]; then run 'rm -rf "$p"'; else run 'rm -f "$p"'; fi ;;
+esac
+
+printf 'ok: %s %s\n' "$op" "$abs"
