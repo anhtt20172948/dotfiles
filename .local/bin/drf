@@ -11,10 +11,25 @@
 #   drf mkfile  <host-file> [--owner UID[:GID]] [--mode 0644] [--content "text"]
 #   drf chown   <host-path> --owner UID[:GID] [--recursive]
 #   drf chmod   <host-path> --mode 0755        [--recursive]
+#   drf chown   UID[:GID] <host-path> [--recursive]
+#   drf chmod   0755 <host-path>       [--recursive]
 #   drf rm      <host-path> [--recursive]
+#   drf rm -rf <dir>
+#
+# Flags may appear in any order, before or after the path.
+# For chown/chmod, --owner/--mode replaces the leading positional value.
 #
 # Options:
-#   -y, --yes   skip the confirmation prompt (for scripting)
+#   -r, -R, --recursive  recurse for chown, chmod, and rm
+#   -f, --force          accepted for all operations (no-op)
+#   -y, --yes            skip the confirmation prompt (for scripting)
+#   -p                   accepted for mkdir (parents are always created)
+#   -h, --help           show this help
+#   --owner, -o <value>  numeric UID[:GID]
+#   --mode, -m <value>   octal mode, e.g. 0755
+#   --content <value>    contents for mkfile
+#   --                   end flags, allowing a path beginning with -
+# Short switches can be bundled, e.g. -rfy. Value flags -o/-m take the next arg.
 #
 # Notes:
 #   - --owner takes NUMERIC ids (e.g. 1000:1000). Names inside the container
@@ -35,20 +50,65 @@ case "${1:-}" in
   -h|--help) usage; exit 0 ;;
 esac
 
-[ $# -ge 2 ] || die "usage: drf <mkdir|mkfile|chown|chmod|rm> <host-path> [options] (see drf --help)"
-op=$1; target=$2; shift 2
+[ $# -ge 1 ] || die "usage: drf <mkdir|mkfile|chown|chmod|rm> [options] <host-path> (see drf --help)"
+op=$1; shift
 
 owner="" mode="" content="" recursive=0 yes=0
+owner_set=0 mode_set=0
+positionals=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --owner)   [ $# -ge 2 ] || die "--owner needs a value"; owner=$2; shift 2 ;;
-    --mode)    [ $# -ge 2 ] || die "--mode needs a value"; mode=$2; shift 2 ;;
+    --owner|-o)
+      [ $# -ge 2 ] || die "$1 needs a value"
+      owner=$2; owner_set=1; shift 2 ;;
+    --mode|-m)
+      [ $# -ge 2 ] || die "$1 needs a value"
+      mode=$2; mode_set=1; shift 2 ;;
     --content) [ $# -ge 2 ] || die "--content needs a value"; content=$2; shift 2 ;;
-    --recursive|-r) recursive=1; shift ;;
-    --yes|-y) yes=1; shift ;;
-    *) die "unknown option: $1" ;;
+    --recursive) recursive=1; shift ;;
+    --force) shift ;;
+    --yes) yes=1; shift ;;
+    --help) usage; exit 0 ;;
+    --) shift; positionals+=("$@"); break ;;
+    --*) die "unknown option: $1" ;;
+    -?*)
+      flags=${1#-}; shift
+      while [ -n "$flags" ]; do
+        flag=${flags:0:1}; flags=${flags:1}
+        case "$flag" in
+          r|R) recursive=1 ;;
+          f) ;;
+          y) yes=1 ;;
+          p) [ "$op" = mkdir ] || die "-p is only supported for mkdir" ;;
+          h) usage; exit 0 ;;
+          o|m)
+            [ -z "$flags" ] || die "-$flag needs a separate value"
+            [ $# -ge 1 ] || die "-$flag needs a value"
+            if [ "$flag" = o ]; then owner=$1; owner_set=1
+            else mode=$1; mode_set=1; fi
+            shift ;;
+          *) die "unknown option: -$flag" ;;
+        esac
+      done ;;
+    *) positionals+=("$1"); shift ;;
   esac
 done
+
+case "$op" in
+  chown)
+    if [ "$owner_set" = 0 ]; then
+      [ "${#positionals[@]}" -ge 2 ] || die "chown needs an owner and target path (or --owner)"
+      owner=${positionals[0]}; positionals=("${positionals[@]:1}")
+    fi ;;
+  chmod)
+    if [ "$mode_set" = 0 ]; then
+      [ "${#positionals[@]}" -ge 2 ] || die "chmod needs a mode and target path (or --mode)"
+      mode=${positionals[0]}; positionals=("${positionals[@]:1}")
+    fi ;;
+esac
+[ "${#positionals[@]}" -ge 1 ] || die "$op needs a target path"
+[ "${#positionals[@]}" -eq 1 ] || die "unexpected extra argument: ${positionals[1]}"
+target=${positionals[0]}
 
 [[ -z "$owner" || "$owner" =~ ^[0-9]+(:[0-9]+)?$ ]] || die "--owner must be numeric UID[:GID], got: $owner"
 [[ -z "$mode" || "$mode" =~ ^[0-7]{3,4}$ ]] || die "--mode must be octal like 0755, got: $mode"
